@@ -16,3 +16,11 @@ Extract the ZIP contents to your GitHub repository root, commit, and run `.githu
 ## Testing
 
 Back up your collection before installing. Start the scanner, optionally enable automatic framing, scan a card, choose the correct printing in the review, and confirm the card appears in the chosen deck/collection. Test the sound, crop and duplicate prevention separately.
+
+## v2.9 fixed-phone-stand scanning profile
+- Adds an enabled-by-default **Fixed phone stand** option for the card placement shown in the supplied screenshot: card top ~29% down the preview and card width ~76%.
+- Updates the guide and crops the title from the normalized card image, not the blank area above the card.
+- Defaults the OCR strip to 35 pixels high and 295 pixels wide in the 320×440 normalized card canvas (existing custom settings persist).
+- Allows a complete card name appearing as a standalone substring within noisy OCR text to become a candidate, requiring the normal multi-read confirmation logic.
+- Disable fixed stand mode when scanning handheld or using the future Raspberry Pi camera.
+- This is a calibrated prototype. The camera video aspect ratio and CSS preview may differ on devices, so confirm the live OCR title preview aligns before batch scanning. Not compiled or tested on hardware.
