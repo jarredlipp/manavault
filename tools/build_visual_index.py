@@ -36,7 +36,7 @@ def main():
             out.append({'name':name,'id':c.get('id'),'set':c.get('set'),'f':f})
         except Exception as e:print('Skipped',name,str(e))
         if len(out)%100==0 and out:print('Indexed',len(out))
-        if len(out)>=args.limit:break
+        if args.limit > 0 and len(out)>=args.limit:break
     Path(args.output).write_text(json.dumps({'format':'manavault-visual-v1','cards':out},separators=(',',':')))
     print('Saved',len(out),'references to',args.output)
 if __name__=='__main__':main()

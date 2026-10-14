@@ -1,22 +1,18 @@
-# ManaVault v2.2 — Visual-index prototype
+# ManaVault v2.8 — Scanner, Printing Review, Deck Integration
 
-This release adds an **artwork-first local fingerprint lookup** to the v2.1 Android app. It also retains OCR, zoom, and camera diagnostics. The GitHub workflow is included.
+Based on v2.7. New:
 
-**Important:** The APK does NOT include a complete card-art database. Artwork-first recognition only works after you generate and import an index. Otherwise v2.1 OCR-first hybrid scanning remains active. The 8×8 RGB comparison is a baseline, not a trained image-recognition model, and should not be trusted for unattended identification or exact printings.
+- Experimental automatic camera card framing toggle (off by default; keep manual title crop sliders for fallback).
+- Printing review on visual and OCR matches: retrieves alternate printings from Scryfall and lets the user select the set and collector number before saving. Artwork alone cannot determine exact printing. Foil status still needs separate verification.
+- Continuous-scanner deck insertions and deck search/import now distinguish Scryfall printing IDs instead of merging printings with the same name. Collection inventory already keys by card ID.
+- Preserves the v2.7 full unique-artwork fingerprint builder, bulk card database, camera controls, sound and deck destination UI.
 
-## Build APK
-Upload the contents of this folder to the GitHub repository root and commit to `main`; GitHub Actions produces the debug APK.
+**Important limitations:** Automatic framing uses a lightweight image-edge heuristic, not a trained card detector. It is opt-in and untested on real devices. Printing selection requires network access for Scryfall's prints API; if offline, the suggested printing can still be selected, but exact edition is not independently verified. This does not yet implement set-symbol OCR, collector-number OCR, foil detection, or a full offline printing database. Full artwork indexing is still a lengthy GitHub Actions build; no prebuilt index or APK is included.
 
-## Generate an optional visual index on your PC
-1. Download Scryfall's `unique_artwork` bulk data from https://api.scryfall.com/bulk-data/unique-artwork . Use the actual bulk download link (`download_uri` or `jsonl_download_uri`) returned by the metadata endpoint.
-2. Install Python and run `pip install requests pillow`.
-3. Run `python tools/build_visual_index.py your-bulk-file.json manavault-index.json --limit 1000` (supports `.jsonl.gz` too).
-4. Transfer `manavault-index.json` to your phone. In **Scan cards**, select **Load visual index** and choose that file.
+## Build
 
-For a full index, raise `--limit` gradually. Building a complete index requires downloading many artwork images and can consume substantial time/storage. Respect Scryfall terms and download limits. Fingerprints are small but 8×8 RGB similarity can be unreliable under perspective, glare and alternate artwork; all visual-only matches require confirmation.
+Extract the ZIP contents to your GitHub repository root, commit, and run `.github/workflows/build-apk.yml`. The workflow downloads artwork fingerprints and compiles the APK. Its run summary displays actual APK size. The source ZIP is not the APK.
 
-## Limitations
-- No offline artwork index is bundled. This is a working integration point, not TCGplayer-grade recognition.
-- Visual-only matches require confirmation. OCR may still be slow if no reliable visual match is found.
-- Exact set/printing recognition is not implemented.
-- No device test or Android build was performed in this environment.
+## Testing
+
+Back up your collection before installing. Start the scanner, optionally enable automatic framing, scan a card, choose the correct printing in the review, and confirm the card appears in the chosen deck/collection. Test the sound, crop and duplicate prevention separately.
