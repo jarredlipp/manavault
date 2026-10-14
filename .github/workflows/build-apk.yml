@@ -1,0 +1,88 @@
+
+name: Build ManaVault Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || true)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Find Android project
+        id: project
+        shell: bash
+        run: |
+          if [ -f settings.gradle ] || [ -f settings.gradle.kts ]; then
+            PROJECT_DIR="."
+          else
+            PROJECT_DIR=""
+
+            while IFS= read -r file; do
+              dir="$(dirname "$file")"
+
+              if [ -f "$dir/app/build.gradle" ] || \
+                 [ -f "$dir/app/build.gradle.kts" ]; then
+                PROJECT_DIR="$dir"
+                break
+              fi
+            done < <(
+              find . -mindepth 2 -maxdepth 2 \
+                \( -name settings.gradle -o \
+                   -name settings.gradle.kts \) \
+                -type f
+            )
+
+            if [ -z "$PROJECT_DIR" ]; then
+              echo "ERROR: Android project not found."
+              exit 1
+            fi
+          fi
+
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Android project found at: $PROJECT_DIR"
+
+      - name: Build ManaVault APK
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ManaVault-Android-debug
+          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
