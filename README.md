@@ -24,3 +24,21 @@ Back up your collection before installing. Start the scanner, optionally enable 
 - Allows a complete card name appearing as a standalone substring within noisy OCR text to become a candidate, requiring the normal multi-read confirmation logic.
 - Disable fixed stand mode when scanning handheld or using the future Raspberry Pi camera.
 - This is a calibrated prototype. The camera video aspect ratio and CSS preview may differ on devices, so confirm the live OCR title preview aligns before batch scanning. Not compiled or tested on hardware.
+
+
+## v3.1 scanner OCR test changes
+- Fixed-stand OCR now crops from a 960x1320 working image instead of a 320x440 downsample.
+- OCR title coordinates are scaled consistently with the working image.
+- Removed the hard contrast stretch that exaggerated noisy edges on dark card titles.
+- Live OCR crop preview and calibration sliders now sit directly beneath the camera preview.
+- Camera start retries loading the bundled visual index. **The provided repository has no visual-index.json and the workflow does not generate it**, so artwork matching still requires a separately generated index.
+- Existing saved calibration settings are retained. Press Reset OCR alignment to use new defaults.
+
+This is a source-level test update; Android APK compilation and on-device OCR accuracy have not been verified.
+
+## v3.2 — Alternate-layout OCR and artwork index build
+
+- After three unsuccessful standard title OCR reads, the live scanner rotates through additional regions: bottom title (full-art basic lands), upper-center showcase/poster title, very top borderless title, and lower-middle alternate title. The currently scanned region appears beside Last OCR. This is a heuristic fallback, not a trained layout classifier.
+- Fixed artwork-first matching crop coordinates for the 960x1320 live card image. Prior code incorrectly sampled the old 320x440 crop coordinates.
+- GitHub Actions now attempts to generate and bundle `visual-index.json` from Scryfall's Unique Artwork bulk export before building. This requires tens of thousands of image downloads, can be slow, and is dependent on network/API availability. Build will fail if the index cannot be produced, rather than silently ship with zero references.
+- All image-based matching remains experimental; confirm uncertain cards and exact printings. Not tested on device or built as an APK in this environment.
