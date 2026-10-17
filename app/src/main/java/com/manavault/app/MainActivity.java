@@ -87,7 +87,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.10.6"; }
+            @JavascriptInterface public String version() { return "5.10.8"; }
             @JavascriptInterface public int cachedPrintingFingerprints() {
                 return ReferenceFingerprintCache.count();
             }
@@ -227,7 +227,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.10.6 · CameraX");
+        versionLabel.setText("ManaVault 5.10.8 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));

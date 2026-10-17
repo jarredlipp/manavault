@@ -22,8 +22,9 @@ const context={
  window:{},console,
  setTimeout:()=>1,clearTimeout:()=>{},
  navigator:{onLine:false},
- ManaVaultCardDB:{count:async()=>118773,printings:async()=>localCards},
+ ManaVaultCardDB:{count:async()=>118773,printings:async()=>localCards,bySetCollector:async(set,n)=>localCards.find(c=>c.set===set&&c.collector_number===n)||null},
  mvHybridNorm:x=>String(x||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(),
+ mvHybridEdit:(a,b)=>{let p=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const q=[i];for(let j=1;j<=b.length;j++)q[j]=Math.min(q[j-1]+1,p[j]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=q;}return p[b.length]},
  mvHybridLoadNames:async()=>{},
  mvHybridCandidates:s=>[{name:s,score:1,exact:true}],
  mvLogCamera:()=>{},
@@ -149,8 +150,24 @@ async function run(expr){return vm.runInContext(expr,context)}
  printedLines=[];symbolResults=[];imageResults=[{id:'many0',score:.97}];
  let manyOutcome=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
  assert.ok(manyOutcome.reason,'Same art across >12 editions cannot silently select an edition');
+ // Stylized title rescue: two stable noisy reads + printed 0345 DFT
+ // identify Webstrike Elite through the offline catalog, not name guessing.
+ const webstrike={...printings[0],id:'webstrike',name:'Webstrike Elite',set:'dft',collector_number:'345'};
+ localCards=[webstrike];
+ printedLines=[{zone:'bottom-left',text:'R 0345 DFT EN',confidence:.85}];
+ const oldCandidates=context.mvHybridCandidates;
+ context.mvHybridCandidates=(name)=>name==='WEPSTRIRT'?[]:oldCandidates(name);
+ let rescued=await run('mv60DecideCapture({name:"WEPSTRIRT",source:"ocr-candidate",ocr_reads:2},0)');
+ assert.equal(rescued.printing?.id,'webstrike','Set code + number should rescue a stylized title');
+ rescued=await run('mv60DecideCapture({name:"WEPSTRIRT",source:"ocr-candidate",ocr_reads:1},0)');
+ assert.equal(!!rescued.printing,false,'One damaged title reading is not sufficient');
+ rescued=await run('mv67ResolveFromPrintedMarks("ANOTHER TITLE",{lines:[{zone:"bottom-left",text:"0345 DFT EN"}]})');
+ assert.equal(!!rescued.printing,false,'A contradictory title vetoes set-number resolution');
+ context.mvHybridCandidates=oldCandidates;
+ printedLines=[];
+ localCards=printings;
  localCards=printings;
  assert.equal(await run('mv61CollectorKey("T0005")'),'t5');
  assert.equal(await run('mv61CollectorKey("0032a")'),'32a');
- console.log('v5.10.6 auto-save checks passed: exact printings, token conflict, unverified-name storage, undo, collector prefixes, and quantities.');
+ console.log('v5.10.8 auto-save checks passed: exact printings, token conflict, unverified-name storage, undo, collector prefixes, and quantities.');
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -9,6 +9,7 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.PointF;
 import android.os.Bundle;
+import android.util.Size;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
@@ -28,7 +29,9 @@ import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
-import androidx.camera.core.AspectRatio;
+import androidx.camera.core.resolutionselector.AspectRatioStrategy;
+import androidx.camera.core.resolutionselector.ResolutionSelector;
+import androidx.camera.core.resolutionselector.ResolutionStrategy;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
@@ -63,6 +66,14 @@ public final class NativeScannerActivity extends ComponentActivity {
     private PreviewView preview;
     private CardEdgeOverlay overlay;
     private TextView status,metrics;
+    private Button resolutionButton;
+    private static final String CAMERA_QUALITY_PREF="native_camera_quality";
+    private static final int QUALITY_HIGH=0,QUALITY_BALANCED=1,QUALITY_AUTO=2;
+    private int cameraQuality=QUALITY_HIGH;
+    private volatile int activeSensorWidth=0,activeSensorHeight=0,activeUprightWidth=0,activeUprightHeight=0;
+    private volatile int activeCropWidth=0,activeCropHeight=0;
+    private String lastTiming="";
+    private int lastArtworkRefs=-1;
     private Button torchButton,reviewButton,keepButton;
     private Camera camera;
     private ProcessCameraProvider provider;
@@ -101,6 +112,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         sessionStart=SystemClock.elapsedRealtime();
+        cameraQuality=Math.max(QUALITY_HIGH,Math.min(QUALITY_AUTO,getPreferences(MODE_PRIVATE).getInt(CAMERA_QUALITY_PREF,QUALITY_HIGH)));
         analysisExecutor.execute(()->{
             try{
                 File[] photos=getCacheDir().listFiles((dir,name)->name.startsWith("native-scan-")&&name.endsWith(".jpg"));
@@ -116,10 +128,29 @@ public final class NativeScannerActivity extends ComponentActivity {
         root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.VERTICAL);
         top.setPadding(dp(14),dp(12),dp(14),dp(12));top.setBackgroundColor(0xA5000000);
+        LinearLayout headline=new LinearLayout(this);
+        headline.setOrientation(LinearLayout.HORIZONTAL);
+        headline.setGravity(Gravity.CENTER_VERTICAL);
         status=new TextView(this);status.setTextColor(Color.WHITE);status.setTextSize(15);
-        status.setText("Native CameraX · starting…");top.addView(status);
+        status.setText("Native CameraX · starting…");
+        headline.addView(status,new LinearLayout.LayoutParams(0,-2,1));
+        resolutionButton=new Button(this);resolutionButton.setAllCaps(false);
+        resolutionButton.setTextSize(10);resolutionButton.setMinWidth(0);resolutionButton.setMinimumWidth(0);
+        resolutionButton.setPadding(dp(5),0,dp(5),0);
+        resolutionButton.setText(qualityLabel());
+        resolutionButton.setOnClickListener(v->{
+            cameraQuality=(cameraQuality+1)%3;
+            getPreferences(MODE_PRIVATE).edit().putInt(CAMERA_QUALITY_PREF,cameraQuality).apply();
+            resolutionButton.setText(qualityLabel());
+            if(ContextCompat.checkSelfPermission(this,Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED){
+                status.setText("Changing camera resolution…");
+                startCamera();
+            }
+        });
+        headline.addView(resolutionButton,new LinearLayout.LayoutParams(dp(101),dp(42)));
+        top.addView(headline);
         metrics=new TextView(this);metrics.setTextColor(0xFFBBDBCC);metrics.setTextSize(11);
-        metrics.setText("Timing: waiting for frames");top.addView(metrics);
+        metrics.setText("Camera: awaiting negotiated resolution");top.addView(metrics);
         root.addView(top,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));
         LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER);
         actions.setPadding(dp(6),dp(8),dp(6),dp(16));actions.setBackgroundColor(0xD0000000);
@@ -176,8 +207,10 @@ public final class NativeScannerActivity extends ComponentActivity {
                 visual=matcher;
                 int refs=matcher.count();
                 runOnUiThread(()->{
-                    if(!closing)metrics.setText("Bundled/learned artwork: "+refs+" · cached edition fingerprints: "+ReferenceFingerprintCache.count()+" · name index: "+(names==null?0:names.size())+
-                        (refs==0?" · OCR fallback active (index not populated)":" · artwork-first enabled"));
+                    if(!closing){
+                        lastArtworkRefs=refs;
+                        showMetrics();
+                    }
                 });
             }catch(Exception e){Log.w(TAG,"Artwork index loading failed, using OCR",e);}
         });
@@ -208,23 +241,70 @@ public final class NativeScannerActivity extends ComponentActivity {
             else status.setText("Camera permission denied. Use the browser scanner or grant access.");
         }
     }
+    private String qualityLabel(){
+        return cameraQuality==QUALITY_HIGH?"High 2.8MP":cameraQuality==QUALITY_BALANCED?"Balanced":"Auto";
+    }
+    private ResolutionSelector selectResolution(int mode){
+        ResolutionSelector.Builder selector=new ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY);
+        if(mode!=QUALITY_AUTO){
+            // Requests are preferences, not guarantees. CameraX negotiates a supported
+            // Camera2 stream size with Preview; report the actual size from ImageProxy.
+            Size requested=mode==QUALITY_HIGH?new Size(1920,1440):new Size(1280,960);
+            selector.setResolutionStrategy(new ResolutionStrategy(requested,
+                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER));
+        }
+        return selector.build();
+    }
+    private void bindCamera(int quality) throws Exception {
+        provider.unbindAll();
+        activeSensorWidth=activeSensorHeight=activeUprightWidth=activeUprightHeight=0;
+        activeCropWidth=activeCropHeight=0;
+        previous=null;smoothed=null;goodFrames=0;missingFrames=0;
+        ImageAnalysis analysis=new ImageAnalysis.Builder()
+            .setResolutionSelector(selectResolution(quality))
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888).build();
+        Preview p=new Preview.Builder()
+            .setResolutionSelector(selectResolution(quality))
+            .build();
+        p.setSurfaceProvider(preview.getSurfaceProvider());
+        analysis.setAnalyzer(analysisExecutor,this::analyzeFrame);
+        camera=provider.bindToLifecycle(this,CameraSelector.DEFAULT_BACK_CAMERA,p,analysis);
+    }
     private void startCamera(){
         ListenableFuture<ProcessCameraProvider> future=ProcessCameraProvider.getInstance(this);
         future.addListener(()->{
             if(closing||isFinishing())return;
             try{
-                provider=future.get();provider.unbindAll();
-                Preview p=new Preview.Builder().setTargetAspectRatio(AspectRatio.RATIO_4_3).build();
-                p.setSurfaceProvider(preview.getSurfaceProvider());
-                ImageAnalysis analysis=new ImageAnalysis.Builder()
-                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888).build();
-                analysis.setAnalyzer(analysisExecutor,this::analyzeFrame);
-                camera=provider.bindToLifecycle(this,CameraSelector.DEFAULT_BACK_CAMERA,p,analysis);
-                status.setText("Ready · fast edge tracking · artwork/OCR");
-            }catch(Exception e){Log.e(TAG,"CameraX startup failed",e);status.setText("Camera failed: "+e.getMessage());}
+                provider=future.get();
+                try {bindCamera(cameraQuality);}
+                catch(Exception requestedError){
+                    if(cameraQuality==QUALITY_AUTO)throw requestedError;
+                    Log.w(TAG,"Requested camera quality unavailable; retrying automatic resolution",requestedError);
+                    bindCamera(QUALITY_AUTO);
+                    status.setText("Camera fell back to automatic resolution");
+                }
+                if(!status.getText().toString().contains("fell back"))
+                    status.setText("Ready · fast edge tracking · artwork/OCR");
+                showMetrics();
+            }catch(Exception e){
+                Log.e(TAG,"CameraX startup failed",e);
+                status.setText("Camera failed: "+e.getMessage());
+            }
         },ContextCompat.getMainExecutor(this));
+    }
+    private void showMetrics(){
+        // This line survives subsequent OCR/status updates, unlike the former
+        // startup-only camera resolution message.
+        String cameraInfo=activeSensorWidth>0?
+            "Camera OCR "+activeSensorWidth+"×"+activeSensorHeight+
+            " · upright "+activeUprightWidth+"×"+activeUprightHeight:
+            "Camera negotiating ("+qualityLabel()+")";
+        String cardInfo=activeCropWidth>0?" · card crop "+activeCropWidth+"×"+activeCropHeight:"";
+        String detail=lastTiming.isEmpty()?"": "\n"+lastTiming;
+        if(lastArtworkRefs>=0)detail+="\nArtwork refs: "+lastArtworkRefs+" · cached edition fingerprints: "+ReferenceFingerprintCache.count();
+        metrics.setText(cameraInfo+cardInfo+detail);
     }
     private void toggleTorch(){
         if(camera==null||!camera.getCameraInfo().hasFlashUnit()){
@@ -324,6 +404,17 @@ public final class NativeScannerActivity extends ComponentActivity {
             long now=SystemClock.elapsedRealtime();
             if(closing||now-lastProcessAt<75)return;
             lastProcessAt=now;
+            int sensorW=proxy.getWidth(),sensorH=proxy.getHeight();
+            if(sensorW!=activeSensorWidth||sensorH!=activeSensorHeight){
+                activeSensorWidth=sensorW;activeSensorHeight=sensorH;
+                int rotation=proxy.getImageInfo().getRotationDegrees();
+                activeUprightWidth=rotation%180==0?sensorW:sensorH;
+                activeUprightHeight=rotation%180==0?sensorH:sensorW;
+                runOnUiThread(()->{if(!closing)showMetrics();});
+                Log.i(TAG,"Negotiated CameraX ImageAnalysis "+sensorW+"x"+sensorH+
+                    ", upright "+activeUprightWidth+"x"+activeUprightHeight+
+                    ", selected quality "+qualityLabel());
+            }
             frame=uprightFrame(proxy);
         }catch(Throwable e){Log.w(TAG,"Could not read CameraX frame",e);}
         finally{proxy.close();}
@@ -387,6 +478,10 @@ public final class NativeScannerActivity extends ComponentActivity {
             begin=SystemClock.elapsedRealtime();
             Bitmap corrected=detector.rectify(frame,smoothed);
             lastWarpMs=SystemClock.elapsedRealtime()-begin;
+            if(activeCropWidth!=corrected.getWidth()||activeCropHeight!=corrected.getHeight()){
+                activeCropWidth=corrected.getWidth();activeCropHeight=corrected.getHeight();
+                runOnUiThread(()->{if(!closing)showMetrics();});
+            }
             long hash=VisualMatcher.quickHash(corrected);
             // A changed artwork hash, glare, or exposure is NEVER proof that
             // the previous physical card was removed. Re-arm only after the
@@ -482,7 +577,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                     if(!closing){
                         status.setText("OCR candidate: "+current+" · "+previousOcrCount+" read(s) · "+captured.size()+" queued");
                         keepButton.setEnabled(true);
-                        metrics.setText("Edge "+lastEdgeMs+" ms · rectify "+lastWarpMs+" ms · artwork "+lastArtMs+" ms · OCR "+lastOcrMs+" ms");
+                        lastTiming="Edge "+lastEdgeMs+" ms · warp "+lastWarpMs+" ms · art "+lastArtMs+" ms · OCR "+lastOcrMs+" ms";showMetrics();
                     }
                 });
                 // Exact canonical names bypass the repeated OCR wait. For an
@@ -519,7 +614,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         try{
             int number=captured.size()+1;
             File photo=new File(getCacheDir(),"native-scan-"+sessionStart+"-"+number+".jpg");
-            try(FileOutputStream out=new FileOutputStream(photo)){card.compress(Bitmap.CompressFormat.JPEG,87,out);}
+            try(FileOutputStream out=new FileOutputStream(photo)){card.compress(Bitmap.CompressFormat.JPEG,93,out);}
             JSONObject result=new JSONObject();
             result.put("name",name);result.put("source",source);result.put("artworkId",imageId==null?"":imageId);
             result.put("similarity",Math.round(score*1000)/1000.0);
@@ -544,7 +639,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             runOnUiThread(()->{if(!closing){
                 status.setText(msg);keepButton.setText("Next card");keepButton.setEnabled(true);
                 reviewButton.setText("Finish / save ("+captured.size()+")");
-                metrics.setText("Edge "+lastEdgeMs+" ms · rectify "+lastWarpMs+" ms · artwork "+lastArtMs+" ms · OCR "+lastOcrMs+" ms · references "+(visual==null?0:visual.count()));
+                lastTiming="Edge "+lastEdgeMs+" ms · warp "+lastWarpMs+" ms · art "+lastArtMs+" ms · OCR "+lastOcrMs+" ms · references "+(visual==null?0:visual.count());showMetrics();
             }});
         }catch(Exception e){Log.e(TAG,"Could not queue card",e);}
     }

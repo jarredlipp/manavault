@@ -19,7 +19,9 @@ import java.util.List;
 
 /** Independent OpenCV outer-card detector. Coordinates are in the upright analysis bitmap. */
 final class CardQuadDetector {
-    static final int CARD_WIDTH = 630;
+    static final int MIN_CARD_WIDTH = 630;
+    static final int MAX_CARD_WIDTH = 1260;
+    static final int CARD_WIDTH = MIN_CARD_WIDTH;
     static final int CARD_HEIGHT = 880;
     static final class Detection {
         final PointF[] corners; // TL, TR, BR, BL (in the camera's upright coordinate system)
@@ -157,17 +159,26 @@ final class CardQuadDetector {
         double vertical=Math.hypot(p[3].x-p[0].x,p[3].y-p[0].y);
         // For sideways cards, turn the short edge into the destination's top edge.
         PointF[] q=horizontal>vertical?new PointF[]{p[3],p[0],p[1],p[2]}:p;
+        // Preserve the pixels captured by the phone. The old fixed 630x880
+        // warp destroyed the extra collector-number detail from higher-res frames.
+        double top=Math.hypot(q[1].x-q[0].x,q[1].y-q[0].y);
+        double bottom=Math.hypot(q[2].x-q[3].x,q[2].y-q[3].y);
+        double sideL=Math.hypot(q[3].x-q[0].x,q[3].y-q[0].y);
+        double sideR=Math.hypot(q[2].x-q[1].x,q[2].y-q[1].y);
+        double measuredWidth=Math.min((top+bottom)/2., (sideL+sideR)/2.*63./88.);
+        int outWidth=(int)Math.max(MIN_CARD_WIDTH,Math.min(MAX_CARD_WIDTH,Math.round(measuredWidth)));
+        int outHeight=(int)Math.round(outWidth*88./63.);
         Mat src = new Mat(), dest = new Mat(), transform = new Mat();
         MatOfPoint2f in=null,out=null;
         try {
             Utils.bitmapToMat(image, src);
             in = new MatOfPoint2f(new Point(q[0].x,q[0].y), new Point(q[1].x,q[1].y),
                     new Point(q[2].x,q[2].y), new Point(q[3].x,q[3].y));
-            out = new MatOfPoint2f(new Point(0,0),new Point(CARD_WIDTH-1,0),
-                    new Point(CARD_WIDTH-1,CARD_HEIGHT-1),new Point(0,CARD_HEIGHT-1));
+            out = new MatOfPoint2f(new Point(0,0),new Point(outWidth-1,0),
+                    new Point(outWidth-1,outHeight-1),new Point(0,outHeight-1));
             transform = Imgproc.getPerspectiveTransform(in,out);
-            Imgproc.warpPerspective(src,dest,transform,new Size(CARD_WIDTH,CARD_HEIGHT),Imgproc.INTER_LINEAR);
-            Bitmap bmp=Bitmap.createBitmap(CARD_WIDTH,CARD_HEIGHT,Bitmap.Config.ARGB_8888);
+            Imgproc.warpPerspective(src,dest,transform,new Size(outWidth,outHeight),Imgproc.INTER_LINEAR);
+            Bitmap bmp=Bitmap.createBitmap(outWidth,outHeight,Bitmap.Config.ARGB_8888);
             Utils.matToBitmap(dest,bmp);
             return bmp;
         } finally {if(in!=null)in.release();if(out!=null)out.release();transform.release();src.release();dest.release();}

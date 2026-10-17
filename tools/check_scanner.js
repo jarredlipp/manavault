@@ -52,11 +52,11 @@ console.log('ManaVault v5.9 checks passed: JS syntax, repository layout, recogni
 
 const mainActivity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
 assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android-native launch button');
-assert.match(mainActivity,/ManaVault 5\.10\.6/, 'Android launcher version label out of sync');
+assert.match(mainActivity,/ManaVault 5\.10\.8/, 'Android launcher version label out of sync');
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
 assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
-assert.match(html,/ManaVault v5\.10\.6/, 'Missing visible v5.10.6 build marker');
+assert.match(html,/ManaVault v5\.10\.8/, 'Missing visible v5.10.8 build marker');
 console.log('ManaVault v5.9.2 native entry checks passed.');
 
 // A syntax-only test missed a production crash: const info was reassigned by
@@ -101,14 +101,17 @@ assert.match(activity,/readPrintingMarks\(/);
 assert.match(activity,/rankSetSymbols\(/);
 assert.match(marks,/bottom-left/);
 assert.match(marks,/symbolSignature/);
+assert.match(marks,/CardQuadDetector\.enhanceTitle\(enlarged\)/,'Must run contrast-enhanced footer OCR on difficult frames');
+assert.match(html,/mv67ResolveFromPrintedMarks/,'Offline set plus collector fallback missing');
+assert.match(html,/mv67TitleAgrees/,'Independent OCR title corroboration missing');
 assert.match(html,/mv61ResolvePrinting/);
 assert.match(dbSource,/image_normal/);
 assert.match(html,/Printing unverified/, 'Missing provisional printing labeling');
 assert.match(html,/mv60ResolveUnverified/, 'Missing later edition resolution');
 assert.match(html,/mv60StoreUnverifiedName/, 'Missing automatic name-only collection path');
-console.log('v5.10.6 scene, OCR, printing evidence, and provisional-collection guards passed.');
+console.log('v5.10.8 scene, OCR, printing evidence, and provisional-collection guards passed.');
 
-// v5.10.6: an all-empty bundled index must never silently ship, and exact
+// v5.10.8: an all-empty bundled index must never silently ship, and exact
 // OCR can learn a name-only art fingerprint without pretending to know a set.
 const matcher=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/VisualMatcher.java'),'utf8');
 const workflow=fs.readFileSync(path.join(root,'.github/workflows/build-apk.yml'),'utf8');
@@ -119,9 +122,9 @@ assert.match(matcher,/new Entry\(key,"",copy\)/, 'Observed artwork must never be
 assert.match(native,/rotationIndex==0 && visual!=null/, 'Do not learn from rotated or missing art crops');
 assert.match(native,/referenceExecutor\.execute\(\(\)->matcher\.learnObservedName/, 'Artwork learning must not delay scanning');
 assert.match(dbSource,/if\(existing>=MIN_PRINTINGS&&stamp===await meta\('source'\)\)/, 'Manual update must not redownload unchanged Scryfall bulk data');
-console.log('v5.10.6 artwork bootstrap and catalog-update guards passed.');
+console.log('v5.10.8 artwork bootstrap and catalog-update guards passed.');
 
-// v5.10.6: edition image signatures must be cached across application launches.
+// v5.10.8: edition image signatures must be cached across application launches.
 const artSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/ArtworkVerifier.java'),'utf8');
 const cacheSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/ReferenceFingerprintCache.java'),'utf8');
 assert.match(artSource,/ReferenceFingerprintCache\.get\("art"/, 'Candidate-art cache lookup missing');
@@ -131,4 +134,30 @@ assert.match(marks,/ReferenceFingerprintCache\.put\("symbol-v2"/, 'Set-symbol ca
 assert.match(activity,/ReferenceFingerprintCache\.configure\(getApplicationContext\(\)\)/);
 assert.match(cacheSource,/MAX_FILES = 2500/);
 assert.match(native,/cached edition fingerprints:/);
-console.log('v5.10.6 reference-cache wiring checks passed.');
+console.log('v5.10.8 reference-cache wiring checks passed.');
+
+// v5.10.8: high-res CameraX analysis is user-configurable and actually
+// benefits the footer OCR; never quietly downscale back to 630x880.
+assert.match(native,/new Size\(1920,1440\)/, 'High-resolution CameraX preference missing');
+assert.match(native,/new Size\(1280,960\)/, 'Balanced camera preference missing');
+assert.match(native,/ResolutionStrategy\.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER/,
+    'Supported-size fallback missing');
+assert.match(native,/QUALITY_HIGH=0,QUALITY_BALANCED=1,QUALITY_AUTO=2/,
+    'High/Balanced/Auto quality selector missing');
+assert.match(native,/getPreferences\(MODE_PRIVATE\)\.edit\(\)\.putInt\(CAMERA_QUALITY_PREF/,
+    'Quality selection must persist');
+assert.match(native,/activeSensorWidth=sensorW;activeSensorHeight=sensorH/,
+    'Actual ImageProxy width and height must be reported, not guessed');
+assert.match(native,/activeCropWidth=corrected\.getWidth\(\)/,
+    'Actual card crop resolution must be reported');
+assert.match(native,/provider\.unbindAll\(\)/,
+    'Quality switching must renegotiate the camera streams');
+assert.match(detectorSource,/int outWidth=.*MAX_CARD_WIDTH/,
+    'Rectified card output must preserve higher resolution');
+assert.match(detectorSource,/new Size\(outWidth,outHeight\)/,
+    'OpenCV warp must use the computed pixel dimensions');
+assert.match(marks,/int scale=Math\.max\(1,Math\.min\(4/,
+    'Footer OCR scaling must be adaptive');
+assert.doesNotMatch(marks,/Bitmap\.createScaledBitmap\(strip,w\*4,h\*4,true\)/,
+    'Avoid unconditional 4x crops after high-res capture');
+console.log('v5.10.8 CameraX resolution, adaptive warp, and footer OCR guards passed.');

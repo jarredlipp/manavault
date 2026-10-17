@@ -60,26 +60,45 @@ final class PrintingFingerprintVerifier {
                 int w=Math.max(1,Math.min(Math.round(card.getWidth()*region[2]),card.getWidth()-x));
                 int h=Math.max(1,Math.min(Math.round(card.getHeight()*region[3]),card.getHeight()-y));
                 Bitmap strip=Bitmap.createBitmap(card,x,y,w,h);
-                Bitmap enlarged=Bitmap.createScaledBitmap(strip,w*3,h*3,true);
-                strip.recycle();
+                // Tiny bottom-border type frequently disappears against dark foil
+                // frames. OCR both the color image and a contrast-equalized copy
+                // on the two footer crops most likely to contain set + number.
+                // Higher-resolution native warps already contain more text pixels.
+                // Enlarge only as much as necessary for ML Kit while avoiding
+                // huge 4x bitmaps and allocations at 1920x1440 capture.
+                int scale=Math.max(1,Math.min(4,Math.min(240/Math.max(1,h),2200/Math.max(1,w))));
+                Bitmap enlarged=scale==1?strip:Bitmap.createScaledBitmap(strip,w*scale,h*scale,true);
+                if(enlarged!=strip)strip.recycle();
                 try {
-                    Text words=Tasks.await(reader.process(InputImage.fromBitmap(enlarged,0)),4,TimeUnit.SECONDS);
-                    for(Text.TextBlock block:words.getTextBlocks())for(Text.Line line:block.getLines()){
-                        String value=line.getText().trim();
-                        if(value.isEmpty())continue;
-                        JSONObject item=new JSONObject();
-                        item.put("text",value);
-                        item.put("zone",zones[zone]);
-                        item.put("confidence",line.getConfidence());
-                        lines.put(item);
-                        if(zones[zone].equals("type-bar") && value.toLowerCase(Locale.ROOT).contains("token"))
-                            out.put("token",true);
+                    readRegion(reader,enlarged,zones[zone],"color",lines,out);
+                    if(zone==0 || zone==2){
+                        Bitmap enhanced=CardQuadDetector.enhanceTitle(enlarged);
+                        try{readRegion(reader,enhanced,zones[zone],"contrast",lines,out);}
+                        finally{enhanced.recycle();}
                     }
-                }catch(Exception ignored){/* Missing OCR is never proof of another edition. */}
-                finally{enlarged.recycle();}
+                }finally{enlarged.recycle();}
             }
         }finally{reader.close();card.recycle();}
         return out;
+    }
+
+    private static void readRegion(TextRecognizer reader, Bitmap image, String zone,
+            String pass, JSONArray lines, JSONObject out) throws Exception {
+        try {
+            Text words=Tasks.await(reader.process(InputImage.fromBitmap(image,0)),4,TimeUnit.SECONDS);
+            for(Text.TextBlock block:words.getTextBlocks())for(Text.Line line:block.getLines()){
+                String value=line.getText().trim();
+                if(value.isEmpty())continue;
+                JSONObject item=new JSONObject();
+                item.put("text",value);
+                item.put("zone",zone);
+                item.put("pass",pass);
+                item.put("confidence",line.getConfidence());
+                lines.put(item);
+                if(zone.equals("type-bar") && value.toLowerCase(Locale.ROOT).contains("token"))
+                    out.put("token",true);
+            }
+        }catch(Exception ignored){/* OCR uncertainty is not a printing identity. */}
     }
 
     private static final ExecutorService NETWORK=Executors.newFixedThreadPool(4);
@@ -137,7 +156,7 @@ final class PrintingFingerprintVerifier {
         HttpURLConnection connection=(HttpURLConnection)new URL(address).openConnection();
         connection.setConnectTimeout(1800);connection.setReadTimeout(2300);
         connection.setInstanceFollowRedirects(false);
-        connection.setRequestProperty("User-Agent","ManaVault/5.10.6 (printing evidence)");
+        connection.setRequestProperty("User-Agent","ManaVault/5.10.8 (printing evidence)");
         Bitmap reference=null;
         try{
             if(connection.getResponseCode()!=200||connection.getContentLengthLong()>4_000_000)
