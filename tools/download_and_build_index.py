@@ -13,11 +13,11 @@ def main():
  p=argparse.ArgumentParser();p.add_argument('--limit',type=int,default=0);p.add_argument('--output',default='app/src/main/assets/visual-index.json');a=p.parse_args()
  s=requests.Session();s.mount('https://',HTTPAdapter(max_retries=Retry(total=5,backoff_factor=1,status_forcelist=[429,500,502,503,504])));s.headers.update({'User-Agent':'ManaVault-IndexBuilder/0.2 (personal MTG scanner)','Accept':'application/json;q=0.9,*/*;q=0.8'})
  meta=s.get('https://api.scryfall.com/bulk-data/unique_artwork',timeout=60);meta.raise_for_status();obj=meta.json()
- url=obj.get('download_uri') or obj.get('jsonl_download_uri')
+ url=obj.get('jsonl_download_uri') or obj.get('download_uri')
  if not url:
   listing=s.get('https://api.scryfall.com/bulk-data',timeout=60);listing.raise_for_status()
   options=[x for x in listing.json().get('data',[]) if x.get('type')=='unique_artwork']
-  url=next((x.get('download_uri') for x in options if x.get('download_uri')),None)
+  url=next(((x.get('jsonl_download_uri') or x.get('download_uri')) for x in options if (x.get('jsonl_download_uri') or x.get('download_uri'))),None)
  if not url:
   print('Bulk metadata omitted download_uri; using paginated unique-art Scryfall search fallback',flush=True)
   raw=Path('unique-artwork-bulk.json')

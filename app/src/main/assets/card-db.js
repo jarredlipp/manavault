@@ -36,7 +36,7 @@ async function sync(force=false){if(running)return running;running=(async()=>{le
  }
  function pickBulk(obj){
    const entries=[obj,...(Array.isArray(obj?.data)?obj.data:[]),...(Array.isArray(obj?.results)?obj.results:[])].filter(Boolean);
-   return entries.find(x=>x.type==='default_cards'&&typeof x.download_uri==='string'&&/^https:\/\//.test(x.download_uri));
+   return entries.find(x=>x.type==='default_cards'&&typeof (x.jsonl_download_uri||x.download_uri)==='string'&&/^https:\/\//.test(x.jsonl_download_uri||x.download_uri));
  }
  let m=pickBulk(await fetchMeta('https://api.scryfall.com/bulk-data/default_cards'));
  if(!m)m=pickBulk(await fetchMeta('https://api.scryfall.com/bulk-data'));
@@ -44,10 +44,10 @@ async function sync(force=false){if(running)return running;running=(async()=>{le
    status('Scryfall bulk metadata incomplete; trying paginated card API (slower)…');
    const db=await open(),target=(await active())===STORE_A?STORE_B:STORE_A;
    await clear(db,target);
-   let page=1,processed=0,next='https://api.scryfall.com/cards?order=name&unique=prints';
+   let page=1,processed=0,next='https://api.scryfall.com/cards/search?q=game%3Apaper&unique=prints&order=name';
    while(next){
      const response=await fetch(next,{cache:'no-store',headers});
-     if(!response.ok)throw Error('Scryfall card page '+page+' HTTP '+response.status);
+     if(!response.ok)throw Error('Scryfall card search page '+page+' HTTP '+response.status+' URL '+new URL(next).pathname);
      const result=await response.json();
      if(!Array.isArray(result.data))throw Error('Scryfall card API returned no records on page '+page);
      await putBatch(db,target,result.data.filter(c=>c.id&&c.name).map(record));
@@ -66,10 +66,15 @@ async function sync(force=false){if(running)return running;running=(async()=>{le
    status('Ready: '+stored.toLocaleString()+' printings offline (paginated Scryfall sync).');
    return;
  }
- let stamp=m.updated_at||m.id,url=m.download_uri;
+ let stamp=m.updated_at||m.id,url=m.jsonl_download_uri||m.download_uri;
  if(!url)throw Error('Scryfall metadata has no download_uri after endpoint, listing, and retry. Check network filtering or API response; no database was replaced.');if(!force&&existing>=MIN_PRINTINGS&&stamp===await meta('source')){await putMeta('checked',Date.now());status('Up to date: '+existing.toLocaleString()+' printings.');return}
  let db=await open(),target=(await active())===STORE_A?STORE_B:STORE_A;await clear(db,target);status('Downloading '+(m.size?Math.round(m.size/1048576)+' MB':'bulk file')+' of Scryfall printings…');let bulk=await fetch(url);if(!bulk.ok||!bulk.body)throw Error('Bulk download failed (HTTP '+bulk.status+')');let stream=bulk.body;if(/\.gz(?:\?|$)/.test(url)){if(!window.DecompressionStream)throw Error('Gzip unsupported');stream=stream.pipeThrough(new DecompressionStream('gzip'))}
- let n=await ingest(stream,db,target);if(n<MIN_PRINTINGS)throw Error('Received only '+n.toLocaleString()+' printings; existing catalog retained');let stored=await req(db.transaction(target,'readonly').objectStore(target).count());if(stored<MIN_PRINTINGS)throw Error('Only '+stored+' unique printing IDs; existing catalog retained');await putMeta('active',target);await putMeta('source',stamp);await putMeta('checked',Date.now());status('Ready: '+stored.toLocaleString()+' printings offline. Updated '+stamp+'.')
+ let n;
+ if(m.jsonl_download_uri || /\.jsonl(?:\.gz)?(?:\?|$)/i.test(url)){
+   const reader=stream.pipeThrough(new TextDecoderStream()).getReader();let buffer='',batch=[],processed=0;
+   async function addLine(line){if(!line.trim())return;let card=JSON.parse(line);if(card.id&&card.name)batch.push(record(card));if(batch.length>=350){await putBatch(db,target,batch);processed+=batch.length;batch=[];if(processed%3500===0)status('Importing '+processed.toLocaleString()+' printings…')}}
+   try{while(true){let {value,done}=await reader.read();if(done)break;buffer+=value;let i;while((i=buffer.indexOf('\n'))>=0){await addLine(buffer.slice(0,i));buffer=buffer.slice(i+1)}}if(buffer.trim())await addLine(buffer);if(batch.length){await putBatch(db,target,batch);processed+=batch.length}n=processed}finally{reader.releaseLock()}
+ }else n=await ingest(stream,db,target);if(n<MIN_PRINTINGS)throw Error('Received only '+n.toLocaleString()+' printings; existing catalog retained');let stored=await req(db.transaction(target,'readonly').objectStore(target).count());if(stored<MIN_PRINTINGS)throw Error('Only '+stored+' unique printing IDs; existing catalog retained');await putMeta('active',target);await putMeta('source',stamp);await putMeta('checked',Date.now());status('Ready: '+stored.toLocaleString()+' printings offline. Updated '+stamp+'.')
  }catch(e){let existing=await count().catch(()=>0);status('Sync failed: '+e.message+(existing?' — '+existing.toLocaleString()+' previous printings preserved':''))}finally{if(button)button.disabled=false}})();try{return await running}finally{running=null}}
 async function init(){try{let n=await count();status(n?'Ready: '+n.toLocaleString()+' cached printings. Checking updates…':'No printings yet; automatic download starting…');void sync()}catch(e){status('Database unavailable: '+e.message)}}
 window.ManaVaultCardDB={get,count,printings,bySetCollector,sync,init,status:()=>lastStatus};window.addEventListener('online',()=>void sync());
