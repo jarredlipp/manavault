@@ -934,7 +934,7 @@ window.mvNativeScanResult=async function(data){
   if(!String(card.name||'').split(' // ').some(face=>mvHybridNorm(face)===mvHybridNorm(best.name)) && mvHybridNorm(card.name)!==mvHybridNorm(best.name)){
    try{card=await scry('/cards/named?exact='+encodeURIComponent(best.name))}catch{mv58NativeStatus('Card lookup disagreed with title. Please search manually.');return;}
   }
-  mv58NativeStatus('Identified: '+card.name+' · '+(data.source==='artwork'?'artwork reference':'OCR')+' · confirm set and collector number.');
+  mv58NativeStatus('Identified: '+card.name+' · checking edition evidence.');
   // Do not depend on the old browser camera's paused state.
   livePaused=true;
   const review=document.getElementById('liveReview');
@@ -1294,9 +1294,20 @@ async function mv60DecideCapture(data,index){
    if(direct.length===0)return {reason:'Collector number and printed expansion code disagree'};
   }
  }
- // Artwork comparison is next. If illustrations repeat, collector number
- // and visual set-symbol evidence may still resolve the exact edition.
- const compared=await mv60RankArtwork(index,print.printings);
+ // Narrow the artwork search with *observed* printed marks before downloading
+ // reference images. Previously every printing of a popular card was compared,
+ // overflowing the 12-reference limit and forcing manual confirmation.
+ // An uncorroborated collector number alone is NOT sufficient to auto-save.
+ const plausible=print.printings.filter(p=>(!footerNumber||mv61CollectorKey(p.collector_number)===footerNumber)&&
+    (!footerSet||String(p.set||'').toLowerCase()===footerSet));
+ if((footerNumber||footerSet)&&!plausible.length)
+  return {reason:'Printed collector/set marks do not match known editions'};
+ const artworkCandidates=plausible.length?plausible:print.printings;
+ // Both independently printed identifiers, rather than a name or a count,
+ // establish exact printing when only one edition matches them.
+ if(footerNumber&&footerSet&&artworkCandidates.length===1)
+  return {printing:artworkCandidates[0],method:'collector number + set code'};
+ const compared=await mv60RankArtwork(index,artworkCandidates);
  if(compared.printing){
   // Strong artwork must not override contradictory visible printing marks.
   if(footerNumber&&mv61CollectorKey(compared.printing.collector_number)!==footerNumber||
@@ -1367,7 +1378,7 @@ function mv60UndoLast(){
  save();mv58NativeStatus('Undid the last automatically saved card.');
 }
 const mv60ScannerBase=scanner;
-scanner=function(){return `<section class="panel" id="mv60AutoSavePanel"><h2>Automatic printing identification</h2><p class="small muted">One verified printing: saved automatically. Multiple printings: compare artwork, printed collector number and set code, and expansion symbol; save only when independent evidence uniquely identifies the edition. Uncertain cards go to review after scanning. Foil and condition cannot be verified reliably from artwork alone; nonfoil/NM are defaults.</p><button type="button" id="mv60UndoSave" ${mv60SavedHistory.length?'':'disabled'}>Undo last auto-saved card</button></section>`+mv60ScannerBase()};
+scanner=function(){return `<section class="panel" id="mv60AutoSavePanel"><h2>Automatic printing identification</h2><p class="small muted">Verified printings save automatically. Multiple printings: compare artwork, printed collector number and set code, and expansion symbol; save only when independent evidence uniquely identifies the edition. Uncertain cards go to review after scanning. Foil and condition cannot be verified reliably from artwork alone; nonfoil/NM are defaults.</p><button type="button" id="mv60UndoSave" ${mv60SavedHistory.length?'':'disabled'}>Undo last auto-saved card</button></section>`+mv60ScannerBase()};
 const mv60BindBase=bind;
 bind=function(){mv60BindBase();const button=document.getElementById('mv60UndoSave');if(button)button.onclick=mv60UndoLast;};
 

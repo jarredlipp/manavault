@@ -44,10 +44,13 @@ final class PrintingFingerprintVerifier {
             // Keep the artwork/title out: copyright years and game rules are NOT
             // valid collector-number evidence. Old and new frames position the
             // small collector/expansion text differently near the bottom edge.
-            String[] zones={"bottom-left","bottom-band"};
-            for(int zone=0;zone<2;zone++){
-                float x=zone==0?.018f:.018f, y=zone==0?.905f:.92f;
-                float width=zone==0?.48f:.96f, height=zone==0?.087f:.073f;
+            String[] zones={"bottom-left","bottom-band","bottom-left"};
+            for(int zone=0;zone<zones.length;zone++){
+                // A slightly higher overlapping strip recovers collector marks
+                // when the perspective warp trims the bottom black border.
+                float x=.018f, y=zone==0?.905f:zone==1?.92f:.865f;
+                float width=zone==0?.48f:zone==1?.96f:.53f;
+                float height=zone==0?.087f:zone==1?.073f:.125f;
                 Bitmap strip=Bitmap.createBitmap(card,Math.round(card.getWidth()*x),
                     Math.round(card.getHeight()*y),
                     Math.min(Math.round(card.getWidth()*width),card.getWidth()-Math.round(card.getWidth()*x)),
@@ -125,7 +128,7 @@ final class PrintingFingerprintVerifier {
         HttpURLConnection connection=(HttpURLConnection)new URL(address).openConnection();
         connection.setConnectTimeout(1800);connection.setReadTimeout(2300);
         connection.setInstanceFollowRedirects(false);
-        connection.setRequestProperty("User-Agent","ManaVault/5.10.1 (printing evidence)");
+        connection.setRequestProperty("User-Agent","ManaVault/5.10.2 (printing evidence)");
         Bitmap reference=null;
         try{
             if(connection.getResponseCode()!=200||connection.getContentLengthLong()>4_000_000)
