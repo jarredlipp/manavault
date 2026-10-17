@@ -1,23 +1,16 @@
-# ManaVault Android — v4.7 source update
+# ManaVault — Android card scanner
 
-Build: push the project contents to the repository root, then run **Build ManaVault Android APK** in GitHub Actions. Download the debug APK from workflow artifacts.
+## Build
+Use `.github/workflows/build-apk.yml` (GitHub Actions) to build `app-debug.apk`. Debug signing certificates can differ between GitHub runners; a permanent signing key is needed for reliable in-place updates.
 
-## v4.7 changes
-- Stronger OCR-to-catalog candidate matching: rejects very short/noisy guesses and checks whole title substrings; no unknown-name fallback.
-- Confirms that the fetched card name agrees with the candidate name.
-- Gives the calibrated standard title more opportunities before switching to alternate layouts.
-- Repairs nested-object parsing in the streamed Scryfall JSON importer.
-- Removes the broken paginated fallback that returned HTTP 404; an unsuccessful bulk metadata request now preserves the existing catalog and reports its real failure.
+## v5.4 scanner changes
+- Prefer a card silhouette detector in a bright enclosure; retain v5.2 edge-quad fallback and perspective warp.
+- Crop the title from the top of the rectified card, excluding the mana cost where possible.
+- Enhance dark title regions before OCR.
+- Retain credible candidates when later OCR frames fail; use database-aware nonsense filtering.
+- Limit fallback OCR to plausible name regions rather than rules text.
+- Avoid restarting a functioning camera merely because OCR is slow or no title matches.
+- Preserve v5.3.1 Scryfall pricing, optional Card Kingdom comparison, collection and diagnostics.
 
-## Known limitations
-- **500 ms recognition is a performance target, not validated on a device.**
-- A complete visual-index.json is NOT bundled; artwork recognition still requires a separately generated/imported index. Do not mistake OCR fallback for an operational visual index.
-- The Scryfall bulk download requires connectivity and adequate phone storage; metadata/network behavior has not been device-tested.
-- Exact printing still requires review.
-
-## Test
-Start with Defile, Living Lands, Webstrike Elite and Spirit Summons. Compare the title shown in the OCR crop with the selected candidate; reject false matches and report diagnostic logs.
-
-
-## v4.9
-Unified fixed-stand and automatic framing, OCR mana-cost normalization, camera/OCR watchdog with bounded restart attempts, stale session protection, and torch failure disabling. Performance goal remains 500 ms; not verified on device.
+## Performance expectations
+App shell rendering can take milliseconds, but camera permission, camera startup, OCR worker initialization, and card recognition are separate asynchronous tasks and cannot be guaranteed to finish in milliseconds. This build is untested on a physical device.
