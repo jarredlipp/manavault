@@ -404,14 +404,14 @@ function mvSilhouetteFrame(frame){
  return best;
 }
 
-let mvEdgeTimer=null,mvLiveQuad=null,mvEdgeHits=0;
+let mvEdgeTimer=null,mvLiveQuad=null,mvEdgeHits=0,mvEdgeMisses=0,mvLastGoodQuad=null,mvLastGoodAt=0;
 function mvEdgeOverlayTick(){
  if(!liveStream)return;
  const video=document.getElementById('liveVideo'),host=document.getElementById('mvLiveFrame');
  if(!video||!host||video.readyState<2)return;
- const frame=mvDisplayedVideoFrame(video),found=mvOuterCardFrame(frame);
- if(found?.corners){mvEdgeHits++;if(mvEdgeHits>=2)mvLiveQuad=found.corners}
- else{mvEdgeHits=0;mvLiveQuad=null}
+ const frame=mvDisplayedVideoFrame(video),found=mvDetectCardFrame(frame);
+ if(found?.corners){mvEdgeHits++;mvEdgeMisses=0;if(mvEdgeHits>=2){mvLiveQuad=found.corners;mvLastGoodQuad=found.corners;mvLastGoodAt=performance.now();}}
+ else{mvEdgeHits=0;mvEdgeMisses++;if(mvEdgeMisses>6)mvLiveQuad=null}
  let svg=host.querySelector('#mvQuadOverlay');
  if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='mvQuadOverlay';svg.setAttribute('viewBox','0 0 1000 1000');svg.setAttribute('preserveAspectRatio','none');svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5';host.appendChild(svg)}
  svg.replaceChildren();const old=host.querySelector('div[style*="pointer-events:none"]');if(old)old.style.display='none';
@@ -458,7 +458,7 @@ function mvOuterCardFrame(frame){
     const a=take(.06),b=take(.94),xl=a.left,xr=a.right,bl=b.left,br=b.right;
     let score=rows.length*3-Math.abs(ratio-1.397)*170;
     // Prefer the smallest genuine card rectangle over the larger enclosure.
-    score-=width*.10;
+    score+=width*.22; // Prefer the outer silhouette over interior artwork rectangles.
     if(!best||score>best.score)best={score,corners:[{x:xl/W*frame.width,y:top/H*frame.height},{x:bl/W*frame.width,y:bottom/H*frame.height},{x:br/W*frame.width,y:bottom/H*frame.height},{x:xr/W*frame.width,y:top/H*frame.height}],confidence:Math.min(1,rows.length/(height/4))};
    }
   }
@@ -466,6 +466,21 @@ function mvOuterCardFrame(frame){
  return best&&best.confidence>.57?best:null;
 }
 
+// Detect portrait cards and sideways Battle cards using the same outer-edge model.
+// The returned corner order is always title-first for perspective rectification.
+function mvDetectCardFrame(frame){
+ const portrait=mvOuterCardFrame(frame);
+ const rot=document.createElement('canvas');rot.width=frame.height;rot.height=frame.width;
+ const g=rot.getContext('2d',{willReadFrequently:true});
+ g.translate(rot.width,0);g.rotate(Math.PI/2);g.drawImage(frame,0,0);
+ const sideways=mvOuterCardFrame(rot);
+ if(!sideways)return portrait;
+ const points=sideways.corners.map(p=>({x:p.y,y:frame.height-p.x}));
+ // Rotation candidates have their own score; only override a solid portrait detection
+ // if the sideways silhouette is materially stronger.
+ if(portrait&&portrait.score>=sideways.score*.88)return portrait;
+ return {...sideways,corners:points};
+}
 function mvTitleEnhance(source){
  const g=source.getContext('2d',{willReadFrequently:true}),im=g.getImageData(0,0,source.width,source.height),d=im.data;
  let sum=0;for(let i=0;i<d.length;i+=16)sum+=(d[i]+d[i+1]+d[i+2])/3;
@@ -582,7 +597,7 @@ let vw=v.videoWidth,vh=v.videoHeight;if(!vw||!vh)return;
 const displayed=mvDisplayedVideoFrame(v);
 const stand={x:displayed.width*MV_CARD_BOX.x,y:displayed.height*MV_CARD_BOX.y,
  w:displayed.width*MV_CARD_BOX.w,h:displayed.height*MV_CARD_BOX.h};
-const found=mvLiveQuad?{corners:mvLiveQuad,score:100}:mvOuterCardFrame(displayed);
+const found=mvLiveQuad?{corners:mvLiveQuad,score:100}:mvDetectCardFrame(displayed);
 // Stable four-corner detection is preferred. Weak detections use the previous fixed-stand crop.
 let selected=stand,quad=null;
 if(found&&found.corners){mvFramingHits++;if(mvFramingHits>=2){quad=found.corners;mvFramingRect=found}}
@@ -593,7 +608,7 @@ if(!quad||!mvWarpCard(displayed,quad,c)){
  quad=null;ctx.drawImage(displayed,selected.x,selected.y,selected.w,selected.h,0,0,c.width,c.height);
 }
 // Live four-edge overlay runs independently of OCR at ~7 frames per second.
-mvCalibrationFrame=c;mvRefreshCalibrationPreview();if(!quad){liveStatus('Finding card edges — move card fully into view');return;}let sig=liveSignature(ctx,960,1320);let delta=liveDiff(sig,livePreviousFrame);livePreviousFrame=sig;
+mvCalibrationFrame=c;mvRefreshCalibrationPreview();if(!quad && mvOcrMisses%8===0)liveStatus('Card edges uncertain — trying fixed-stand OCR');let sig=liveSignature(ctx,960,1320);let delta=liveDiff(sig,livePreviousFrame);livePreviousFrame=sig;
 if(liveSavedSignature){let changed=liveDiff(sig,mvSavedFrame);if(changed>0.32)liveEmptyCount++;else liveEmptyCount=0;if(liveEmptyCount>=3){liveSavedSignature='';livePending='';livePendingCount=0;mvHybridVotes.clear();liveEmptyCount=0;mvSavedFrame=null;mvResetRecognitionScene();liveStatus('New scene detected — checking card')}else{return}}
 // Avoid running OCR and image matching on moving/blurry frames.
 if(delta>0.48){mvMotionMisses++;if(mvMotionMisses<=4){if(mvMotionMisses===1)liveStatus('Checking image stability');return}}else mvMotionMisses=0
@@ -642,7 +657,7 @@ mvFastCandidate.reads++;mvFastCandidate.score=Math.max(mvFastCandidate.score,bes
 liveStatus('Candidate: '+best.name+' · OCR '+Math.round(best.score*100)+'% · '+mvFastCandidate.reads+' reads');
 const cleanOcr=mvHybridNorm(name).replace(/(?:\s+(?:[0-9]+[a-z]?|[wubrgc]))+$/g,'').trim();const exact=best.score===1&&(cleanOcr===mvHybridNorm(best.name)||String(best.name).split(' // ').some(n=>cleanOcr===mvHybridNorm(n)));
 // An embedded title still needs two agreeing frames; no fuzzy one-shot accepts.
-const ready=exact||(best.score>=.94&&mvFastCandidate.reads>=2);
+const ready=(exact&&!!quad)||(best.score>=.94&&mvFastCandidate.reads>=2);
 if(!ready)return;
 // Clear scene-specific artwork candidate before async lookup. A later card
 // cannot inherit an artwork match from a prior card.
@@ -690,7 +705,8 @@ function mvRenderLog(){
 const mvScannerBeforeLog=scanner;
 scanner=function(){return mvScannerBeforeLog()+`<section class="panel" id="mvDiagnosticsPanel"><h2>Camera diagnostics — v2.1</h2><p class="small muted">This log is persistent: errors remain visible after the camera stops or the app restarts. Use Copy or Download log to share the exact failure.</p><p id="mvLastCameraError" style="font-weight:bold;white-space:pre-wrap">No recorded errors yet.</p><pre id="mvCameraLog" style="white-space:pre-wrap;overflow:auto;max-height:320px;background:#111827;color:#e5e7eb;padding:12px;border-radius:8px;font-size:12px" aria-live="polite"></pre><div class="flex"><button id="mvCopyCameraLog">Copy diagnostic log</button><button id="mvDownloadCameraLog">Share / save log</button><button id="mvClearCameraLog">Clear log</button></div></section>`};
 const mvLiveStatusBeforeLog=liveStatus;
-liveStatus=function(msg){mvLogCamera(msg,/unable|failed|unavailable|paused|error|denied/i.test(msg)?'error':'info');mvLiveStatusBeforeLog(msg)};
+let mvLastLoggedStatus='',mvLastLoggedAt=0;
+liveStatus=function(msg){const now=Date.now();if(msg!==mvLastLoggedStatus||now-mvLastLoggedAt>5000){mvLogCamera(msg,/unable|failed|unavailable|paused|error|denied/i.test(msg)?'error':'info');mvLastLoggedStatus=msg;mvLastLoggedAt=now;}mvLiveStatusBeforeLog(msg)};
 const mvLiveStartBeforeLog=liveStart;
 liveStart=async function(){
   mvLogCamera('Start clicked; secure='+window.isSecureContext+'; origin='+location.origin+'; mediaDevices='+!!navigator.mediaDevices+'; getUserMedia='+!!navigator.mediaDevices?.getUserMedia+'; userAgent='+navigator.userAgent);
