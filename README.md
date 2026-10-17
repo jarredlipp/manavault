@@ -1,4 +1,4 @@
-# ManaVault v5.10.2 — Android source
+# ManaVault v5.10.3 — Android source
 
 Magic: The Gathering collection and deck manager with native CameraX card scanning. The Android project uses Java, Gradle, OpenCV, ML Kit, and a WebView frontend.
 
@@ -10,7 +10,7 @@ Keep the folder structure, including `.github/workflows/build-apk.yml` (the GitH
 
 ## Scanning
 
-Open the native CameraX scanner, scan/remove cards, then tap **Finish / save** once. Exact printings supported by sufficient evidence are auto-added; ambiguous editions require review. Printed collector numbers, set codes, artwork, and expansion-symbol evidence are used when available. Some variants remain uncertain because reference artwork or readable printed identifiers are unavailable. Card condition and foil treatment are not reliably inferred from artwork.
+Open the native CameraX scanner, scan/remove cards, then tap **Finish / save** once. Exact printings supported by sufficient evidence are auto-added. If the name is confidently identified but the edition remains ambiguous, the card is saved in the collection as **Printing unverified**, with no guessed Scryfall ID or edition price. Use **Resolve edition** from Collection when you want to assign the exact printing. Unreadable names and token/type conflicts still require review. Printed collector numbers, set codes, artwork, and expansion-symbol evidence are used when available. The GitHub Actions build attempts to bundle a small Scryfall artwork fingerprint seed; the app can also learn references from verified printings and compare candidates on demand. Some variants remain uncertain because reference artwork or readable printed identifiers are unavailable. Card condition and foil treatment are not reliably inferred from artwork.
 
 ## Project layout
 

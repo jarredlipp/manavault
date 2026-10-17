@@ -39,8 +39,13 @@ final class VisualMatcher {
         final int referenceCount;
         Match(String n,String i,float s,float m,int count){name=n;id=i;similarity=s;margin=m;referenceCount=count;}
         /** Similarity of compressed color thumbnails is not calibrated probability. */
-        boolean usable(){return similarity>=(referenceCount<25?.94f:referenceCount<100?.91f:.86f)
-            && margin>=.045f && name!=null && !name.isEmpty();}
+        boolean usable(){
+            // A tiny seed catalog covers only a fraction of MTG. Do not let
+            // a vaguely similar image override readable OCR or invent a name.
+            float minimum=referenceCount<100?.975f:referenceCount<1000?.945f:.91f;
+            float separation=referenceCount<100?.12f:referenceCount<1000?.08f:.055f;
+            return similarity>=minimum&&margin>=separation&&name!=null&&!name.isEmpty();
+        }
     }
     private static final class Entry {
         String name,id; byte[] f;

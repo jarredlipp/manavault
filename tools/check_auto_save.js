@@ -12,6 +12,7 @@ const copies=[];
 let localCards=[];
 let imageResults=[];
 let printedLines=[];
+let printedToken=false;
 let symbolResults=[];
 const printings=[
  {id:'a',name:'Test Card',lang:'en',digital:false,nonfoil:true,foil:false,set:'one',set_name:'One Set',collector_number:'12',image_small:'https://cards.scryfall.io/small/front/a/b/a.jpg',image_url:'https://cards.scryfall.io/art1.jpg',illustration_id:'art-1'},
@@ -44,7 +45,7 @@ context.window.ManaVaultNativeScanner={
  selectImage:()=>{},
  readPrintingMarks:request=>{
   const payload=JSON.parse(request);
-  context.window.mv61OnMarksResult({requestId:payload.requestId,lines:printedLines});
+  context.window.mv61OnMarksResult({requestId:payload.requestId,lines:printedLines,token:printedToken});
  },
  rankSetSymbols:request=>{
   const payload=JSON.parse(request);
@@ -114,5 +115,28 @@ async function run(expr){return vm.runInContext(expr,context)}
  assert.equal(context.state.cards[0].qty,2,'Repeated physical scans must increment quantity');
  await run('mv60UndoLast()');
  assert.equal(context.state.cards[0].qty,1,'Undo must remove only the last auto-added copy');
- console.log('v5.10.2 automatic-saving checks passed: unique printing, uncertain OCR, clear artwork, tied artwork, shared illustration, and quantity increment.');
+ // Ambiguous edition with a strong exact name is collected without assigning
+ // an arbitrary Scryfall ID, and never given an edition price.
+ localCards=printings;
+ printedLines=[];imageResults=[{id:'a',score:.961},{id:'b',score:.955}];symbolResults=[];
+ await run('window.mvNativeScanBatch([{name:"Test Card",source:"ocr-exact",ocr_reads:1}])');
+ const provisional=context.state.cards.find(c=>c.unverifiedPrinting);
+ assert.ok(provisional,'Ambiguous printing must be stored as name-only instead of demanding immediate confirmation');
+ assert.equal(provisional.id,'unverified:test card');
+ assert.equal(provisional.set,'');
+ assert.equal(provisional.price,null);
+ await run('mv60UndoLast()');
+ assert.ok(!context.state.cards.some(c=>c.unverifiedPrinting),'Undo must remove a provisional scan');
+ // A clearly detected token may not be saved as a normal planeswalker.
+ printedToken=true;
+ await run('window.mvNativeScanBatch([{name:"Test Card",source:"ocr-exact",ocr_reads:1}])');
+ assert.ok(!context.state.cards.some(c=>c.unverifiedPrinting),'Token/type conflict must remain review-only');
+ printedToken=false;
+ assert.equal(await run('mv60CanSaveNameOnly({name:"Test Card",source:"ocr-candidate",ocr_reads:1})'),null,
+  'One fuzzy OCR reading cannot create a provisional card');
+ assert.equal(await run('mv60CanSaveNameOnly({name:"Test Card",source:"ocr-candidate",ocr_reads:2})'),'Test Card',
+  'Two matching OCR reads can save a recognized name without inventing an edition');
+ assert.equal(await run('mv61CollectorKey("T0005")'),'t5');
+ assert.equal(await run('mv61CollectorKey("0032a")'),'32a');
+ console.log('v5.10.3 auto-save checks passed: exact printings, token conflict, unverified-name storage, undo, collector prefixes, and quantities.');
 })().catch(e=>{console.error(e);process.exitCode=1});

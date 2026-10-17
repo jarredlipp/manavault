@@ -54,7 +54,7 @@ assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
 assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
-assert.match(html,/ManaVault v5\.10\.1/, 'Missing visible v5.10.1 build marker');
+assert.match(html,/ManaVault v5\.10\.3/, 'Missing visible v5.10.3 build marker');
 console.log('ManaVault v5.9.2 native entry checks passed.');
 
 // A syntax-only test missed a production crash: const info was reassigned by
@@ -92,7 +92,7 @@ assert.match(html,/Undo last auto-saved card/);
 const detectorSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/CardQuadDetector.java'),'utf8');
 assert.match(detectorSource,/frameArea \* 0\.075/);
 assert.match(native,/if\(waitingForNext\)\{corrected\.recycle\(\);return;\}/,'Must require real removal before rescan');
-assert.doesNotMatch(native,/else if\(previousOcrCount>=2\)\{enqueue\(name/, 'Must not queue unknown OCR as a card');
+assert.match(native,/ocr-candidate/, 'Stable fuzzy OCR must enter the safe catalog matching path');
 const marks=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/PrintingFingerprintVerifier.java'),'utf8');
 const activity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
 assert.match(activity,/readPrintingMarks\(/);
@@ -101,4 +101,7 @@ assert.match(marks,/bottom-left/);
 assert.match(marks,/symbolSignature/);
 assert.match(html,/mv61ResolvePrinting/);
 assert.match(dbSource,/image_normal/);
-console.log('v5.10.1 scene, OCR, printing fingerprint, and image persistence guards passed.');
+assert.match(html,/Printing unverified/, 'Missing provisional printing labeling');
+assert.match(html,/mv60ResolveUnverified/, 'Missing later edition resolution');
+assert.match(html,/mv60StoreUnverifiedName/, 'Missing automatic name-only collection path');
+console.log('v5.10.3 scene, OCR, printing evidence, and provisional-collection guards passed.');

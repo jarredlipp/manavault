@@ -86,7 +86,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.10.1"; }
+            @JavascriptInterface public String version() { return "5.10.3"; }
             /** Store a public name catalog for fast native exact-match recognition.
              * Write atomically and never block the WebView JavaScript thread. */
             @JavascriptInterface public void updateNameIndex(String json) {
@@ -223,7 +223,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.10.1 · CameraX");
+        versionLabel.setText("ManaVault 5.10.3 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));

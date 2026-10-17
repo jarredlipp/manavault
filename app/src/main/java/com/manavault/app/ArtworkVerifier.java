@@ -100,7 +100,7 @@ final class ArtworkVerifier {
         JSONObject result=new JSONObject();
         result.put("requestId",request.optString("requestId",""));
         JSONArray choices=request.optJSONArray("choices");
-        if(choices==null||choices.length()<1||choices.length()>12){
+        if(choices==null||choices.length()<1||choices.length()>24){
             result.put("error","Unsupported artwork comparison count");return result;
         }
         Bitmap scanned=BitmapFactory.decodeFile(scannedFile.getAbsolutePath());

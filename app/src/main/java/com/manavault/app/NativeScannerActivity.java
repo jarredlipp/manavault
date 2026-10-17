@@ -50,7 +50,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** v5.9: native live-edge tracking, artwork-first candidates, OCR fallback, continuous
- * scene-gated collection scanning. Printing confirmation remains in the WebView.
+ * scene-gated collection scanning. Unverified editions can be saved by name in the WebView.
  */
 public final class NativeScannerActivity extends ComponentActivity {
     private static final String TAG="ManaVaultNative";
@@ -416,9 +416,11 @@ public final class NativeScannerActivity extends ComponentActivity {
     }
     private static Bitmap titleImage(Bitmap card){
         int x=Math.round(card.getWidth()*.055f),y=Math.round(card.getHeight()*.022f);
-        int w=Math.round(card.getWidth()*.80f),h=Math.round(card.getHeight()*.115f);
+        int w=Math.round(card.getWidth()*.88f),h=Math.round(card.getHeight()*.155f);
         Bitmap strip=Bitmap.createBitmap(card,x,y,Math.min(w,card.getWidth()-x),Math.min(h,card.getHeight()-y));
-        Bitmap enhanced=CardQuadDetector.enhanceTitle(strip);strip.recycle();return enhanced;
+        Bitmap enhanced=CardQuadDetector.enhanceTitle(strip);strip.recycle();
+        Bitmap upscaled=Bitmap.createScaledBitmap(enhanced,enhanced.getWidth()*2,enhanced.getHeight()*2,true);
+        enhanced.recycle();return upscaled;
     }
     private static String selectTitle(Text text){
         String best="";float top=-999;
@@ -486,9 +488,12 @@ public final class NativeScannerActivity extends ComponentActivity {
                 // Exact canonical names bypass the repeated OCR wait. For an
                 // unknown or incomplete catalog, retain two-read protection.
                 if(canonical!=null){enqueue(canonical,"ocr-exact",1f,null,card,hash);}
-                // Do not queue a raw OCR string even after repeated reads.
-                // Unknown names remain visible for an explicit manual action;
-                // JS must never auto-save an unvalidated title.
+                // A stable but imperfect title is still a useful scan. Queue it
+                // for the catalog's fuzzy name matcher after two independent
+                // camera reads; NEVER treat it as an exact printing identity.
+                else if(previousOcrCount>=2 && normalized.length()>=5 &&
+                        !normalized.matches(".*(.)\\1{4,}.*"))
+                    enqueue(name,"ocr-candidate",0,null,card,hash);
                 recognizing.set(false);
             }else if(rotationIndex<3){
                 readTitle(card,hash,rotationIndex+1,began);

@@ -44,18 +44,22 @@ final class PrintingFingerprintVerifier {
             // Keep the artwork/title out: copyright years and game rules are NOT
             // valid collector-number evidence. Old and new frames position the
             // small collector/expansion text differently near the bottom edge.
-            String[] zones={"bottom-left","bottom-band","bottom-left"};
+            // Several tight, overlapping footer regions are necessary because
+            // collector text varies across modern, old, promo, and token frames.
+            // The type bar is inspected separately to avoid confusing a Jace
+            // token planeswalker with a normal planeswalker of the same name.
+            String[] zones={"bottom-left","bottom-band","bottom-left","type-bar"};
+            float[][] regions={{.018f,.905f,.48f,.087f},
+                {.018f,.920f,.96f,.073f},{.018f,.865f,.53f,.125f},
+                {.035f,.585f,.93f,.095f}};
             for(int zone=0;zone<zones.length;zone++){
-                // A slightly higher overlapping strip recovers collector marks
-                // when the perspective warp trims the bottom black border.
-                float x=.018f, y=zone==0?.905f:zone==1?.92f:.865f;
-                float width=zone==0?.48f:zone==1?.96f:.53f;
-                float height=zone==0?.087f:zone==1?.073f:.125f;
-                Bitmap strip=Bitmap.createBitmap(card,Math.round(card.getWidth()*x),
-                    Math.round(card.getHeight()*y),
-                    Math.min(Math.round(card.getWidth()*width),card.getWidth()-Math.round(card.getWidth()*x)),
-                    Math.min(Math.round(card.getHeight()*height),card.getHeight()-Math.round(card.getHeight()*y)));
-                Bitmap enlarged=Bitmap.createScaledBitmap(strip,strip.getWidth()*3,strip.getHeight()*3,true);
+                float[] region=regions[zone];
+                int x=Math.round(card.getWidth()*region[0]);
+                int y=Math.round(card.getHeight()*region[1]);
+                int w=Math.max(1,Math.min(Math.round(card.getWidth()*region[2]),card.getWidth()-x));
+                int h=Math.max(1,Math.min(Math.round(card.getHeight()*region[3]),card.getHeight()-y));
+                Bitmap strip=Bitmap.createBitmap(card,x,y,w,h);
+                Bitmap enlarged=Bitmap.createScaledBitmap(strip,w*3,h*3,true);
                 strip.recycle();
                 try {
                     Text words=Tasks.await(reader.process(InputImage.fromBitmap(enlarged,0)),4,TimeUnit.SECONDS);
@@ -67,8 +71,10 @@ final class PrintingFingerprintVerifier {
                         item.put("zone",zones[zone]);
                         item.put("confidence",line.getConfidence());
                         lines.put(item);
+                        if(zone==3 && value.toLowerCase(Locale.ROOT).contains("token"))
+                            out.put("token",true);
                     }
-                }catch(Exception ignored){/* Missing footer OCR is never evidence of another edition. */}
+                }catch(Exception ignored){/* Missing OCR is never proof of another edition. */}
                 finally{enlarged.recycle();}
             }
         }finally{reader.close();card.recycle();}
