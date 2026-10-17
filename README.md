@@ -1,16 +1,21 @@
-# ManaVault — Android card scanner
+# ManaVault v5.5
+
+Android WebView-based Magic: The Gathering collection scanner.
 
 ## Build
-Use `.github/workflows/build-apk.yml` (GitHub Actions) to build `app-debug.apk`. Debug signing certificates can differ between GitHub runners; a permanent signing key is needed for reliable in-place updates.
 
-## v5.4 scanner changes
-- Prefer a card silhouette detector in a bright enclosure; retain v5.2 edge-quad fallback and perspective warp.
-- Crop the title from the top of the rectified card, excluding the mana cost where possible.
-- Enhance dark title regions before OCR.
-- Retain credible candidates when later OCR frames fail; use database-aware nonsense filtering.
-- Limit fallback OCR to plausible name regions rather than rules text.
-- Avoid restarting a functioning camera merely because OCR is slow or no title matches.
-- Preserve v5.3.1 Scryfall pricing, optional Card Kingdom comparison, collection and diagnostics.
+Use `.github/workflows/build-apk.yml` or build `:app:assembleDebug` with Gradle. The root and app-level `build.gradle` files serve different required roles.
 
-## Performance expectations
-App shell rendering can take milliseconds, but camera permission, camera startup, OCR worker initialization, and card recognition are separate asynchronous tasks and cannot be guaranteed to finish in milliseconds. This build is untested on a physical device.
+## Scanner
+
+The scanner detects candidate card boundaries, rectifies the card image, then OCRs the title region. The green polygon represents the detected corners; yellow marks the title area. A weak detection uses the fixed-stand fallback. OCR exact names are matched against the local catalog, while fuzzy candidates require repeated agreement. Edition and foil status require user confirmation.
+
+Camera startup now guards against stale or removed video elements. Low-light title enhancement and scanner diagnostics are retained. Artwork matching is advisory, not a guaranteed verification step.
+
+## Pricing
+
+Scryfall printing-specific price estimates are used when available; Card Kingdom feed support is experimental. Missing prices are not guaranteed to be available.
+
+## Limitations
+
+No phone-camera or APK installation test has been performed for this source package. Automatic corner detection can fail with glare, sleeves, or dark backgrounds. Millisecond card recognition is not guaranteed with WebView and Tesseract OCR.
