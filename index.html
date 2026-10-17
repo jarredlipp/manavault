@@ -201,7 +201,7 @@ async function mvConfigureCamera(){
   let settings={};if(zoomSupported)settings.zoom=zoom;
   if(Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous'))settings.focusMode='continuous';
   if(Object.keys(settings).length)await track.applyConstraints({advanced:[settings]});
-  if(focus)focus.textContent=(zoomSupported?'Hardware zoom available.':'Hardware zoom unavailable; using preview crop.')+' '+(settings.focusMode?'Continuous autofocus enabled.':'Camera default autofocus used.');
+  if(focus)focus.textContent=(zoomSupported?'Hardware zoom available.':'Hardware zoom unavailable; using preview crop.')+' '+(settings.focusMode?'Continuous autofocus requested (verify focus visually).':'Camera default autofocus used.');
   mvLogCamera('Camera controls: zoomSupported='+zoomSupported+' zoom='+zoom+' focus='+String(settings.focusMode||'default'));
  }catch(e){if(focus)focus.textContent='Camera controls not fully supported: '+e.message;mvLogCamera('Camera controls: '+e.message,'info')}
 }
@@ -222,7 +222,7 @@ function mvHybridIndex(names){mvNames=names;mvHybridBuckets.clear();for(let name
 async function mvHybridLoadNames(){if(mvNamesReady)return;try{let saved=localStorage.getItem('mv_hybrid_names_v1');if(saved){let parsed=JSON.parse(saved);if(Array.isArray(parsed)&&parsed.length>1000){mvHybridIndex(parsed);return}}}catch{}try{let res=await fetch('https://api.scryfall.com/catalog/card-names');if(!res.ok)throw Error('HTTP '+res.status);let obj=await res.json();if(Array.isArray(obj.data)){mvHybridIndex(obj.data);try{localStorage.setItem('mv_hybrid_names_v1',JSON.stringify(obj.data))}catch{}}}catch(e){mvLogCamera('Name catalog unavailable; online fuzzy fallback: '+e.message,'info')}}
 function mvHybridCandidates(raw){let n=mvHybridNorm(raw).replace(/\b[0-9]+$/,'').trim();if(n.length<5)return[];let pool=[];
 if(mvNamesReady){let words=n.split(' ');let prefix=n.slice(0,2);pool=[...(mvHybridBuckets.get(prefix)||[])];if(pool.length<8){for(let k of [n[0]+'',n.slice(0,1)])for(let [key,entries] of mvHybridBuckets)if(key.startsWith(k))pool.push(...entries)}
-let seen=new Set();let ranked=[];for(let item of pool){if(seen.has(item.name))continue;seen.add(item.name);let a=item.n;let score=1-mvHybridEdit(n,a)/Math.max(n.length,a.length);if(a===n)score=1;else if(a.startsWith(n)&&n.length>=5)score=Math.max(score,.83);else if(n.length>=5 && (' '+n+' ').includes(' '+a+' '))score=Math.max(score,.94);if(score>=.76)ranked.push({name:item.name,score})}ranked.sort((a,b)=>b.score-a.score);return ranked.slice(0,3)}
+let seen=new Set();let ranked=[];for(let item of pool){if(seen.has(item.name))continue;seen.add(item.name);let a=item.n;let score=1-mvHybridEdit(n,a)/Math.max(n.length,a.length);if(a===n)score=1;else if(a.startsWith(n)&&n.length>=5)score=Math.max(score,.83);else if(n.length>=5 && (' '+n+' ').includes(' '+a+' '))score=Math.max(score,.94);if(score>=.76 && (n.split(' ')[0]===a.split(' ')[0] || score>=.90))ranked.push({name:item.name,score})}ranked.sort((a,b)=>b.score-a.score);return ranked.slice(0,3)}
 return [{name:raw.replace(/\s+[0-9]+$/,'').trim(),score:.68}]
 }
 async function mvHybridFetchCard(name){if(mvHybridLookupCache.has(name))return mvHybridLookupCache.get(name);try{let local=await ManaVaultCardDB.get(name);if(local){let card={...local,image_uris:local.image_url?{art_crop:local.image_url}:undefined};mvHybridLookupCache.set(name,card);return card}}catch{}let now=Date.now();if(now-mvHybridLastLookup<120)await new Promise(r=>setTimeout(r,120-(now-mvHybridLastLookup)));mvHybridLastLookup=Date.now();try{let card=await scry('/cards/named?'+(mvNamesReady?'exact=':'fuzzy=')+encodeURIComponent(name));mvHybridLookupCache.set(name,card);return card}catch(e){mvLogCamera('Card lookup: '+e.message,'info');return null}}
@@ -316,16 +316,25 @@ function mvAutoFrame(video,vw,vh){
  if(!best||best.score<17)return null;
  return {x:best.x/w*vw,y:best.y/h*vh,w:best.cw/w*vw,h:best.ch/h*vh,score:best.score};
 }
+function mvSharpness(ctx){
+ const w=120,h=35,small=document.createElement('canvas');small.width=w;small.height=h;
+ const g=small.getContext('2d',{willReadFrequently:true});g.drawImage(ctx.canvas,70,45,700,125,0,0,w,h);
+ const d=g.getImageData(0,0,w,h).data;let total=0,count=0;
+ for(let y=2;y<h-2;y+=2)for(let x=2;x<w-2;x+=2){let i=(y*w+x)*4;
+ const l=k=>.299*d[k]+.587*d[k+1]+.114*d[k+2];
+ total+=Math.abs(4*l(i)-l(i-4)-l(i+4)-l(i-w*4)-l(i+w*4));count++;
+ }return total/Math.max(1,count);
+}
 async function liveTick(){if(!liveActive||livePaused||liveBusy)return;liveBusy=true;try{let v=document.getElementById('liveVideo');if(!v||v.readyState<2)return;// Read the center card guide in native video coordinates; do not distort 16:9 video into a 320x440 card.
 let vw=v.videoWidth,vh=v.videoHeight;if(!vw||!vh)return;
 let zcaps=liveStream?.getVideoTracks()?.[0]?.getCapabilities?.()||{};let softZoom=zcaps.zoom?1:mvZoomWanted;let sourceW=vw*.76/softZoom,sourceH=vh*.82/softZoom,sourceX=(vw-sourceW)/2,sourceY=(vh-sourceH)/2;
-if(localStorage.getItem('mv_auto_frame')==='1'){let detected=mvAutoFrame(v,vw,vh);if(detected){sourceX=detected.x;sourceY=detected.y;sourceW=detected.w;sourceH=detected.h;}}
+let detected=mvAutoFrame(v,vw,vh);let useDetected=!!detected;if(useDetected){sourceX=detected.x;sourceY=detected.y;sourceW=detected.w;sourceH=detected.h;}
 let c=document.createElement('canvas');c.width=960;c.height=1320;
 let ctx=c.getContext('2d',{willReadFrequently:true});
 // Fixed stand mode: use the visible video image as the reference, not the old centered crop.
 // The physical card in the supplied screenshot spans ~12–88% X and ~29–92% Y.
 // Draw the full frame into an upright viewport before cropping the card rectangle.
-if(localStorage.getItem('mv_fixed_stand')!=='0' && localStorage.getItem('mv_auto_frame')!=='1'){
+if(!useDetected && localStorage.getItem('mv_fixed_stand')!=='0'){
  let viewportW=vw,viewportH=vh;
  // Center-crop landscape camera video to portrait preview (object-fit:cover equivalent).
  let targetRatio=320/440;
@@ -338,6 +347,8 @@ let sig=liveSignature(ctx,960,1320);let delta=liveDiff(sig,livePreviousFrame);li
 if(liveSavedSignature){let changed=liveDiff(sig,mvSavedFrame);if(changed>0.32)liveEmptyCount++;else liveEmptyCount=0;if(liveEmptyCount>=3){liveSavedSignature='';livePending='';livePendingCount=0;mvHybridVotes.clear();liveEmptyCount=0;mvSavedFrame=null;liveStatus('New scene detected — checking card')}else{return}}
 // Avoid running OCR and image matching on moving/blurry frames.
 if(delta>0.16){liveStatus('Card moving — waiting for stable frame');return}
+// Sharpness gate: avoid wasting OCR cycles while autofocus is settling.
+if(mvSharpness(ctx)<9){liveStatus('Waiting for camera focus / clearer title');return}
 let mvArtCandidates=mvVisualTop(c);
 if(mvArtCandidates.length){let top=mvArtCandidates[0],runner=mvArtCandidates[1];let scoreEl=document.getElementById('mvHybridScore');
 if(scoreEl)scoreEl.textContent='Artwork-first: '+top.name+' '+Math.round(top.score*100)+'% · margin '+Math.round((top.score-(runner?.score||0))*100)+'%';
@@ -348,14 +359,19 @@ if(top.score>=.90 && top.score-(runner?.score||0)>=.07){
  let el=document.getElementById('liveReview');if(el)await mvPrintingReview(match,el,'Artwork '+Math.round(top.score*100)+'%');return;}}
  }else mvVisualCandidate=null;
 }
-let title=document.createElement('canvas');title.width=1280;title.height=240;let mvCropY=Number(localStorage.getItem('mv_crop_y')||9),mvCropH=Number(localStorage.getItem('mv_crop_h')||35),mvCropW=Number(localStorage.getItem('mv_crop_w')||295);
-let tctx=title.getContext('2d',{willReadFrequently:true});tctx.drawImage(c,24,mvCropY*3,Math.min(304,mvCropW)*3,mvCropH*3,0,0,1280,240);
+// Geometry-normalized card: the title occupies the upper band. Exclude the
+// rightmost mana-cost area, including generic mana numerals, before OCR.
+let title=document.createElement('canvas');title.width=1280;title.height=240;
+let tctx=title.getContext('2d',{willReadFrequently:true});
+let titleX=Math.round(c.width*.075),titleY=Math.round(c.height*.035);
+let titleW=Math.round(c.width*.70),titleH=Math.round(c.height*.075);
+tctx.drawImage(c,titleX,titleY,titleW,titleH,0,0,title.width,title.height);
 // Keep original high-resolution pixels; hard min/max stretch amplified noise on dark cards.
 let preview=document.getElementById('mvTitlePreview');if(preview){preview.replaceChildren();let img=document.createElement('img');img.src=title.toDataURL('image/jpeg',.7);img.style.cssText='max-width:100%;border:1px solid #aaa;border-radius:6px';img.alt='Title crop used by OCR';preview.appendChild(img)}
 // Alternate layouts: bottom-name full-art lands, poster/showcase titles and bright-frame cards.
 // Use one additional region only after repeated unsuccessful standard-title reads.
 let regionLabel='standard title';
-if(mvOcrMisses>=3){
+if(mvOcrMisses>=5){
  const regions=[
   {label:'bottom title (full-art land)',x:.07,y:.84,w:.86,h:.105},
   {label:'upper-center showcase title',x:.09,y:.10,w:.82,h:.23},
@@ -381,7 +397,7 @@ vote.score+=best.score;vote.reads++;vote.raw.add(mvHybridNorm(name));vote.last=D
 let sorted=[...mvHybridVotes.entries()].sort((a,b)=>b[1].score-a[1].score);
 let lead=sorted[0];if(lead[0]!==best.name){liveStatus('Comparing candidates: '+lead[0]);return}
 liveStatus('Candidate: '+best.name+' · OCR '+Math.round(best.score*100)+'% · '+vote.reads+' reads');
-if(vote.score<1.48||vote.reads<2)return;
+if(best.score<.76||vote.score<1.48||vote.reads<2)return;
 let match=await mvHybridFetchCard(best.name);
 if(!match)return;
 // Compare central artwork from live card against reference artwork crop. Visual matching is optional
@@ -393,6 +409,7 @@ let highText=best.score>=.91&&vote.reads>=2;
 let highVisual=visual!==null&&visual>=.78;
 // Conservative automatic save. Otherwise user must confirm. Artwork agreement can resolve noisy text.
 if((highText&&highVisual)||(best.score>=.985&&vote.reads>=3&&vote.raw.size>=2)){livePaused=true;let review=document.getElementById('liveReview');if(review)await mvPrintingReview(match,review,'high-confidence card name');return;}
+if(best.score<.90 && !(visual!==null&&visual>=.78))return;
 if(vote.reads<3 && !(visual!==null&&visual>=.70))return;
 livePaused=true;liveStatus('Hybrid match needs confirmation: '+match.name);
 let el=document.getElementById('liveReview');if(el)await mvPrintingReview(match,el,'OCR '+Math.round(best.score*100)+'%, artwork '+(visual===null?'unavailable':Math.round(visual*100)+'%'));
