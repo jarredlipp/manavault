@@ -17,3 +17,7 @@ Build: push the project contents to the repository root, then run **Build ManaVa
 
 ## Test
 Start with Defile, Living Lands, Webstrike Elite and Spirit Summons. Compare the title shown in the OCR crop with the selected candidate; reject false matches and report diagnostic logs.
+
+
+## v4.9
+Unified fixed-stand and automatic framing, OCR mana-cost normalization, camera/OCR watchdog with bounded restart attempts, stale session protection, and torch failure disabling. Performance goal remains 500 ms; not verified on device.
