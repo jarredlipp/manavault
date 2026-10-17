@@ -176,7 +176,7 @@ let liveStream=null,liveWorker=null,liveActive=false,liveLoop=null,liveBusy=fals
 const liveScannerBase=scanner;
 scanner=function(){return liveScannerBase()+`<section class="panel" id="continuousPanel"><h2>Continuous camera scan (v5.5)</h2><p class='muted small'>Unified framing: the fixed stand defines the expected card area, and automatic detection refines its position when a reliable outline is found. Calibration remains available.</p><p class='muted small'>OCR searches the calibrated title first, then title bands within the top 40% of the card outline before trying unusual layouts. Bottom-title lands and showcase frames may still require manual confirmation.</p><p class='muted small'>For exact editions, confirm the set and collector number in the printing review. Scan destination supports your collection and existing Commander decks.</p><p class="muted small">Keep your camera pointed at the scanning area. Place one card at a time; the app automatically checks the title and adds confidently recognized cards without pressing the camera button again. Remove each card before placing the next. Works only in a secure browser context (HTTPS or localhost); local HTML files may block camera access.</p><div class="flex"><button id="liveStart" class="primary">Start continuous camera</button><button id="mvTestLiveSound">Test success sound</button><button id="liveStop">Stop camera</button><button id="mvTorch" type="button" disabled>Flash: unavailable</button><button id="liveResume">Resume after review</button></div><details id="mvAdvancedScanner"><summary>Camera zoom and advanced controls</summary><div id="mvZoomPanel" class="panel" style="margin-top:12px"><label for="mvZoom">Camera zoom: <strong id="mvZoomValue">2.0×</strong></label><input type="range" id="mvZoom" min="1" max="4" step="0.1" value="2" style="width:100%"><p id="mvFocusStatus" class="small muted">Autofocus requested when supported. Zoom will activate when camera starts.</p></div></details><div id="mvLiveFrame" style="display:none;position:relative;width:100%;max-width:430px;height:min(46vh,440px);margin-top:12px;overflow:hidden;border-radius:10px;background:#111"><video id="liveVideo" autoplay muted playsinline style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;object-fit:cover"></video><canvas id="mvVisibleCanvas" style="display:block;width:100%;height:100%;object-fit:fill"></canvas><div style="position:absolute;pointer-events:none;left:17%;top:24%;width:77%;height:72%;border:2px solid #80e7a1;border-radius:10px;box-sizing:border-box"><div id="mvLiveOcrGuide" style="position:absolute;left:5.5%;top:2.0%;width:77%;height:6.4%;border:2px dashed #ffdb7b;box-sizing:border-box"></div></div></div><details id="mvCalibrationDiagnostics" class="panel" style="margin-top:10px;max-width:430px;padding:10px"><summary>OCR diagnostics (manual override)</summary><strong>OCR crop diagnostics</strong><p class="small muted">The title crop below updates during scanning. Keep this panel directly under the camera.</p><div class="panel" style="padding:10px"><strong>OCR title alignment</strong><p class="small muted">Adjust the title strip if the yellow guide does not line up with the printed card name.</p><label>Title vertical position <input id="mvTitleY" type="range" min="0" max="180" value="9" step="1"></label><label>Title band height <input id="mvTitleH" type="range" min="14" max="75" value="28" step="1"></label><label>Title width <input id="mvTitleW" type="range" min="175" max="295" value="245" step="5"></label><button id="mvResetCrop">Reset OCR alignment</button><button id="mvTestCrop" type="button">Test this exact OCR crop</button><p class="small muted" id="mvCropInfo"></p></div><p id="mvOcrPreview" class="small muted">Last OCR: none</p><p class="small muted">The large preview below shows the exact standard-title crop. Alternate-layout OCR may examine another region.</p><div id="mvTitlePreview" style="max-width:100%;overflow:hidden;min-height:110px;background:#101722;border:1px solid #52627a;border-radius:10px;padding:6px"></div><div class="flex"><button id="mvSaveDebugFrame" type="button">Save diagnostic frame + OCR crop</button></div><p class="small muted" id="mvFrameDiagnostic">Diagnostic images are saved only when requested.</p></details><p class="small muted">Automatic outline follows detected card boundaries when confidence is sufficient. Keep the entire card in view. OCR alignment sliders are diagnostic overrides only.</p><p id="mvHybridScore" class="small muted">Last successful identification: none</p><p id="mvLatestOcr" class="small muted">Latest OCR attempt: none</p><p id="mvScanTiming" class="small muted">Successful reads: 0 · average: —</p><details><summary>Database and artwork index status</summary><div class="panel"><strong>Offline Magic card database</strong><p class="small muted" id="mvDbStatus">Checking local database…</p><button id="mvDbSync">Check / refresh Scryfall database now</button><p class="small muted">Automatically downloads Scryfall Default Cards (100,000+ printing records) on first launch and checks for updates every 24 hours. Stores each printing by unique Scryfall ID; preserves the previous complete catalog if a download fails. The artwork index is separate.</p></div><div class="flex"><label class="small">Load visual index <input id="mvIndexFile" type="file" accept="application/json,.json" /></label><button id="mvIndexClear">Clear visual index</button></div><p id="mvIndexStatus" class="small muted">Bundled visual index loads automatically when Scan cards opens; optional JSON import remains available.</p></details><p id="liveStatus" class="small muted" aria-live="polite">Camera off. Saved this session: 0.</p><p class="small muted" id="liveDiagnostics">Camera diagnostics: checking environment…</p><div id="liveReview" class="small"></div><p class="small muted">Fast scanning uses exact local-name matches immediately and confirms the printing before saving. Fuzzy OCR needs two agreeing reads. Artwork-only matches never override OCR. Confirm the destination deck and the “also add to collection” option above before starting. This mode identifies card names, not exact printings. The card must visibly leave the camera frame between scans to prevent duplicate counts.</p></section>`};
 function liveStatus(msg){let el=document.getElementById('liveStatus');if(el)el.textContent=msg+' · Saved this session: '+liveScanned}
-function liveStop(){mvSessionGeneration++;clearInterval(mvHealthTimer);mvHealthTimer=null;liveBusy=false;mvBusySince=0;mvTorchEnabled=false;mvTorchUpdateUI(false);liveActive=false;livePaused=false;if(liveLoop)clearTimeout(liveLoop);liveLoop=null;if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null}if(liveWorker){let w=liveWorker;liveWorker=null;w.terminate().catch(()=>{})}let v=document.getElementById('liveVideo');if(v){v.pause();v.srcObject=null;v.style.display='block';let frame=document.getElementById('mvLiveFrame');if(frame)frame.style.display='none'}liveStatus('Camera stopped')}
+function liveStop(){clearInterval(mvEdgeTimer);mvEdgeTimer=null;mvLiveQuad=null;mvSessionGeneration++;clearInterval(mvHealthTimer);mvHealthTimer=null;liveBusy=false;mvBusySince=0;mvTorchEnabled=false;mvTorchUpdateUI(false);liveActive=false;livePaused=false;if(liveLoop)clearTimeout(liveLoop);liveLoop=null;if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null}if(liveWorker){let w=liveWorker;liveWorker=null;w.terminate().catch(()=>{})}let v=document.getElementById('liveVideo');if(v){v.pause();v.srcObject=null;v.style.display='block';let frame=document.getElementById('mvLiveFrame');if(frame)frame.style.display='none'}liveStatus('Camera stopped')}
 function liveSignature(ctx,w,h){let a=ctx.getImageData(0,0,w,h).data,parts=[];for(let y=0;y<h;y+=10)for(let x=0;x<w;x+=10){let i=(y*w+x)*4;parts.push(Math.floor((a[i]+a[i+1]+a[i+2])/3/24))}return parts}
 function liveDiff(a,b){if(!a||!b||a.length!==b.length)return 999;let n=0;for(let i=0;i<a.length;i++)if(Math.abs(a[i]-b[i])>=2)n++;return n/a.length}
 let livePreviousFrame=null,liveEmptyCount=0,mvSavedFrame=null,mvSavedMessageOnce=false;
@@ -217,10 +217,10 @@ async function mvApplyZoom(value){
 // v2.1 hybrid: local indexed names (one Scryfall catalog download), fuzzy OCR, selective artwork comparison.
 function mvHybridNorm(x){return String(x||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}
 function mvHybridEdit(a,b){let prev=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let cur=[i];for(let j=1;j<=b.length;j++)cur[j]=Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur}return prev[b.length]}
-let mvHybridBuckets=new Map(),mvHybridExact=new Map();
+let mvHybridBuckets=new Map(),mvHybridExact=new Map(),mvUnknownNameTried=new Set();
 let mvSceneStartedAt=0,mvSuccessfulReadTimes=[];
-function mvHybridIndex(names){mvNames=names;mvHybridBuckets.clear();mvHybridExact.clear();for(let name of names){let n=mvHybridNorm(name);if(!n)continue;mvHybridExact.set(n,name);let key=n.slice(0,2);if(!mvHybridBuckets.has(key))mvHybridBuckets.set(key,[]);mvHybridBuckets.get(key).push({name,n})}mvNamesReady=true;mvLogCamera('Hybrid name index loaded: '+names.length+' cards')}
-async function mvHybridLoadNames(){if(mvNamesReady)return;try{let saved=localStorage.getItem('mv_hybrid_names_v1');if(saved){let parsed=JSON.parse(saved);if(Array.isArray(parsed)&&parsed.length>1000){mvHybridIndex(parsed);return}}}catch{}try{let res=await fetch('https://api.scryfall.com/catalog/card-names');if(!res.ok)throw Error('HTTP '+res.status);let obj=await res.json();if(Array.isArray(obj.data)){mvHybridIndex(obj.data);try{localStorage.setItem('mv_hybrid_names_v1',JSON.stringify(obj.data))}catch{}}}catch(e){mvLogCamera('Name catalog unavailable; online fuzzy fallback: '+e.message,'info')}}
+function mvHybridIndex(names){mvNames=names;mvHybridBuckets.clear();mvHybridExact.clear();for(let name of names){let n=mvHybridNorm(name);if(!n)continue;for(const alias of [name,...String(name).split(' // ')]){let n=mvHybridNorm(alias);if(!n)continue;mvHybridExact.set(n,name);let key=n.slice(0,2);if(!mvHybridBuckets.has(key))mvHybridBuckets.set(key,[]);mvHybridBuckets.get(key).push({name,n})}}mvNamesReady=true;mvLogCamera('Hybrid name index loaded: '+names.length+' cards')}
+async function mvHybridLoadNames(){if(mvNamesReady)return;try{let saved=localStorage.getItem('mv_hybrid_names_v1');if(saved){let parsed=JSON.parse(saved);if(Array.isArray(parsed)&&parsed.length>1000){mvHybridIndex(parsed);if(Date.now()-Number(localStorage.getItem('mv_names_updated')||0)<7*86400000)return}}}catch{}try{let res=await fetch('https://api.scryfall.com/catalog/card-names');if(!res.ok)throw Error('HTTP '+res.status);let obj=await res.json();if(Array.isArray(obj.data)){mvHybridIndex(obj.data);try{localStorage.setItem('mv_hybrid_names_v1',JSON.stringify(obj.data));localStorage.setItem('mv_names_updated',String(Date.now()))}catch{}}}catch(e){mvLogCamera('Name catalog unavailable; online fuzzy fallback: '+e.message,'info')}}
 // v4.7: OCR evidence is not the same as confidence in a catalog candidate.
 // Reject one-character and generic-text candidates, and compare title-shaped
 // substrings so an extra mana symbol does not defeat a valid reading.
@@ -263,7 +263,7 @@ function mvHybridCandidates(raw){
  return ranked.filter(c=>!ranked.some(other=>other!==c&&other.name.length>c.name.length&&mvHybridNorm(other.name).endsWith(' '+mvHybridNorm(c.name))&&mvHybridNorm(n)!==mvHybridNorm(c.name)&&other.score>=c.score-.08)).slice(0,3);
 }
 
-async function mvHybridFetchCard(name){if(mvHybridLookupCache.has(name))return mvHybridLookupCache.get(name);try{let local=await ManaVaultCardDB.get(name);if(local){let card={...local,image_uris:local.image_url?{art_crop:local.image_url}:undefined};mvHybridLookupCache.set(name,card);return card}}catch{}let now=Date.now();if(now-mvHybridLastLookup<120)await new Promise(r=>setTimeout(r,120-(now-mvHybridLastLookup)));mvHybridLastLookup=Date.now();try{let card=await scry('/cards/named?'+(mvNamesReady?'exact=':'fuzzy=')+encodeURIComponent(name));mvHybridLookupCache.set(name,card);return card}catch(e){mvLogCamera('Card lookup: '+e.message,'info');return null}}
+async function mvHybridFetchCard(name){if(mvHybridLookupCache.has(name))return mvHybridLookupCache.get(name);try{let local=await ManaVaultCardDB.get(name);if(local){let card={...local,image_uris:local.image_url?{art_crop:local.image_url}:undefined};mvHybridLookupCache.set(name,card);return card}}catch{}let now=Date.now();if(now-mvHybridLastLookup<120)await new Promise(r=>setTimeout(r,120-(now-mvHybridLastLookup)));mvHybridLastLookup=Date.now();try{let card=await scry('/cards/named?fuzzy='+encodeURIComponent(name));mvHybridLookupCache.set(name,card);return card}catch(e){mvLogCamera('Card lookup: '+e.message,'info');return null}}
 function mvHybridFeatures(canvas){let t=document.createElement('canvas');t.width=12;t.height=12;let x=t.getContext('2d',{willReadFrequently:true});x.drawImage(canvas,0,0,12,12);let d=x.getImageData(0,0,12,12).data;let out=[];for(let i=0;i<d.length;i+=4){out.push(d[i]/255,d[i+1]/255,d[i+2]/255)}return out}
 function mvHybridSimilarity(a,b){if(!a||!b||a.length!==b.length)return null;let err=0;for(let i=0;i<a.length;i++)err+=Math.abs(a[i]-b[i]);return Math.max(0,1-err/a.length)}
 async function mvHybridArtworkScore(frame,card){let url=card.image_uris?.art_crop||card.card_faces?.[0]?.image_uris?.art_crop;if(!url)return null;let ref=mvHybridArtCache.get(url);if(ref===undefined){try{let img=new Image();img.crossOrigin='anonymous';img.referrerPolicy='no-referrer';img.src=url;await Promise.race([img.decode(),new Promise((_,rej)=>setTimeout(()=>rej(Error('image timeout')),2500))]);let t=document.createElement('canvas');t.width=120;t.height=120;t.getContext('2d').drawImage(img,0,0,120,120);ref=mvHybridFeatures(t)}catch(e){ref=null;mvLogCamera('Artwork unavailable: '+e.message,'info')}mvHybridArtCache.set(url,ref)}if(!ref)return null;
@@ -403,6 +403,69 @@ function mvSilhouetteFrame(frame){
  }
  return best;
 }
+
+let mvEdgeTimer=null,mvLiveQuad=null,mvEdgeHits=0;
+function mvEdgeOverlayTick(){
+ if(!liveStream)return;
+ const video=document.getElementById('liveVideo'),host=document.getElementById('mvLiveFrame');
+ if(!video||!host||video.readyState<2)return;
+ const frame=mvDisplayedVideoFrame(video),found=mvOuterCardFrame(frame);
+ if(found?.corners){mvEdgeHits++;if(mvEdgeHits>=2)mvLiveQuad=found.corners}
+ else{mvEdgeHits=0;mvLiveQuad=null}
+ let svg=host.querySelector('#mvQuadOverlay');
+ if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='mvQuadOverlay';svg.setAttribute('viewBox','0 0 1000 1000');svg.setAttribute('preserveAspectRatio','none');svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5';host.appendChild(svg)}
+ svg.replaceChildren();const old=host.querySelector('div[style*="pointer-events:none"]');if(old)old.style.display='none';
+ if(!mvLiveQuad)return;
+ const ns='http://www.w3.org/2000/svg';
+ const add=(pts,color,dash)=>{const el=document.createElementNS(ns,'polygon');el.setAttribute('points',pts.map(p=>p.x/frame.width*1000+','+p.y/frame.height*1000).join(' '));el.setAttribute('fill','none');el.setAttribute('stroke',color);el.setAttribute('stroke-width','5');if(dash)el.setAttribute('stroke-dasharray','10 7');svg.appendChild(el)};
+ add(mvLiveQuad,'#74e6b0',false);
+ const a=mvLiveQuad[0],b=mvLiveQuad[3],d=mvLiveQuad[1],pt=(u,v)=>({x:a.x+(b.x-a.x)*u+(d.x-a.x)*v,y:a.y+(b.y-a.y)*u+(d.y-a.y)*v});
+ add([pt(.055,.038),pt(.815,.038),pt(.815,.086),pt(.055,.086)],'#ffdb7b',true);
+}
+function mvStartEdgeOverlay(){clearInterval(mvEdgeTimer);mvEdgeTimer=setInterval(()=>{try{mvEdgeOverlayTick()}catch(e){mvLogCamera('Edge overlay: '+e.message,'info')}},140)}
+
+// v5.6: find the outer DARK CARD silhouette, not the artwork or the enclosure.
+// Scan thresholded rows/columns and score the boundary against surrounding pixels.
+// Track all four outer edges on a downsampled image; never infer corners from art texture.
+function mvOuterCardFrame(frame){
+ const W=224,H=Math.round(W*frame.height/frame.width),cv=document.createElement('canvas');cv.width=W;cv.height=H;
+ const g=cv.getContext('2d',{willReadFrequently:true});g.drawImage(frame,0,0,W,H);
+ const rgba=g.getImageData(0,0,W,H).data,l=new Uint8Array(W*H);
+ for(let i=0;i<l.length;i++)l[i]=Math.round(.2126*rgba[i*4]+.7152*rgba[i*4+1]+.0722*rgba[i*4+2]);
+ let best=null;
+ const lum=(x,y)=>l[Math.max(0,Math.min(H-1,y))*W+Math.max(0,Math.min(W-1,x))];
+ for(const t of [48,65,82,102,124]){
+  // A card against a light enclosure has dark exterior and a lighter strip outside.
+  for(let y=Math.round(H*.12);y<H*.65;y+=4){
+   let runs=[],start=-1;
+   for(let x=4;x<W-4;x++){
+    let dark=0;for(let k=-2;k<=2;k++)if(lum(x,y+k)<t)dark++;
+    if(dark>=4&&start<0)start=x;
+    if((dark<4||x===W-5)&&start>=0){if(x-start>=W*.24)runs.push([start,x-1]);start=-1}
+   }
+   for(const [x0,x1] of runs){const width=x1-x0;if(width>W*.78)continue;
+    // Follow the left and right edges downward, with small perspective drift.
+    const rows=[];for(let yy=Math.max(4,y-12);yy<Math.min(H-4,y+Math.round(width*1.75));yy+=4){
+     let left=-1,right=-1;
+     for(let xx=Math.max(3,x0-14);xx<Math.min(W-3,x0+15);xx++)if(lum(xx,yy)<t&&lum(xx-3,yy)-lum(xx+3,yy)>17){left=xx;break}
+     for(let xx=Math.min(W-4,x1+14);xx>Math.max(3,x1-15);xx--)if(lum(xx,yy)<t&&lum(xx+3,yy)-lum(xx-3,yy)>17){right=xx;break}
+     if(left>=0&&right>left+width*.72)rows.push({y:yy,left,right});
+    }
+    if(rows.length<Math.max(12,width*.18))continue;
+    const top=rows[0].y,bottom=rows[rows.length-1].y,height=bottom-top,ratio=height/width;
+    if(ratio<1.29||ratio>1.55||height< H*.22||bottom>H-5)continue;
+    const take=(a)=>rows[Math.min(rows.length-1,Math.max(0,Math.floor(a*(rows.length-1))))];
+    const a=take(.06),b=take(.94),xl=a.left,xr=a.right,bl=b.left,br=b.right;
+    let score=rows.length*3-Math.abs(ratio-1.397)*170;
+    // Prefer the smallest genuine card rectangle over the larger enclosure.
+    score-=width*.10;
+    if(!best||score>best.score)best={score,corners:[{x:xl/W*frame.width,y:top/H*frame.height},{x:bl/W*frame.width,y:bottom/H*frame.height},{x:br/W*frame.width,y:bottom/H*frame.height},{x:xr/W*frame.width,y:top/H*frame.height}],confidence:Math.min(1,rows.length/(height/4))};
+   }
+  }
+ }
+ return best&&best.confidence>.57?best:null;
+}
+
 function mvTitleEnhance(source){
  const g=source.getContext('2d',{willReadFrequently:true}),im=g.getImageData(0,0,source.width,source.height),d=im.data;
  let sum=0;for(let i=0;i<d.length;i+=16)sum+=(d[i]+d[i+1]+d[i+2])/3;
@@ -500,9 +563,8 @@ function mvCropRect(c){
  const y=Math.max(0,Number(localStorage.getItem('mv_crop_y')??9));
  const h=Math.max(14,Number(localStorage.getItem('mv_crop_h')??28));
  const w=Math.max(175,Number(localStorage.getItem('mv_crop_w')??245));
- return {x:Math.round(c.width*.055),y:Math.round(c.height*y/440),
-  w:Math.min(c.width*.945,Math.round(c.width*w/320)),
-  h:Math.min(c.height-Math.round(c.height*y/440),Math.round(c.height*h/440))};
+ return {x:Math.round(c.width*.055),y:Math.round(c.height*.038),
+  w:Math.round(c.width*.76),h:Math.round(c.height*.048)};
 }
 function mvRefreshCalibrationPreview(){
  const c=mvCalibrationFrame,preview=document.getElementById('mvTitlePreview');
@@ -520,7 +582,7 @@ let vw=v.videoWidth,vh=v.videoHeight;if(!vw||!vh)return;
 const displayed=mvDisplayedVideoFrame(v);
 const stand={x:displayed.width*MV_CARD_BOX.x,y:displayed.height*MV_CARD_BOX.y,
  w:displayed.width*MV_CARD_BOX.w,h:displayed.height*MV_CARD_BOX.h};
-const found=mvSilhouetteFrame(displayed)||mvAutoFrame(displayed,displayed.width,displayed.height);
+const found=mvLiveQuad?{corners:mvLiveQuad,score:100}:mvOuterCardFrame(displayed);
 // Stable four-corner detection is preferred. Weak detections use the previous fixed-stand crop.
 let selected=stand,quad=null;
 if(found&&found.corners){mvFramingHits++;if(mvFramingHits>=2){quad=found.corners;mvFramingRect=found}}
@@ -530,27 +592,8 @@ const ctx=c.getContext('2d',{willReadFrequently:true});
 if(!quad||!mvWarpCard(displayed,quad,c)){
  quad=null;ctx.drawImage(displayed,selected.x,selected.y,selected.w,selected.h,0,0,c.width,c.height);
 }
-// Draw the detected quadrilateral in display coordinates, not its bounding box.
-const frameEl=document.getElementById('mvLiveFrame');
-let polyLayer=frameEl?.querySelector('#mvQuadOverlay');
-if(frameEl&&!polyLayer){polyLayer=document.createElementNS('http://www.w3.org/2000/svg','svg');polyLayer.id='mvQuadOverlay';polyLayer.setAttribute('viewBox','0 0 1000 1000');polyLayer.setAttribute('preserveAspectRatio','none');polyLayer.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5';frameEl.appendChild(polyLayer)}
-if(polyLayer){polyLayer.replaceChildren();if(quad){
- const ns='http://www.w3.org/2000/svg';const polygon=document.createElementNS(ns,'polygon');
- polygon.setAttribute('points',quad.map(p=>(p.x/displayed.width*1000)+','+(p.y/displayed.height*1000)).join(' '));
- polygon.setAttribute('fill','none');polygon.setAttribute('stroke','#74e6b0');polygon.setAttribute('stroke-width','5');polyLayer.appendChild(polygon);
- // The title guide follows the actual top edge and excludes the right-hand mana cost.
- const a=quad[0],b=quad[3],d=quad[1];const pt=(u,v)=>({x:a.x+(b.x-a.x)*u+(d.x-a.x)*v,y:a.y+(b.y-a.y)*u+(d.y-a.y)*v});
- const corners=[pt(.055,.020),pt(.82,.020),pt(.82,.084),pt(.055,.084)];const guidePoly=document.createElementNS(ns,'polygon');
- guidePoly.setAttribute('points',corners.map(p=>(p.x/displayed.width*1000)+','+(p.y/displayed.height*1000)).join(' '));guidePoly.setAttribute('fill','none');guidePoly.setAttribute('stroke','#ffdb7b');guidePoly.setAttribute('stroke-dasharray','11 6');guidePoly.setAttribute('stroke-width','4');polyLayer.appendChild(guidePoly);
-}}
-const outline=document.getElementById('mvLiveFrame')?.querySelector('div[style*="pointer-events:none"]');
-if(outline){
- if(quad){outline.style.display='none';const xs=quad.map(p=>p.x),ys=quad.map(p=>p.y);const minX=Math.min(...xs),minY=Math.min(...ys),maxX=Math.max(...xs),maxY=Math.max(...ys);
- outline.style.left=(minX/displayed.width*100)+'%';outline.style.top=(minY/displayed.height*100)+'%';
- outline.style.width=((maxX-minX)/displayed.width*100)+'%';outline.style.height=((maxY-minY)/displayed.height*100)+'%';
- outline.style.borderColor='#74e6b0';outline.style.transform='none';outline.style.clipPath='none';
- }else{outline.style.display='block';outline.style.left=(selected.x/displayed.width*100)+'%';outline.style.top=(selected.y/displayed.height*100)+'%';outline.style.width=(selected.w/displayed.width*100)+'%';outline.style.height=(selected.h/displayed.height*100)+'%';}}
-mvCalibrationFrame=c;mvRefreshCalibrationPreview();let sig=liveSignature(ctx,960,1320);let delta=liveDiff(sig,livePreviousFrame);livePreviousFrame=sig;
+// Live four-edge overlay runs independently of OCR at ~7 frames per second.
+mvCalibrationFrame=c;mvRefreshCalibrationPreview();if(!quad){liveStatus('Finding card edges — move card fully into view');return;}let sig=liveSignature(ctx,960,1320);let delta=liveDiff(sig,livePreviousFrame);livePreviousFrame=sig;
 if(liveSavedSignature){let changed=liveDiff(sig,mvSavedFrame);if(changed>0.32)liveEmptyCount++;else liveEmptyCount=0;if(liveEmptyCount>=3){liveSavedSignature='';livePending='';livePendingCount=0;mvHybridVotes.clear();liveEmptyCount=0;mvSavedFrame=null;mvResetRecognitionScene();liveStatus('New scene detected — checking card')}else{return}}
 // Avoid running OCR and image matching on moving/blurry frames.
 if(delta>0.48){mvMotionMisses++;if(mvMotionMisses<=4){if(mvMotionMisses===1)liveStatus('Checking image stability');return}}else mvMotionMisses=0
@@ -565,7 +608,7 @@ let tctx=title.getContext('2d',{willReadFrequently:true});let mvR=mvCropRect(c);
 // Use one additional region only after repeated unsuccessful standard-title reads.
 let regionLabel='standard title';
 if(mvOcrMisses>=7 && mvOcrRegionStep%2===1)mvOcrRegionStep++;
-if(mvOcrMisses>=7 && (mvOcrRegionStep%2===0)){
+if(mvOcrMisses>=7 && mvOcrMisses%4===0 && (mvOcrRegionStep%2===0)){
  const regions=[
   {label:'top title wide',x:.06,y:.025,w:.83,h:.075},
   {label:'upper 40% secondary title',x:.07,y:.075,w:.86,h:.085},
@@ -584,6 +627,7 @@ let parsed=mvBestNameLine(result.data.text||'');let name=parsed.name;
 let ocrEl=document.getElementById('mvOcrPreview');if(ocrEl)ocrEl.textContent='Last OCR ('+regionLabel+'): '+(name||'(no readable title)');let latest=document.getElementById('mvLatestOcr');if(latest)latest.textContent='Latest OCR attempt: '+(name||'(unreadable)')+' · '+regionLabel+' · '+mvOcrDuration+' ms';
 if(!name){mvOcrMisses++;liveStatus(mvFastCandidate?'Verifying '+mvFastCandidate.name+' — keeping previous OCR match':'Waiting for readable card title');return}
 let candidates=parsed.candidates;
+if(!candidates.length&&name.length>=5&&/^[a-z][a-z' -]{4,}$/i.test(name)&&!/(.)\1{4}/i.test(name)){const key=mvHybridNorm(name);if(!mvUnknownNameTried.has(key)){mvUnknownNameTried.add(key);try{const remote=await scry('/cards/named?fuzzy='+encodeURIComponent(name));if(remote?.name){const full=remote.name;for(const alias of [full,...full.split(' // ')]){const norm=mvHybridNorm(alias);mvHybridExact.set(norm,full);const bucket=norm.slice(0,2);if(!mvHybridBuckets.has(bucket))mvHybridBuckets.set(bucket,[]);mvHybridBuckets.get(bucket).push({name:full,n:norm})}candidates=mvHybridCandidates(name);mvLogCamera('Catalog fallback matched '+name+' to '+full)}}catch(e){mvLogCamera('Catalog fallback: '+e.message,'info')}}}
 if(!candidates.length){mvOcrMisses++;liveStatus(mvFastCandidate?'Verifying '+mvFastCandidate.name+' — OCR recheck inconclusive':'OCR ('+regionLabel+'): '+name+' — no likely name');return}mvOcrMisses=0;
 let best=candidates[0];
 if(best.score<1)mvLogCamera('Fuzzy candidate '+best.name+' score='+Math.round(best.score*100)+'% OCR='+name+' region='+regionLabel+' OCR time='+mvOcrDuration+'ms');
@@ -596,7 +640,7 @@ if(!mvFastCandidate||mvFastCandidate.name!==best.name||mvFastCandidate.epoch!==m
 }
 mvFastCandidate.reads++;mvFastCandidate.score=Math.max(mvFastCandidate.score,best.score);
 liveStatus('Candidate: '+best.name+' · OCR '+Math.round(best.score*100)+'% · '+mvFastCandidate.reads+' reads');
-const cleanOcr=mvHybridNorm(name).replace(/(?:\s+(?:[0-9]+[a-z]?|[wubrgc]))+$/g,'').trim();const exact=best.score===1&&cleanOcr===mvHybridNorm(best.name);
+const cleanOcr=mvHybridNorm(name).replace(/(?:\s+(?:[0-9]+[a-z]?|[wubrgc]))+$/g,'').trim();const exact=best.score===1&&(cleanOcr===mvHybridNorm(best.name)||String(best.name).split(' // ').some(n=>cleanOcr===mvHybridNorm(n)));
 // An embedded title still needs two agreeing frames; no fuzzy one-shot accepts.
 const ready=exact||(best.score>=.94&&mvFastCandidate.reads>=2);
 if(!ready)return;
@@ -606,7 +650,7 @@ const epoch=mvSceneEpoch,requestedName=best.name;
 let match=await mvHybridFetchCard(requestedName);
 if(!liveActive||livePaused||epoch!==mvSceneEpoch||!match)return;
 // Guard against an unrelated/stale printing being returned by lookup.
-if(mvHybridNorm(match.name)!==mvHybridNorm(requestedName)){liveStatus('Lookup disagreed with OCR; rescan');return;}
+if(![match.name,...String(match.name).split(' // ')].some(n=>mvHybridNorm(n)===mvHybridNorm(requestedName)) && !mvHybridNorm(match.name).includes(mvHybridNorm(requestedName))){liveStatus('Lookup disagreed with OCR; rescan');return;}
 // An exact name is not necessarily an exact printing. Always confirm the
 // edition, and do not automatically save a printing based only on OCR.
 livePaused=true;mvLastRecognizedAt=performance.now();
@@ -617,7 +661,7 @@ liveStatus('Recognized: '+match.name+' — confirm printing');
 let el=document.getElementById('liveReview');if(el)await mvPrintingReview(match,el,'title similarity '+Math.round(best.score*100)+'%');
 
 }catch(e){livePaused=true;liveStatus('Scanner paused: '+e.message)}finally{if(tickGeneration===mvSessionGeneration){liveBusy=false;mvBusySince=0;if(liveActive&&!livePaused)liveLoop=setTimeout(liveTick,90)}}}
-async function liveStart(){if(liveActive)return;mvSessionGeneration++;const startGeneration=mvSessionGeneration;liveBusy=false;mvFramingRect=null;mvFramingHits=0;let diag=document.getElementById('liveDiagnostics');if(diag)diag.textContent='Secure: '+window.isSecureContext+' · getUserMedia: '+!!navigator.mediaDevices?.getUserMedia+' · Origin: '+location.origin;if(!navigator.mediaDevices?.getUserMedia){liveStatus('Live camera unavailable here. Open ManaVault from HTTPS or localhost, not a local file.');return}try{try{let AC=window.AudioContext||window.webkitAudioContext;if(AC){scanAudioContext ||= new AC();scanAudioContext.resume().catch(()=>{})}}catch{}liveStatus('Requesting camera permission');liveStream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}});let v=document.getElementById('liveVideo');if(startGeneration!==mvSessionGeneration||!v||!v.isConnected){liveStream?.getTracks().forEach(t=>t.stop());liveStream=null;return}if(diag)diag.textContent+=' · Camera stream obtained';v.srcObject=liveStream;v.style.display='block';let frame=document.getElementById('mvLiveFrame');if(frame)frame.style.display='block';await v.play();if(startGeneration!==mvSessionGeneration||!v.isConnected){liveStream?.getTracks().forEach(t=>t.stop());return}await mvConfigureCamera();mvTorchUpdateUI(true);if(diag)diag.textContent+=' · Video playing';liveStatus('Loading OCR');if(!window.Tesseract)await new Promise((res,rej)=>{let s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=res;s.onerror=()=>rej(Error('OCR library unavailable'));document.head.appendChild(s)});liveWorker=await Tesseract.createWorker('eng');if(startGeneration!==mvSessionGeneration){liveWorker?.terminate().catch(()=>{});liveWorker=null;return}if(diag)diag.textContent+=' · OCR ready';liveActive=true;livePaused=false;livePreviousFrame=null;mvOcrMisses=0;mvOcrRegionStep=0;liveSavedSignature='';livePending='';livePendingCount=0;mvResetRecognitionScene();liveStatus('Ready — show one card');mvHybridLoadNames();if(!mvVisualIndex.length)mvLoadBundledVisualIndex();liveLoop=setTimeout(liveTick,90);mvHealthStart()}catch(e){liveStop();liveStatus('Unable to start: '+(e?.name||'Error')+' — '+(e?.message||String(e)));console.error('ManaVault camera start failed',e)}}
+async function liveStart(){if(liveActive)return;mvSessionGeneration++;const startGeneration=mvSessionGeneration;liveBusy=false;mvFramingRect=null;mvFramingHits=0;let diag=document.getElementById('liveDiagnostics');if(diag)diag.textContent='Secure: '+window.isSecureContext+' · getUserMedia: '+!!navigator.mediaDevices?.getUserMedia+' · Origin: '+location.origin;if(!navigator.mediaDevices?.getUserMedia){liveStatus('Live camera unavailable here. Open ManaVault from HTTPS or localhost, not a local file.');return}try{try{let AC=window.AudioContext||window.webkitAudioContext;if(AC){scanAudioContext ||= new AC();scanAudioContext.resume().catch(()=>{})}}catch{}liveStatus('Requesting camera permission');liveStream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}});let v=document.getElementById('liveVideo');if(startGeneration!==mvSessionGeneration||!v||!v.isConnected){liveStream?.getTracks().forEach(t=>t.stop());liveStream=null;return}if(diag)diag.textContent+=' · Camera stream obtained';v.srcObject=liveStream;v.style.display='block';let frame=document.getElementById('mvLiveFrame');if(frame)frame.style.display='block';await v.play();mvStartEdgeOverlay();if(startGeneration!==mvSessionGeneration||!v.isConnected){liveStream?.getTracks().forEach(t=>t.stop());return}await mvConfigureCamera();mvTorchUpdateUI(true);if(diag)diag.textContent+=' · Video playing';liveStatus('Loading OCR');if(!window.Tesseract)await new Promise((res,rej)=>{let s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=res;s.onerror=()=>rej(Error('OCR library unavailable'));document.head.appendChild(s)});liveWorker=await Tesseract.createWorker('eng');if(startGeneration!==mvSessionGeneration){liveWorker?.terminate().catch(()=>{});liveWorker=null;return}if(diag)diag.textContent+=' · OCR ready';liveActive=true;livePaused=false;livePreviousFrame=null;mvOcrMisses=0;mvOcrRegionStep=0;liveSavedSignature='';livePending='';livePendingCount=0;mvResetRecognitionScene();liveStatus('Ready — show one card');mvHybridLoadNames();if(!mvVisualIndex.length)mvLoadBundledVisualIndex();liveLoop=setTimeout(liveTick,90);mvHealthStart()}catch(e){liveStop();liveStatus('Unable to start: '+(e?.name||'Error')+' — '+(e?.message||String(e)));console.error('ManaVault camera start failed',e)}}
 const liveBindBase=bind;
 bind=function(){liveBindBase();if(tab==='Scan cards'){for(let [id,key,def] of [['mvTitleY','mv_crop_y',9],['mvTitleH','mv_crop_h',28],['mvTitleW','mv_crop_w',295]]){let e=document.getElementById(id);if(e){e.value=localStorage.getItem(key)||def;e.addEventListener('input',()=>{localStorage.setItem(key,e.value);mvRefreshCalibrationPreview();let out=document.getElementById('mvCropInfo');if(out)out.textContent='Title region: y='+document.getElementById('mvTitleY').value+', height='+document.getElementById('mvTitleH').value+', width='+document.getElementById('mvTitleW').value})}}document.getElementById('mvResetCrop')?.addEventListener('click',()=>{for(let [id,key,def] of [['mvTitleY','mv_crop_y',9],['mvTitleH','mv_crop_h',28],['mvTitleW','mv_crop_w',295]]){localStorage.setItem(key,def);document.getElementById(id).value=def}mvRefreshCalibrationPreview()});document.getElementById('mvDbSync')?.addEventListener('click',()=>ManaVaultCardDB.sync(true));document.getElementById('mvDbStatus').textContent=ManaVaultCardDB.status();if(!mvVisualIndex.length)mvLoadBundledVisualIndex();document.getElementById('liveStart')?.addEventListener('click',liveStart);document.getElementById('mvTestLiveSound')?.addEventListener('click',()=>scanTone(true));document.getElementById('mvIndexFile')?.addEventListener('change',e=>mvVisualImport(e.target.files?.[0]));document.getElementById('mvIndexClear')?.addEventListener('click',()=>{mvVisualIndex=[];localStorage.removeItem('mv_visual_index_v23');mvVisualSaveStatus('Visual index cleared')});document.getElementById('mvZoom')?.addEventListener('input',e=>mvApplyZoom(e.target.value));document.getElementById('liveStop')?.addEventListener('click',liveStop);document.getElementById('mvTorch')?.addEventListener('click',mvToggleTorch);document.getElementById('mvSaveDebugFrame')?.addEventListener('click',mvExportDebugFrames);document.getElementById('liveResume')?.addEventListener('click',()=>{livePaused=false;liveSavedSignature='';livePending='';livePendingCount=0;mvResetRecognitionScene();livePreviousFrame=null;let el=document.getElementById('liveReview');if(el)el.textContent='';if(liveActive){liveStatus('Resumed');liveLoop=setTimeout(liveTick,500)}})}};
 const liveRenderBase=render;

@@ -19,3 +19,7 @@ Scryfall printing-specific price estimates are used when available; Card Kingdom
 ## Limitations
 
 No phone-camera or APK installation test has been performed for this source package. Automatic corner detection can fail with glare, sleeves, or dark backgrounds. Millisecond card recognition is not guaranteed with WebView and Tesseract OCR.
+
+
+## v5.6 scanner
+Uses a live four-edge card silhouette overlay, rectifies the detected card before OCR, and indexes both sides of multi-face card names. When an OCR title is missing from the catalog, a guarded Scryfall lookup can add it to the current session. Pricing and collection data remain unchanged. Card-edge detection is experimental and requires live-device validation.
