@@ -7,11 +7,18 @@ android {
         applicationId 'com.manavault.app'
         minSdk 26
         targetSdk 35
-        versionCode 20
-        versionName '2.1-hybrid'
+        versionCode 59
+        versionName '5.9.0-hybrid-native-beta'
     }
 }
 
 dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.activity:activity:1.9.3'
+    implementation 'androidx.camera:camera-core:1.4.2'
+    implementation 'androidx.camera:camera-camera2:1.4.2'
+    implementation 'androidx.camera:camera-lifecycle:1.4.2'
+    implementation 'androidx.camera:camera-view:1.4.2'
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
+    implementation 'org.opencv:opencv:4.10.0'
 }

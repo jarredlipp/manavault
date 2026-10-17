@@ -17,14 +17,25 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import java.io.File;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import androidx.webkit.WebViewAssetLoader;
 
 public class MainActivity extends Activity {
     private static final int CAMERA_REQUEST = 40;
     private static final int FILE_REQUEST = 41;
+    private static final int NATIVE_SCANNER_REQUEST = 42;
     private WebView webView;
     private PermissionRequest pendingCameraRequest;
     private ValueCallback<Uri[]> fileCallback;
+    private final ExecutorService artworkExecutor = Executors.newSingleThreadExecutor();
+    private File lastNativeCard;
+    private final java.util.ArrayList<File> lastNativeBatchPhotos = new java.util.ArrayList<>();
+    private final ExecutorService indexExecutor = Executors.newSingleThreadExecutor();
+    private VisualMatcher artworkIndex;
+    private boolean pendingNativeOpen=false;
+    private String pendingScanScript;
 
     private void cameraEvent(String message) {
         Log.d("ManaVaultCamera", message);
@@ -35,6 +46,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webView = new WebView(this);
+        // Index is loaded lazily after the first confirmed printing; never block app launch.
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface public void shareLog(String text) {
                 runOnUiThread(() -> {
@@ -50,6 +62,50 @@ public class MainActivity extends Activity {
                 });
             }
         }, "ManaVaultNative");
+        webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface public void open() {
+                runOnUiThread(() -> {
+                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                        pendingNativeOpen=true;
+                        requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_REQUEST);
+                        return;
+                    }
+                    Intent scan = new Intent(MainActivity.this, NativeScannerActivity.class);
+                    startActivityForResult(scan, NATIVE_SCANNER_REQUEST);
+                });
+            }
+            @JavascriptInterface public void selectImage(int index) {
+                synchronized(lastNativeBatchPhotos){
+                    if(index>=0 && index<lastNativeBatchPhotos.size())lastNativeCard=lastNativeBatchPhotos.get(index);
+                }
+            }
+            @JavascriptInterface public void learnArtwork(String name,String id,String referenceUrl){
+                indexExecutor.execute(()->{
+                    if(artworkIndex==null)artworkIndex=new VisualMatcher(getApplicationContext());
+                    boolean stored=artworkIndex.learn(name,id,referenceUrl);
+                    Log.i("ManaVaultVisual",stored?"Artwork reference cached":"Reference artwork not cached");
+                });
+            }
+            @JavascriptInterface public void checkArtwork(String referenceUrl) {
+                File file = lastNativeCard;
+                if (file == null || !file.isFile()) return;
+                artworkExecutor.execute(() -> {
+                    String result;
+                    try {
+                        result = ArtworkVerifier.compare(file, referenceUrl).note;
+                    } catch(Exception e) {
+                        result = "Artwork comparison unavailable: " + e.getMessage();
+                    }
+                    final String message = result;
+                    runOnUiThread(() -> {
+                        if (webView != null) webView.evaluateJavascript(
+                            "window.mvNativeArtworkResult && window.mvNativeArtworkResult(" +
+                              org.json.JSONObject.quote(referenceUrl) + "," +
+                              org.json.JSONObject.quote(message) + ")", null);
+                    });
+                });
+            }
+        }, "ManaVaultNativeScanner");
         setContentView(webView);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -117,6 +173,13 @@ public class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CAMERA_REQUEST && pendingNativeOpen) {
+            pendingNativeOpen=false;
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startActivityForResult(new Intent(this, NativeScannerActivity.class), NATIVE_SCANNER_REQUEST);
+            }
+            return;
+        }
         if (requestCode == CAMERA_REQUEST && pendingCameraRequest != null) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 cameraEvent("Runtime camera permission granted"); pendingCameraRequest.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
@@ -127,6 +190,25 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == NATIVE_SCANNER_REQUEST && resultCode == RESULT_OK && data != null) {
+            String packed = data.getStringExtra("scan_results");
+            if(packed != null && webView != null){
+                try{
+                    org.json.JSONArray array=new org.json.JSONArray(packed);
+                    synchronized(lastNativeBatchPhotos){
+                        lastNativeBatchPhotos.clear();
+                        for(int i=0;i<array.length();i++){
+                            org.json.JSONObject scan=array.getJSONObject(i);
+                            File file=new File(getCacheDir(),new File(scan.optString("image_path", "")).getName());
+                            if(!file.isFile()||!scan.optString("image_path", "").equals(file.getAbsolutePath()))file=null;
+                            lastNativeBatchPhotos.add(file);
+                        }
+                        lastNativeCard=lastNativeBatchPhotos.isEmpty()?null:lastNativeBatchPhotos.get(0);
+                    }
+                    pendingScanScript="window.mvNativeScanBatch && window.mvNativeScanBatch("+array.toString()+")";
+                }catch(Exception e){Log.e("ManaVaultNative","Could not deliver scan batch",e);}
+            }
+        }
         if (requestCode == FILE_REQUEST && fileCallback != null) {
             fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
             fileCallback = null;
@@ -140,11 +222,19 @@ public class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         webView.onResume();
+        if(pendingScanScript!=null){
+            final String script=pendingScanScript;pendingScanScript=null;
+            webView.post(()->{
+                if(webView!=null)webView.evaluateJavascript(script,null);
+            });
+        }
     }
     @Override protected void onDestroy() {
         if (pendingCameraRequest != null) pendingCameraRequest.deny();
         if (fileCallback != null) fileCallback.onReceiveValue(null);
-        webView.destroy();
+        artworkExecutor.shutdownNow();
+        indexExecutor.shutdownNow();
+        webView.destroy();webView=null;
         super.onDestroy();
     }
     @Override public void onBackPressed() {
