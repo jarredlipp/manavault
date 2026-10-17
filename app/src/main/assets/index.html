@@ -7,9 +7,9 @@ function addCard(c,qty=1){let v=state.cards.find(x=>x.id===c.id);if(v)v.qty+=qty
 function nav(){ $('#tabs').innerHTML=tabs.map(t=>`<button class="${t===tab?'active':''}" data-tab="${esc(t)}">${esc(t)}</button>`).join('');document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()})}
 function render(){nav();let html='';if(tab==='Dashboard')html=dashboard();if(tab==='Collection')html=collection();if(tab==='Scan cards')html=scanner();if(tab==='Deck builder')html=decks();if(tab==='Wishlist & trades')html=wishes();if(tab==='Price alerts')html=alerts();if(tab==='Settings')html=settings();if(tab==='Help guide')html=helpGuide();$('#main').innerHTML=html;bind()}
 const stat=(v,l)=>`<div class="stat"><strong>${v}</strong><small>${l}</small></div>`;
-function dashboard(){const unique=new Set(state.cards.map(c=>c.name)).size;return `<h1>Collection overview</h1><div class="stats">${stat(qtyTotal(),'Physical cards')}${stat(unique,'Unique card names')}${stat(money(valueTotal()),'Estimated collection value')}${stat(state.decks.length,'Saved decks')}</div><div class="grid2" style="margin-top:15px"><section class="panel"><h2>Quick actions</h2><div class="stack"><button class="primary" data-go="Scan cards">Scan or search for cards →</button><button data-go="Deck builder">Find Commander builds →</button><button data-go="Collection">Browse your collection →</button></div></section><section class="panel"><h2>Most valuable cards</h2>${state.cards.length?state.cards.slice().sort((a,b)=>b.price-a.price).slice(0,5).map(c=>`<div class="row"><span>${esc(c.name)} <span class="muted small">×${c.qty}</span></span><b>${money(c.price)}</b></div>`).join(''):'<div class="empty">Add cards to see your collection insights.</div>'}</section></div><div class="notice">Start with Search in Scan cards, or paste a list of card names for batch import. Photos can be processed using optional browser OCR when available.</div>`}
+function dashboard(){const unique=new Set(state.cards.map(c=>c.name)).size;return `<h1>Collection overview</h1><div class="stats">${stat(qtyTotal(),'Physical cards')}${stat(unique,'Unique card names')}${stat(money(valueTotal()),'Estimated collection value')}${stat(state.decks.length,'Saved decks')}</div><div class="grid2" style="margin-top:15px"><section class="panel"><h2>Quick actions</h2><div class="stack"><button class="primary" data-go="Scan cards">Scan or search for cards →</button><button data-go="Deck builder">Find Commander builds →</button><button data-go="Collection">Browse your collection →</button></div></section><section class="panel"><h2>Most valuable cards</h2>${state.cards.length?state.cards.slice().sort((a,b)=>b.price-a.price).slice(0,5).map(c=>`<div class="row"><span>${esc(c.name)} <span class="muted small">×${c.qty}</span></span><b>${mv53Money(c.price)}</b></div>`).join(''):'<div class="empty">Add cards to see your collection insights.</div>'}</section></div><div class="notice">Start with Search in Scan cards, or paste a list of card names for batch import. Photos can be processed using optional browser OCR when available.</div>`}
 function collection(){let q=window.filterQuery||'';let arr=state.cards.filter(c=>(c.name+' '+c.set_name).toLowerCase().includes(q.toLowerCase()));return `<h1>My collection</h1><div class="panel"><div class="flex"><input id="filter" class="grow" placeholder="Filter by card name or set" value="${esc(q)}"><button id="sortValue">Sort by value</button></div><div id="cardList" class="scroll">${cardRows(arr)}</div></div>`}
-function cardRows(arr){return arr.length?arr.map(c=>`<div class="result"><img src="${esc(image(c))}" alt=""><div class="grow"><b>${esc(c.name)}</b><div class="small muted">${esc(c.set_name||c.set||'')} · ${esc(c.condition||'NM')} · ${c.foil?'Foil':'Nonfoil'} · ${money(c.price)} each</div><div class="small muted">${esc(c.type_line)}</div></div><div class="flex"><button data-dec="${esc(c.id)}">−</button><b>×${c.qty}</b><button data-inc="${esc(c.id)}">+</button><button data-trade="${esc(c.id)}" title="Mark for trade">⇄</button></div></div>`).join(''):'<div class="empty">No matching cards yet.</div>'}
+function cardRows(arr){return arr.length?arr.map(c=>`<div class="result"><img src="${esc(image(c))}" alt=""><div class="grow"><b>${esc(c.name)}</b><div class="small muted">${esc(c.set_name||c.set||'')} · ${esc(c.condition||'NM')} · ${c.foil?'Foil':'Nonfoil'} · ${mv53Money(c.price)} each</div><div class="small muted">${esc(c.type_line)}</div></div><div class="flex"><button data-dec="${esc(c.id)}">−</button><b>×${c.qty}</b><button data-inc="${esc(c.id)}">+</button><button data-trade="${esc(c.id)}" title="Mark for trade">⇄</button></div></div>`).join(''):'<div class="empty">No matching cards yet.</div>'}
 function scanner(){return `<h1>Scan & import cards</h1><div class="grid2"><section class="panel"><h2>Search a card</h2><p class="muted small">Search Scryfall for exact printings and current reference prices.</p><div class="flex"><input id="searchInput" class="grow" placeholder="e.g. Sol Ring, Skullclamp" value="${esc(lastSearch)}"><button class="primary" id="searchBtn">Search</button></div><div id="searchResults" class="scroll">${resultRows()}</div></section><section class="panel"><h2>Camera / photo scan</h2><p class="muted small">Take a picture or upload a photo. Optional OCR extracts likely names; review matches before adding them.</p><input id="photo" type="file" accept="image/*" capture="environment" multiple><div id="scanStatus" class="muted small" style="margin:10px 0">Best results: one clearly readable card per photo. Multiple cards may need manual correction.</div><div id="scanResults" class="scroll">${scanCandidates.map(x=>`<div class="row">${esc(x)} <button data-lookup="${esc(x)}">Find card</button></div>`).join('')}</div></section></div><section class="panel"><h2>Batch import</h2><p class="muted small">Paste card names, one per line. Supports “4 Sol Ring”, “4x Sol Ring”, or “Sol Ring”. Batch uses the first Scryfall printing match; adjust printing afterward if needed.</p><textarea id="batch" placeholder="1 Sol Ring&#10;1 Arcane Signet&#10;2 Lightning Greaves"></textarea><div class="flex"><button class="primary" id="batchBtn">Import card names</button><span id="batchStatus" class="small muted"></span></div></section>`}
 function resultRows(){return searchResults.length?searchResults.map((c,i)=>`<div class="result"><img src="${esc(info(c).image)}" alt=""><div class="grow"><b>${esc(c.name)}</b><div class="small muted">${esc(c.set_name)} · ${esc(c.collector_number)} · ${money(cardPrice(c))}</div></div><button class="primary" data-add="${i}">+ Add</button></div>`).join(''):'<div class="empty">Search for a card to add it.</div>'}
 async function scry(path){let r=await fetch('https://api.scryfall.com'+path);if(!r.ok)throw Error(r.status===404?'No matching card found':'Scryfall request failed ('+r.status+')');return r.json()}
@@ -174,7 +174,7 @@ let footer=document.querySelector('.footer');if(footer)footer.textContent=footer
 // v1.7 Continuous live-camera scanner: camera stays open between cards.
 let liveStream=null,liveWorker=null,liveActive=false,liveLoop=null,liveBusy=false,liveLastSignature='',livePending='',livePendingCount=0,liveSavedSignature='',liveScanned=0,livePaused=false;
 const liveScannerBase=scanner;
-scanner=function(){return liveScannerBase()+`<section class="panel" id="continuousPanel"><h2>Continuous camera scan (v4.9)</h2><p class='muted small'>Unified framing: the fixed stand defines the expected card area, and automatic detection refines its position when a reliable outline is found. Calibration remains available.</p><p class='muted small'>OCR searches the calibrated title first, then title bands within the top 40% of the card outline before trying unusual layouts. Bottom-title lands and showcase frames may still require manual confirmation.</p><p class='muted small'>For exact editions, confirm the set and collector number in the printing review. Scan destination supports your collection and existing Commander decks.</p><p class="muted small">Keep your camera pointed at the scanning area. Place one card at a time; the app automatically checks the title and adds confidently recognized cards without pressing the camera button again. Remove each card before placing the next. Works only in a secure browser context (HTTPS or localhost); local HTML files may block camera access.</p><div class="flex"><button id="liveStart" class="primary">Start continuous camera</button><button id="mvTestLiveSound">Test success sound</button><button id="liveStop">Stop camera</button><button id="mvTorch" type="button" disabled>Flash: unavailable</button><button id="liveResume">Resume after review</button></div><details id="mvAdvancedScanner"><summary>Camera zoom and advanced controls</summary><div id="mvZoomPanel" class="panel" style="margin-top:12px"><label for="mvZoom">Camera zoom: <strong id="mvZoomValue">2.0×</strong></label><input type="range" id="mvZoom" min="1" max="4" step="0.1" value="2" style="width:100%"><p id="mvFocusStatus" class="small muted">Autofocus requested when supported. Zoom will activate when camera starts.</p></div></details><div id="mvLiveFrame" style="display:none;position:relative;width:100%;max-width:430px;height:min(46vh,440px);margin-top:12px;overflow:hidden;border-radius:10px;background:#111"><video id="liveVideo" autoplay muted playsinline style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;object-fit:cover"></video><canvas id="mvVisibleCanvas" style="display:block;width:100%;height:100%;object-fit:fill"></canvas><div style="position:absolute;pointer-events:none;left:17%;top:24%;width:77%;height:72%;border:2px solid #80e7a1;border-radius:10px;box-sizing:border-box"><div id="mvLiveOcrGuide" style="position:absolute;left:2%;top:2%;width:96%;height:7%;border:2px dashed #ffdb7b;box-sizing:border-box"></div></div></div><div id="mvCalibration" class="panel" style="margin-top:10px;max-width:430px;padding:10px"><strong>Live calibration · camera and controls together</strong><p class="small muted">The title crop below updates during scanning. Keep this panel directly under the camera.</p><div class="panel" style="padding:10px"><strong>OCR title alignment</strong><p class="small muted">Adjust the title strip if the yellow guide does not line up with the printed card name.</p><label>Title vertical position <input id="mvTitleY" type="range" min="0" max="180" value="9" step="1"></label><label>Title band height <input id="mvTitleH" type="range" min="14" max="75" value="28" step="1"></label><label>Title width <input id="mvTitleW" type="range" min="175" max="295" value="245" step="5"></label><button id="mvResetCrop">Reset OCR alignment</button><button id="mvTestCrop" type="button">Test this exact OCR crop</button><p class="small muted" id="mvCropInfo"></p></div><p id="mvOcrPreview" class="small muted">Last OCR: none</p><p class="small muted">The large preview below shows the exact standard-title crop. Alternate-layout OCR may examine another region.</p><div id="mvTitlePreview" style="max-width:100%;overflow:hidden;min-height:110px;background:#101722;border:1px solid #52627a;border-radius:10px;padding:6px"></div><div class="flex"><button id="mvSaveDebugFrame" type="button">Save diagnostic frame + OCR crop</button></div><p class="small muted" id="mvFrameDiagnostic">Diagnostic images are saved only when requested.</p></div><p class="small muted">Fixed stand: align the green guide to the card, then move the yellow title guide onto the name. The yellow band should cover the name. Start at 2× and adjust zoom until the title is sharp.</p><p id="mvHybridScore" class="small muted">Visual index: not loaded · hybrid fallback ready</p><details><summary>Database and artwork index status</summary><div class="panel"><strong>Offline Magic card database</strong><p class="small muted" id="mvDbStatus">Checking local database…</p><button id="mvDbSync">Check / refresh Scryfall database now</button><p class="small muted">Automatically downloads Scryfall Default Cards (100,000+ printing records) on first launch and checks for updates every 24 hours. Stores each printing by unique Scryfall ID; preserves the previous complete catalog if a download fails. The artwork index is separate.</p></div><div class="flex"><label class="small">Load visual index <input id="mvIndexFile" type="file" accept="application/json,.json" /></label><button id="mvIndexClear">Clear visual index</button></div><p id="mvIndexStatus" class="small muted">Bundled visual index loads automatically when Scan cards opens; optional JSON import remains available.</p></details><p id="liveStatus" class="small muted" aria-live="polite">Camera off. Saved this session: 0.</p><p class="small muted" id="liveDiagnostics">Camera diagnostics: checking environment…</p><div id="liveReview" class="small"></div><p class="small muted">Fast scanning uses exact local-name matches immediately and confirms the printing before saving. Fuzzy OCR needs two agreeing reads. Artwork-only matches never override OCR. Confirm the destination deck and the “also add to collection” option above before starting. This mode identifies card names, not exact printings. The card must visibly leave the camera frame between scans to prevent duplicate counts.</p></section>`};
+scanner=function(){return liveScannerBase()+`<section class="panel" id="continuousPanel"><h2>Continuous camera scan (v5.1)</h2><p class='muted small'>Unified framing: the fixed stand defines the expected card area, and automatic detection refines its position when a reliable outline is found. Calibration remains available.</p><p class='muted small'>OCR searches the calibrated title first, then title bands within the top 40% of the card outline before trying unusual layouts. Bottom-title lands and showcase frames may still require manual confirmation.</p><p class='muted small'>For exact editions, confirm the set and collector number in the printing review. Scan destination supports your collection and existing Commander decks.</p><p class="muted small">Keep your camera pointed at the scanning area. Place one card at a time; the app automatically checks the title and adds confidently recognized cards without pressing the camera button again. Remove each card before placing the next. Works only in a secure browser context (HTTPS or localhost); local HTML files may block camera access.</p><div class="flex"><button id="liveStart" class="primary">Start continuous camera</button><button id="mvTestLiveSound">Test success sound</button><button id="liveStop">Stop camera</button><button id="mvTorch" type="button" disabled>Flash: unavailable</button><button id="liveResume">Resume after review</button></div><details id="mvAdvancedScanner"><summary>Camera zoom and advanced controls</summary><div id="mvZoomPanel" class="panel" style="margin-top:12px"><label for="mvZoom">Camera zoom: <strong id="mvZoomValue">2.0×</strong></label><input type="range" id="mvZoom" min="1" max="4" step="0.1" value="2" style="width:100%"><p id="mvFocusStatus" class="small muted">Autofocus requested when supported. Zoom will activate when camera starts.</p></div></details><div id="mvLiveFrame" style="display:none;position:relative;width:100%;max-width:430px;height:min(46vh,440px);margin-top:12px;overflow:hidden;border-radius:10px;background:#111"><video id="liveVideo" autoplay muted playsinline style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;object-fit:cover"></video><canvas id="mvVisibleCanvas" style="display:block;width:100%;height:100%;object-fit:fill"></canvas><div style="position:absolute;pointer-events:none;left:17%;top:24%;width:77%;height:72%;border:2px solid #80e7a1;border-radius:10px;box-sizing:border-box"><div id="mvLiveOcrGuide" style="position:absolute;left:2%;top:2%;width:96%;height:7%;border:2px dashed #ffdb7b;box-sizing:border-box"></div></div></div><details id="mvCalibrationDiagnostics" class="panel" style="margin-top:10px;max-width:430px;padding:10px"><summary>OCR diagnostics (manual override)</summary><strong>OCR crop diagnostics</strong><p class="small muted">The title crop below updates during scanning. Keep this panel directly under the camera.</p><div class="panel" style="padding:10px"><strong>OCR title alignment</strong><p class="small muted">Adjust the title strip if the yellow guide does not line up with the printed card name.</p><label>Title vertical position <input id="mvTitleY" type="range" min="0" max="180" value="9" step="1"></label><label>Title band height <input id="mvTitleH" type="range" min="14" max="75" value="28" step="1"></label><label>Title width <input id="mvTitleW" type="range" min="175" max="295" value="245" step="5"></label><button id="mvResetCrop">Reset OCR alignment</button><button id="mvTestCrop" type="button">Test this exact OCR crop</button><p class="small muted" id="mvCropInfo"></p></div><p id="mvOcrPreview" class="small muted">Last OCR: none</p><p class="small muted">The large preview below shows the exact standard-title crop. Alternate-layout OCR may examine another region.</p><div id="mvTitlePreview" style="max-width:100%;overflow:hidden;min-height:110px;background:#101722;border:1px solid #52627a;border-radius:10px;padding:6px"></div><div class="flex"><button id="mvSaveDebugFrame" type="button">Save diagnostic frame + OCR crop</button></div><p class="small muted" id="mvFrameDiagnostic">Diagnostic images are saved only when requested.</p></details><p class="small muted">Automatic outline follows detected card boundaries when confidence is sufficient. Keep the entire card in view. OCR alignment sliders are diagnostic overrides only.</p><p id="mvHybridScore" class="small muted">Last successful identification: none</p><p id="mvLatestOcr" class="small muted">Latest OCR attempt: none</p><p id="mvScanTiming" class="small muted">Successful reads: 0 · average: —</p><details><summary>Database and artwork index status</summary><div class="panel"><strong>Offline Magic card database</strong><p class="small muted" id="mvDbStatus">Checking local database…</p><button id="mvDbSync">Check / refresh Scryfall database now</button><p class="small muted">Automatically downloads Scryfall Default Cards (100,000+ printing records) on first launch and checks for updates every 24 hours. Stores each printing by unique Scryfall ID; preserves the previous complete catalog if a download fails. The artwork index is separate.</p></div><div class="flex"><label class="small">Load visual index <input id="mvIndexFile" type="file" accept="application/json,.json" /></label><button id="mvIndexClear">Clear visual index</button></div><p id="mvIndexStatus" class="small muted">Bundled visual index loads automatically when Scan cards opens; optional JSON import remains available.</p></details><p id="liveStatus" class="small muted" aria-live="polite">Camera off. Saved this session: 0.</p><p class="small muted" id="liveDiagnostics">Camera diagnostics: checking environment…</p><div id="liveReview" class="small"></div><p class="small muted">Fast scanning uses exact local-name matches immediately and confirms the printing before saving. Fuzzy OCR needs two agreeing reads. Artwork-only matches never override OCR. Confirm the destination deck and the “also add to collection” option above before starting. This mode identifies card names, not exact printings. The card must visibly leave the camera frame between scans to prevent duplicate counts.</p></section>`};
 function liveStatus(msg){let el=document.getElementById('liveStatus');if(el)el.textContent=msg+' · Saved this session: '+liveScanned}
 function liveStop(){mvSessionGeneration++;clearInterval(mvHealthTimer);mvHealthTimer=null;liveBusy=false;mvBusySince=0;mvTorchEnabled=false;mvTorchUpdateUI(false);liveActive=false;livePaused=false;if(liveLoop)clearTimeout(liveLoop);liveLoop=null;if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null}if(liveWorker){let w=liveWorker;liveWorker=null;w.terminate().catch(()=>{})}let v=document.getElementById('liveVideo');if(v){v.pause();v.srcObject=null;v.style.display='block';let frame=document.getElementById('mvLiveFrame');if(frame)frame.style.display='none'}liveStatus('Camera stopped')}
 function liveSignature(ctx,w,h){let a=ctx.getImageData(0,0,w,h).data,parts=[];for(let y=0;y<h;y+=10)for(let x=0;x<w;x+=10){let i=(y*w+x)*4;parts.push(Math.floor((a[i]+a[i+1]+a[i+2])/3/24))}return parts}
@@ -218,6 +218,7 @@ async function mvApplyZoom(value){
 function mvHybridNorm(x){return String(x||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}
 function mvHybridEdit(a,b){let prev=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let cur=[i];for(let j=1;j<=b.length;j++)cur[j]=Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur}return prev[b.length]}
 let mvHybridBuckets=new Map(),mvHybridExact=new Map();
+let mvSceneStartedAt=0,mvSuccessfulReadTimes=[];
 function mvHybridIndex(names){mvNames=names;mvHybridBuckets.clear();mvHybridExact.clear();for(let name of names){let n=mvHybridNorm(name);if(!n)continue;mvHybridExact.set(n,name);let key=n.slice(0,2);if(!mvHybridBuckets.has(key))mvHybridBuckets.set(key,[]);mvHybridBuckets.get(key).push({name,n})}mvNamesReady=true;mvLogCamera('Hybrid name index loaded: '+names.length+' cards')}
 async function mvHybridLoadNames(){if(mvNamesReady)return;try{let saved=localStorage.getItem('mv_hybrid_names_v1');if(saved){let parsed=JSON.parse(saved);if(Array.isArray(parsed)&&parsed.length>1000){mvHybridIndex(parsed);return}}}catch{}try{let res=await fetch('https://api.scryfall.com/catalog/card-names');if(!res.ok)throw Error('HTTP '+res.status);let obj=await res.json();if(Array.isArray(obj.data)){mvHybridIndex(obj.data);try{localStorage.setItem('mv_hybrid_names_v1',JSON.stringify(obj.data))}catch{}}}catch(e){mvLogCamera('Name catalog unavailable; online fuzzy fallback: '+e.message,'info')}}
 // v4.7: OCR evidence is not the same as confidence in a catalog candidate.
@@ -225,7 +226,11 @@ async function mvHybridLoadNames(){if(mvNamesReady)return;try{let saved=localSto
 // substrings so an extra mana symbol does not defeat a valid reading.
 function mvHybridCandidates(raw){
  const n=mvHybridNorm(raw).replace(/(?:\s+(?:[0-9]+[a-z]?|[wubrgc]))+$/g,'').trim();
- if(n.length<3||!mvNamesReady)return[];
+ if(!n||!mvNamesReady)return[];
+ // Always honor real catalog names, including short or unusual titles.
+ if(mvHybridExact.has(n))return [{name:mvHybridExact.get(n),score:1,exact:true}];
+ // Reject noise only after the exact-name lookup.
+ if(n.length<3||/(.)\1{5,}/i.test(n.replace(/ /g,'')))return[];
  if(mvHybridExact.has(n))return [{name:mvHybridExact.get(n),score:1,exact:true}];
  const words=n.split(' ').filter(w=>w.length>=3), ranked=[],seen=new Set();
  // OCR may include a trailing mana cost. Test complete leading phrases before fuzzy search.
@@ -242,15 +247,15 @@ function mvHybridCandidates(raw){
    const whole=(' '+n+' ').includes(' '+a+' ');
    const distance=mvHybridEdit(n,a);
    let score=1-distance/Math.max(n.length,a.length);
-   if(whole&&a.length>=5)score=1;
-   else if(a.length>=6&&n.includes(a))score=Math.max(score,.94);
+   if(whole&&a.length>=5&&n===a)score=1;
+   else if(a.length>=6&&n.startsWith(a+' ')&&n.length-a.length<=5)score=Math.max(score,.90);
    else if(a.length>=8&&n.length>=a.length-2&&n.length<=a.length+5){
      const suffix=a.slice(1);
      if(n.startsWith(suffix)||n.includes(' '+suffix))score=Math.max(score,.91);
    }
    // Avoid interpreting rules text (Lifelink, Valor, etc.) as a complete title.
    if(a.length<=5&&!whole)continue;
-   if(score>=.84)ranked.push({name:item.name,score:Math.min(score,whole?1:.97),exact:whole});
+   if(score>=.88)ranked.push({name:item.name,score:Math.min(score,whole?1:.97),exact:whole});
  }
  ranked.sort((a,b)=>b.score-a.score||b.name.length-a.name.length);
  // When the same OCR text supports both a full title and its trailing word,
@@ -329,25 +334,62 @@ async function mvPrintingReview(match,container,confidence){
   note.textContent='Select the matching set and collector number ('+printings.length+' editions loaded). Foil status must be confirmed separately.';
  }catch(e){note.textContent=printings.length>1?'Offline editions available ('+printings.length+'). Online refresh unavailable: '+e.message:'Could not load alternate editions ('+e.message+'). You can save the suggested printing or rescan.'}
 }
-// Auto-frame: find the strongest rectangular card-like region in a downsampled camera image.
-// Falls back to the center crop if confidence is low.
+// Perspective-aware card detector. Extract connected edge components, estimate a convex
+// quadrilateral from extrema, and score the actual four borders. Never warp on weak evidence.
 function mvAutoFrame(video,vw,vh){
- const w=96,h=72,small=document.createElement('canvas');small.width=w;small.height=h;
- const g=small.getContext('2d',{willReadFrequently:true});g.drawImage(video,0,0,w,h);
- const d=g.getImageData(0,0,w,h).data,lum=new Float32Array(w*h);
- for(let i=0;i<lum.length;i++)lum[i]=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2];
- let best=null;
- // Card should occupy a meaningful portion of the frame; score edge contrast.
- for(let cw of [25,33,41,49]){let ch=Math.round(cw*1.39);if(ch>=h-4)continue;
-  for(let y=3;y+ch<h-3;y+=4)for(let x=3;x+cw<w-3;x+=4){
-   let score=0,n=0;
-   for(let k=3;k<cw-3;k+=4){score+=Math.abs(lum[y*w+x+k]-lum[(y-2)*w+x+k]);score+=Math.abs(lum[(y+ch)*w+x+k]-lum[(y+ch+2)*w+x+k]);n+=2}
-   for(let k=3;k<ch-3;k+=4){score+=Math.abs(lum[(y+k)*w+x]-lum[(y+k)*w+x-2]);score+=Math.abs(lum[(y+k)*w+x+cw]-lum[(y+k)*w+x+cw+2]);n+=2}
-   score/=Math.max(1,n);if(!best||score>best.score)best={x,y,cw,ch,score};
-  }
+ const W=160,H=Math.max(120,Math.round(W*vh/vw)),cv=document.createElement('canvas');cv.width=W;cv.height=H;
+ const cx=cv.getContext('2d',{willReadFrequently:true});cx.drawImage(video,0,0,W,H);
+ const d=cx.getImageData(0,0,W,H).data,gray=new Float32Array(W*H),edge=new Uint8Array(W*H);
+ for(let i=0;i<gray.length;i++)gray[i]=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2];
+ let values=[];
+ for(let y=2;y<H-2;y++)for(let x=2;x<W-2;x++){
+  const i=y*W+x,gx=Math.abs(gray[i+1]-gray[i-1])+Math.abs(gray[i+W+1]-gray[i+W-1])*.5,
+   gy=Math.abs(gray[i+W]-gray[i-W])+Math.abs(gray[i+W+1]-gray[i-W+1])*.5;
+  const v=gx+gy;edge[i]=Math.min(255,v);values.push(v);
  }
- if(!best||best.score<17)return null;
- return {x:best.x/w*vw,y:best.y/h*vh,w:best.cw/w*vw,h:best.ch/h*vh,score:best.score};
+ values.sort((a,b)=>a-b);const threshold=Math.max(25,values[Math.floor(values.length*.83)]||25);
+ const visited=new Uint8Array(W*H);let best=null;
+ for(let y=3;y<H-3;y+=2)for(let x=3;x<W-3;x+=2){
+  const start=y*W+x;if(visited[start]||edge[start]<threshold)continue;
+  let queue=[start],head=0,pts=[],minX=W,minY=H,maxX=0,maxY=0;visited[start]=1;
+  while(head<queue.length&&queue.length<14000){const i=queue[head++],px=i%W,py=(i/W)|0;pts.push([px,py]);
+   minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py);
+   for(const n of [i-1,i+1,i-W,i+W]){if(n<0||n>=edge.length||visited[n]||edge[n]<threshold*.65)continue;
+    const nx=n%W,ny=(n/W)|0;if(Math.abs(nx-px)>1||Math.abs(ny-py)>1)continue;visited[n]=1;queue.push(n)}
+  }
+  const bw=maxX-minX,bh=maxY-minY;if(pts.length<75||bw<30||bh<43||bw*bh>W*H*.91)continue;
+  const extreme=(fn)=>pts.reduce((a,q)=>fn(q)<fn(a)?q:a,pts[0]);
+  const q=[extreme(p=>p[0]+p[1]),extreme(p=>p[1]-p[0]),extreme(p=>-p[0]-p[1]),extreme(p=>p[0]-p[1])];
+  const dist=(u,v)=>Math.hypot(u[0]-v[0],u[1]-v[1]);
+  const top=dist(q[0],q[3]),bottom=dist(q[1],q[2]),left=dist(q[0],q[1]),right=dist(q[3],q[2]);
+  const ratio=(left+right)/(top+bottom);if(ratio<1.12||ratio>1.8)continue;
+  const area=Math.abs(q.reduce((sum,p,j)=>sum+p[0]*q[(j+1)%4][1]-q[(j+1)%4][0]*p[1],0))/2;
+  if(area<W*H*.07||area>W*H*.85)continue;
+  const score=pts.length/Math.sqrt(area)-Math.abs(ratio-1.397)*12;
+  if(!best||score>best.score)best={corners:q.map(p=>({x:p[0]/W*vw,y:p[1]/H*vh})),score};
+ }
+ return best&&best.score>2.5?best:null;
+}
+// Inverse homography: destination pixels sample the original quadrilateral.
+function mvWarpCard(source,corners,dest){
+ const w=dest.width,h=dest.height,src=source.getContext('2d',{willReadFrequently:true}),out=dest.getContext('2d',{willReadFrequently:true});
+ const input=src.getImageData(0,0,source.width,source.height),output=out.createImageData(w,h);
+ const pts=corners.map(p=>[p.x,p.y]),A=[],b=[];
+ for(let k=0;k<4;k++){const [x,y]=[[0,0],[0,1],[1,1],[1,0]][k],[u,v]=pts[k];
+  A.push([x,y,1,0,0,0,-u*x,-u*y]);b.push(u);
+  A.push([0,0,0,x,y,1,-v*x,-v*y]);b.push(v)}
+ for(let i=0;i<8;i++){let pivot=i;for(let j=i+1;j<8;j++)if(Math.abs(A[j][i])>Math.abs(A[pivot][i]))pivot=j;
+  if(Math.abs(A[pivot][i])<1e-9)return false;
+  [A[i],A[pivot]]=[A[pivot],A[i]];[b[i],b[pivot]]=[b[pivot],b[i]];
+  const d=A[i][i];for(let z=i;z<8;z++)A[i][z]/=d;b[i]/=d;
+  for(let j=0;j<8;j++)if(j!==i){const f=A[j][i];for(let z=i;z<8;z++)A[j][z]-=f*A[i][z];b[j]-=f*b[i]}
+ }
+ const S=input.data,D=output.data,sw=source.width,sh=source.height;
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){const xx=x/(w-1),yy=y/(h-1),den=b[6]*xx+b[7]*yy+1;
+  const sx=Math.round((b[0]*xx+b[1]*yy+b[2])/den),sy=Math.round((b[3]*xx+b[4]*yy+b[5])/den);
+  const di=(y*w+x)*4;if(sx>=0&&sx<sw&&sy>=0&&sy<sh){const si=(sy*sw+sx)*4;for(let c=0;c<4;c++)D[di+c]=S[si+c]}
+ }
+ out.putImageData(output,0,0);return true;
 }
 // Unified fixed-stand + automatic-framing health state.
 let mvHealthTimer=null,mvBusySince=0,mvLastTickAt=0,mvLastFrameAt=0,mvLastFrameHash=null;
@@ -376,7 +418,7 @@ async function mvRecoverScanner(reason){if(mvRecovering||!liveActive)return;cons
  await new Promise(r=>setTimeout(r,350));try{await liveStart();}finally{mvRecovering=false}}
 let mvMotionMisses=0;
 let mvFastCandidate=null,mvSceneEpoch=0,mvLastRecognizedAt=0;
-function mvResetRecognitionScene(){mvSceneEpoch++;mvFastCandidate=null;mvVisualCandidate=null;mvHybridVotes.clear();mvOcrMisses=0;mvOcrRegionStep=0;}
+function mvResetRecognitionScene(){mvSceneStartedAt=performance.now();mvSceneEpoch++;mvFastCandidate=null;mvVisualCandidate=null;mvHybridVotes.clear();mvOcrMisses=0;mvOcrRegionStep=0;}
 let mvCalibrationFrame=null;
 // Geometry shared by the video overlay, OCR and diagnostic preview.
 const MV_CARD_BOX={x:.17,y:.24,w:.77,h:.72};
@@ -432,24 +474,22 @@ const displayed=mvDisplayedVideoFrame(v);
 const stand={x:displayed.width*MV_CARD_BOX.x,y:displayed.height*MV_CARD_BOX.y,
  w:displayed.width*MV_CARD_BOX.w,h:displayed.height*MV_CARD_BOX.h};
 const found=mvAutoFrame(displayed,displayed.width,displayed.height);
-// Detector is advisory: reject sudden jumps or implausibly small card rectangles.
-let selected=stand;
-if(found&&found.score>=19&&found.w>=stand.w*.60&&found.h>=stand.h*.60){
- const cx=found.x+found.w/2,cy=found.y+found.h/2;
- const expectedX=stand.x+stand.w/2,expectedY=stand.y+stand.h/2;
- if(Math.abs(cx-expectedX)<stand.w*.35&&Math.abs(cy-expectedY)<stand.h*.35){
-  mvFramingHits++;if(mvFramingHits>=2){
-   if(!mvFramingRect)mvFramingRect=found;
-   else {const alpha=.28;for(const k of ['x','y','w','h'])mvFramingRect[k]=mvFramingRect[k]*(1-alpha)+found[k]*alpha}
-   selected=mvFramingRect;
-  }
- }else mvFramingHits=0;
-}else {mvFramingHits=0;mvFramingRect=null}
+// Stable four-corner detection is preferred. Weak detections use the previous fixed-stand crop.
+let selected=stand,quad=null;
+if(found&&found.corners){mvFramingHits++;if(mvFramingHits>=2){quad=found.corners;mvFramingRect=found}}
+else {mvFramingHits=0;mvFramingRect=null}
 const c=document.createElement('canvas');c.width=960;c.height=1320;
 const ctx=c.getContext('2d',{willReadFrequently:true});
-ctx.drawImage(displayed,selected.x,selected.y,selected.w,selected.h,0,0,c.width,c.height);
+if(!quad||!mvWarpCard(displayed,quad,c)){
+ quad=null;ctx.drawImage(displayed,selected.x,selected.y,selected.w,selected.h,0,0,c.width,c.height);
+}
 const outline=document.getElementById('mvLiveFrame')?.querySelector('div[style*="pointer-events:none"]');
-if(outline){outline.style.left=(selected.x/displayed.width*100)+'%';outline.style.top=(selected.y/displayed.height*100)+'%';outline.style.width=(selected.w/displayed.width*100)+'%';outline.style.height=(selected.h/displayed.height*100)+'%'}
+if(outline){
+ if(quad){const xs=quad.map(p=>p.x),ys=quad.map(p=>p.y);const minX=Math.min(...xs),minY=Math.min(...ys),maxX=Math.max(...xs),maxY=Math.max(...ys);
+ outline.style.left=(minX/displayed.width*100)+'%';outline.style.top=(minY/displayed.height*100)+'%';
+ outline.style.width=((maxX-minX)/displayed.width*100)+'%';outline.style.height=((maxY-minY)/displayed.height*100)+'%';
+ outline.style.borderColor='#74e6b0';outline.style.transform='none';
+ }else{outline.style.left=(selected.x/displayed.width*100)+'%';outline.style.top=(selected.y/displayed.height*100)+'%';outline.style.width=(selected.w/displayed.width*100)+'%';outline.style.height=(selected.h/displayed.height*100)+'%';}}
 mvCalibrationFrame=c;mvRefreshCalibrationPreview();let sig=liveSignature(ctx,960,1320);let delta=liveDiff(sig,livePreviousFrame);livePreviousFrame=sig;
 if(liveSavedSignature){let changed=liveDiff(sig,mvSavedFrame);if(changed>0.32)liveEmptyCount++;else liveEmptyCount=0;if(liveEmptyCount>=3){liveSavedSignature='';livePending='';livePendingCount=0;mvHybridVotes.clear();liveEmptyCount=0;mvSavedFrame=null;mvResetRecognitionScene();liveStatus('New scene detected — checking card')}else{return}}
 // Avoid running OCR and image matching on moving/blurry frames.
@@ -464,8 +504,8 @@ let tctx=title.getContext('2d',{willReadFrequently:true});let mvR=mvCropRect(c);
 // Alternate layouts: bottom-name full-art lands, poster/showcase titles and bright-frame cards.
 // Use one additional region only after repeated unsuccessful standard-title reads.
 let regionLabel='standard title';
-if(mvOcrMisses>=3 && mvOcrRegionStep%2===1)mvOcrRegionStep++;
-if(mvOcrMisses>=3 && (mvOcrRegionStep%2===0)){
+if(mvOcrMisses>=7 && mvOcrRegionStep%2===1)mvOcrRegionStep++;
+if(mvOcrMisses>=7 && (mvOcrRegionStep%2===0)){
  const regions=[
   {label:'bottom title (full-art land)',x:.07,y:.84,w:.86,h:.105},
   {label:'upper 40% secondary title',x:.07,y:.075,w:.86,h:.085},
@@ -481,7 +521,7 @@ if(mvOcrMisses>=3 && (mvOcrRegionStep%2===0)){
 }
 const mvOcrStarted=performance.now();let result=await liveWorker.recognize(title);if(tickGeneration!==mvSessionGeneration||!liveActive)return;const mvOcrDuration=Math.round(performance.now()-mvOcrStarted);
 let name=(result.data.text||'').split(/\n/).map(x=>x.replace(/[^\p{L}\p{N} ,.'’:\-]/gu,'').trim().replace(/\s+/g,' ')).find(x=>x.length>=4&&x.length<=65)||'';
-let ocrEl=document.getElementById('mvOcrPreview');if(ocrEl)ocrEl.textContent='Last OCR ('+regionLabel+'): '+(name||'(no readable title)');
+let ocrEl=document.getElementById('mvOcrPreview');if(ocrEl)ocrEl.textContent='Last OCR ('+regionLabel+'): '+(name||'(no readable title)');let latest=document.getElementById('mvLatestOcr');if(latest)latest.textContent='Latest OCR attempt: '+(name||'(unreadable)')+' · '+regionLabel+' · '+mvOcrDuration+' ms';
 if(!name){mvOcrMisses++;liveStatus('Waiting for readable card title');return}
 let candidates=mvHybridCandidates(name);
 if(!candidates.length){mvOcrMisses++;liveStatus('OCR ('+regionLabel+'): '+name+' — no likely name');return}mvOcrMisses=0;
@@ -510,9 +550,9 @@ if(mvHybridNorm(match.name)!==mvHybridNorm(requestedName)){liveStatus('Lookup di
 // An exact name is not necessarily an exact printing. Always confirm the
 // edition, and do not automatically save a printing based only on OCR.
 livePaused=true;mvLastRecognizedAt=performance.now();
-let elapsed=Math.round(mvLastRecognizedAt-mvFastCandidate.first);
+let elapsed=Math.round(mvLastRecognizedAt-mvFastCandidate.first);let fullRead=Math.round(mvLastRecognizedAt-mvSceneStartedAt);if(fullRead>=0&&fullRead<180000){mvSuccessfulReadTimes.push(fullRead);let t=document.getElementById('mvScanTiming');if(t)t.textContent='Successful reads: '+mvSuccessfulReadTimes.length+' · average scene-to-recognition: '+Math.round(mvSuccessfulReadTimes.reduce((a,b)=>a+b,0)/mvSuccessfulReadTimes.length)+' ms · latest: '+fullRead+' ms';}
 let scoreEl=document.getElementById('mvHybridScore');
-if(scoreEl)scoreEl.textContent='OCR: '+Math.round(best.score*100)+'% · '+requestedName+' · '+elapsed+' ms candidate-to-review (includes lookup)';
+if(scoreEl)scoreEl.textContent='Last successful identification: '+requestedName+' · '+Math.round(best.score*100)+'% name similarity · '+elapsed+' ms candidate-to-review';
 liveStatus('Recognized: '+match.name+' — confirm printing');
 let el=document.getElementById('liveReview');if(el)await mvPrintingReview(match,el,'title similarity '+Math.round(best.score*100)+'%');
 
@@ -617,4 +657,41 @@ ManaVaultCardDB.init(); // Start database download/update on app launch, not jus
 
 // Diagnostic test always reads the same canvas shown under the calibration sliders.
 document.addEventListener('click',async function(e){if(e.target?.id!=='mvTestCrop')return;const status=document.getElementById('mvOcrPreview');if(!mvCalibrationFrame||!liveWorker){if(status)status.textContent='Start camera first';return;}try{const c=mvCalibrationFrame,r=mvCropRect(c),crop=document.createElement('canvas');crop.width=1280;crop.height=240;crop.getContext('2d').drawImage(c,r.x,r.y,r.w,r.h,0,0,1280,240);const o=await liveWorker.recognize(crop);if(status)status.textContent='Manual OCR test: '+(o.data.text||'').trim().slice(0,180);}catch(err){if(status)status.textContent='OCR test failed: '+err.message;}});
+
+/* ManaVault v5.3: printing-aware pricing, with explicit unavailable states.
+   Scryfall prices provide TCGplayer-referenced USD estimates, NOT direct TCGplayer API access.
+   Card Kingdom is optional and requires a reachable, CORS-enabled price feed. */
+const mv53PriceCacheKey='mv53_price_cache';
+const mv53Day=86400000;
+let mv53RefreshRunning=false;
+function mv53Money(v){return Number.isFinite(Number(v))&&v!==null&&v!==''?'$'+Number(v).toFixed(2):'Unavailable'}
+function mv53Number(v){if(v===null||v===undefined||v==='')return null;const n=Number(String(v).replace(/[$,]/g,''));return Number.isFinite(n)&&n>=0?n:null}
+function mv53PrintingPrice(card){let p=card.prices||{};return mv53Number(card.foil?(p.usd_foil??p.usd_etched??p.usd):(p.usd??p.usd_foil??p.usd_etched))}
+function mv53Value(source){return state.cards.reduce((sum,c)=>sum+(mv53Number(source==='ckRetail'?c.ckRetail:source==='ckBuylist'?c.ckBuylist:c.price)||0)*(Number(c.qty)||0),0)}
+function mv53Coverage(source){return state.cards.reduce((n,c)=>n+(mv53Number(source==='ckRetail'?c.ckRetail:source==='ckBuylist'?c.ckBuylist:c.price)!==null?Number(c.qty)||0:0),0)}
+function mv53PricingPanel(){const n=qtyTotal();return `<section class="panel" id="mv53Valuation"><h2>Collection valuation · v5.3</h2><div class="stats">${stat(mv53Money(mv53Coverage('tcg')?mv53Value('tcg'):null),'TCGplayer-based reference')}${stat(mv53Money(mv53Coverage('ckRetail')?mv53Value('ckRetail'):null),'Card Kingdom retail')}${stat(mv53Money(mv53Coverage('ckBuylist')?mv53Value('ckBuylist'):null),'Card Kingdom buylist')}${stat(mv53Coverage('tcg')+' / '+n,'Copies with reference prices')}</div><p class="small muted">TCGplayer-based estimates come from Scryfall USD prices, not a direct TCGplayer API. Card Kingdom comparisons are optional and may be unavailable. Totals include only priced copies; missing prices are not $0.</p><div class="flex"><button id="mv53Refresh" class="primary">Refresh Scryfall / TCGplayer estimates</button><button id="mv53CKRefresh">Try Card Kingdom prices</button></div><p id="mv53PriceStatus" class="small muted">Last refresh: ${esc(localStorage.getItem('mv53_price_refresh_at')||'not yet')}</p></section>`}
+const mv53OldDashboard=dashboard;
+dashboard=function(){return mv53OldDashboard().replace('<div class="grid2" style="margin-top:15px">',mv53PricingPanel()+'<div class="grid2" style="margin-top:15px">').replace(/Estimated collection value/,'Priced collection value (partial if unpriced)')};
+const mv53OldAlerts=alerts;
+alerts=function(){return mv53OldAlerts()+mv53PricingPanel()};
+const mv53OldBind=bind;
+bind=function(){mv53OldBind();const s=document.getElementById('mv53Refresh');if(s)s.onclick=()=>mv53RefreshPrices();const ck=document.getElementById('mv53CKRefresh');if(ck)ck.onclick=()=>mv53RefreshCardKingdom();const legacy=document.getElementById('refreshPrices');if(legacy)legacy.onclick=()=>mv53RefreshPrices()};
+const mv53OldInfo=info;
+info=function(c){const x=mv53OldInfo(c);x.price=mv53PrintingPrice(c);x.priceSource=x.price===null?'unavailable':'Scryfall USD';x.priceUpdated=x.price===null?null:new Date().toISOString();return x};
+const mv53OldAdd=addCard;
+addCard=function(c,qty=1){const existing=state.cards.find(x=>x.id===c.id);if(existing){const v=mv53PrintingPrice(c);if(v!==null){existing.price=v;existing.priceSource='Scryfall USD';existing.priceUpdated=new Date().toISOString()}}mv53OldAdd(c,qty);if(mv53PrintingPrice(c)===null&&c.id&&navigator.onLine)mv53ScheduleMissingPrices()};
+let mv53MissingTimer=null;
+function mv53ScheduleMissingPrices(){if(mv53MissingTimer)return;mv53MissingTimer=setTimeout(()=>{mv53MissingTimer=null;if(!mv53RefreshRunning&&state.cards.some(c=>mv53Number(c.price)===null||(+c.price===0&&!c.priceSource)))void mv53RefreshPrices(true)},4000)}
+async function mv53RefreshPrices(quiet=false){if(mv53RefreshRunning)return;mv53RefreshRunning=true;const ids=[...new Set(state.cards.map(c=>c.id).filter(Boolean))],status=()=>document.getElementById('mv53PriceStatus')||document.getElementById('priceStatus');let ok=0,missing=0,failed=0;
+ try{for(let i=0;i<ids.length;i+=75){const batch=ids.slice(i,i+75);if(status())status().textContent='Refreshing '+Math.min(i+batch.length,ids.length)+' / '+ids.length+' printings…';try{const response=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({identifiers:batch.map(id=>({id}))})});if(!response.ok)throw Error('Scryfall HTTP '+response.status);const payload=await response.json();const byId=new Map((payload.data||[]).map(c=>[c.id,c]));for(const id of batch){const found=byId.get(id);const saved=state.cards.find(c=>c.id===id);if(!saved)continue;if(!found){missing++;continue}const value=mv53PrintingPrice({...found,foil:saved.foil});saved.price=value;saved.priceSource=value===null?'unavailable':'Scryfall USD';saved.priceUpdated=new Date().toISOString();saved.updated=saved.priceUpdated;if(value===null)missing++;else ok++}}catch(e){failed+=batch.length;if(status())status().textContent='Price request error: '+e.message}if(i+75<ids.length)await new Promise(r=>setTimeout(r,180))}
+ localStorage.setItem(STORE,JSON.stringify(state));if(ok){localStorage.setItem('mv53_price_refresh_at',new Date().toLocaleString());localStorage.setItem('mv53_price_refresh_at_iso',new Date().toISOString())}if(!quiet||tab==='Dashboard'||tab==='Price alerts')render();if(status())status().textContent=`Priced ${ok} printings · ${missing} unavailable · ${failed} request failures. No collection cards were removed.`;
+ if(Array.isArray(state.priceHistory)&&ok){state.priceHistory.push({at:new Date().toISOString(),total:mv53Value('tcg'),cards:qtyTotal()});state.priceHistory=state.priceHistory.slice(-365);localStorage.setItem(STORE,JSON.stringify(state))}
+ }finally{mv53RefreshRunning=false}}
+async function mv53RefreshCardKingdom(){const status=()=>document.getElementById('mv53PriceStatus');if(status())status().textContent='Checking Card Kingdom feed…';try{const r=await fetch('https://api.cardkingdom.com/api/v2/pricelist',{headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);const data=await r.json();const rows=Array.isArray(data)?data:Array.isArray(data.data)?data.data:Array.isArray(data.prices)?data.prices:Array.isArray(data.results)?data.results:[];if(!rows.length)throw Error('Unsupported price-feed format');let updated=0;const map=new Map(state.cards.map(c=>[String(c.id).toLowerCase(),c]));for(const item of rows){const id=String(item.scryfall_id||item.scryfallId||item.scryfall?.id||'').toLowerCase();const card=map.get(id);if(!card)continue;const retail=mv53Number(item.retail_price??item.retail??item.sell_price??item.price);const buylist=mv53Number(item.buylist_price??item.buy_price??item.buylist);if(retail===null&&buylist===null)continue;if(retail!==null)card.ckRetail=retail;if(buylist!==null)card.ckBuylist=buylist;card.ckUpdated=new Date().toISOString();updated++}localStorage.setItem(STORE,JSON.stringify(state));render();if(status())status().textContent=`Card Kingdom: matched ${updated} printings by exact Scryfall ID. ${updated?'':'Feed may use another schema; no values were invented.'}`;
+ }catch(e){if(status())status().textContent='Card Kingdom pricing unavailable ('+e.message+'). Scryfall estimates remain available.'}}
+// Existing collection entries created before v5.3 may contain placeholder zeroes.
+// Keep them intact, but mark missing-source zeroes as unpriced until refreshed.
+for(const c of state.cards){if(Number(c.price)===0&&!c.priceSource){c.price=null;c.priceSource='unavailable'}}
+if(navigator.onLine&&state.cards.length){const last=Date.parse(localStorage.getItem('mv53_price_refresh_at_iso')||'')||0;if(Date.now()-last>mv53Day){setTimeout(async()=>{await mv53RefreshPrices(true)},6500)}}
+
 </script></body></html>
