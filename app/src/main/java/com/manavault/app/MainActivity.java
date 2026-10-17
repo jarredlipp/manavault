@@ -85,7 +85,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.9.1"; }
+            @JavascriptInterface public String version() { return "5.9.3"; }
             @JavascriptInterface public void selectImage(int index) {
                 synchronized(lastNativeBatchPhotos){
                     if(index>=0 && index<lastNativeBatchPhotos.size())lastNativeCard=lastNativeBatchPhotos.get(index);
@@ -130,7 +130,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.9.1 · CameraX");
+        versionLabel.setText("ManaVault 5.9.3 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
@@ -142,7 +142,14 @@ public class MainActivity extends Activity {
         nativeBar.addView(nativeButton, new LinearLayout.LayoutParams(-2, dp(46)));
         root.addView(nativeBar, new LinearLayout.LayoutParams(-1, -2));
         root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1));
+        // Android 15+ draws apps edge-to-edge. Keep the native launch toolbar
+        // below the status bar and the WebView clear of gesture-navigation UI.
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            root.setPadding(0,insets.getSystemWindowInsetTop(),0,insets.getSystemWindowInsetBottom());
+            return insets;
+        });
         setContentView(root);
+        root.requestApplyInsets();
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);

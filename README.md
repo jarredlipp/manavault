@@ -1,86 +1,79 @@
-# ManaVault v5.9.1 — native-scanner entry fix
+# ManaVault v5.9.3 — Native fullscreen scanner
 
-**The visible Android toolbar is the authoritative way to open CameraX.**
-When running v5.9.1, the toolbar displays **ManaVault 5.9.1 · CameraX** and
-**Open native scanner**. The Scan Cards page repeats the button at its top and
-beside the labeled **Start legacy OCR camera** fallback.
+The native CameraX screen now requests immersive edge-to-edge camera preview, hides Android status/navigation bars until a swipe reveals them, and keeps its top diagnostics and bottom controls inside display-cutout safe insets. This is a fullscreen camera UI fix, not a new artwork-recognition engine. Android may show system bars momentarily after a swipe or permission dialog. PreviewView uses `FILL_CENTER` to fill the display, which necessarily crops some camera field of view on tall phone displays; the detector and overlay retain their prior behavior.
 
-If that Android toolbar is absent, the APK running on the phone was not built
-from this v5.9.1 source. Do not diagnose performance using the legacy camera
-in that case. The build artifact in GitHub Actions is named
-`ManaVault-v5.9.1-native-debug` and includes the `ManaVault-v5.9.1-native-debug.apk`.
+## Testing on phone
 
-**Data precaution:** Local collection data can be erased by uninstalling the app.
-Export a backup before changing APK signing certificates or uninstalling.
+1. Confirm the app toolbar says **ManaVault 5.9.3 · CameraX**.
+2. Open **native scanner**. The live image should extend to all screen edges; the top diagnostics must be readable and bottom controls fully tappable.
+3. Scan a card, enable/disable flashlight, temporarily swipe to reveal system bars, and return. Verify the camera restores fullscreen.
+4. Scan a second card and tap Review; ensure the printing-confirmation queue still appears.
+5. If the camera appears zoomed, note that fullscreen `FILL_CENTER` crops a 4:3 camera stream to fill a tall 9:20-ish display. This is expected and distinct from the legacy browser zoom control.
 
----
+# ManaVault 5.9.2 — Native scanner runtime & artwork-index fix
 
-# ManaVault v5.9 — Native Continuous Scanner Beta
+ManaVault is an independent Android MTG collection, deck, and card-scanning app. Its primary scanner uses **CameraX, OpenCV, and ML Kit**; the older WebView/OCR camera remains available as a fallback. Printing confirmation and collection management run in the WebView. This release preserves collection valuation using Scryfall prices and optional Card Kingdom comparison.
 
-Android Magic: The Gathering collection and deck app. Version 5.9 extends v5.8's native CameraX + OpenCV + Google ML Kit scanner with **continuous capture**, **artwork-first candidates when known reference art is available**, **OCR fallback**, **stable scene-change gating**, and **a queue for manual printing confirmation**. The WebView collection, deck functions, printing catalog, Scryfall-based prices, and legacy scanner remain.
+## What changed since 5.9.1
 
-This is an independently implemented scanner informed by publicly identifiable Android camera/image-processing techniques. **No TCGplayer proprietary source, models, assets, credentials, or private endpoints are embedded.**
+- **WebView startup crash fixed.** The pricing extension can now wrap `info()` without throwing `Assignment to constant variable` (`index.html` former line 841). That exception previously stopped the rest of the JS scanner-review wiring from initializing.
+- **Artwork index is a real Android asset.** `app/src/main/assets/visual-index.json` is present even in offline builds, eliminating a misleading 404. A blank asset deliberately leaves artwork-first detection unavailable and uses ML Kit OCR.
+- **Optional Scryfall starter artwork references at build time.** GitHub Actions tries to download a small set of about 40 commonly used/tested cards and generate 8×8 RGB fingerprints before compiling. If the network request fails, the build may continue with the included empty index, and the native scanner reports the actual number of references. The starter index **does not cover all MTG cards**; expanding the reference database is a separate undertaking.
+- **Better Android navigation-bar/status-bar spacing**, both for the always-visible native launch toolbar and for the scanner's top status/bottom controls on Android edge-to-edge displays.
+- **Per-card scan timing** (`card_ms`) added to the native review results alongside total time since the camera opened (`elapsed`). Individual processing timings are also included.
+- App/build markers moved to **5.9.2**, and the regression checker now guards against the `const info` startup crash and missing artwork asset.
 
-## Build the APK
+These are source fixes. Android compilation and live camera tests still need to run in GitHub Actions/on a phone; the JavaScript syntax checker cannot guarantee an Android build.
 
-1. Back up/export your current ManaVault collection (JSON backup in the app). Removing the Android app can erase local collection data.
-2. Replace your GitHub repository files with the **contents of this project folder**; delete outdated root-level README and duplicate files. Keep `.github/workflows/build-apk.yml`.
-3. Check root paths: `README.md`, `settings.gradle`, `build.gradle`, `app/`, `tools/`, `.github/`.
-4. In GitHub, run **Actions → Build ManaVault Android APK**.
-5. Download and extract `ManaVault-Android-debug`, then install `app-debug.apk`.
+## Build on GitHub Actions
 
-**Signing warning:** The workflow generates a debug-signed build. On temporary GitHub Actions runners, debug signing keys can change between builds. A differently signed APK cannot update the installed app, even when the package ID matches. To preserve collection data, **export the collection before any uninstall**. A persistent release signing key is recommended before routine updates.
+1. Export **Backup** in ManaVault if the existing collection matters. Uninstalling or signing with a new debug key can erase local app data.
+2. Replace your repository project files with these ZIP contents, including the `.github` folder. Delete old duplicate root files when replacing. The root of the Git repository should contain `settings.gradle`, `build.gradle`, `README.md`, `app/`, and `tools/`.
+3. Go to **Actions → Build ManaVault Android APK → Run workflow**. The workflow checks JavaScript and project structure, attempts the **optional artwork seed**, and builds the APK.
+4. Download artifact `ManaVault-v5.9.2-native-debug`, extract it, and install the included APK.
+5. Open the app: the native Android header should say `ManaVault 5.9.2 · CameraX` and include **Open native scanner**. The old `Start legacy OCR camera` button is not the native scanner.
 
-The source has been checked with `node tools/check_scanner.js` and ZIP integrity verification, but the native Android project has **not** been compiled or run on a phone in the author's environment. GitHub Actions is the first full Android build test. Performance targets are not verified measurements.
+**Debug signing warning:** GitHub Actions may generate a new debug certificate on each fresh runner. APKs with different signatures cannot update each other. Do not uninstall an app with collection data until you have exported and verified a backup.
 
-## Continuous native scanning
+## Native scanner usage
 
-From **Scan cards → Open native scanner**:
+1. Tap **Open native scanner** at the top of the app or on the **Scan cards** page.
+2. Put one complete card in frame. The green four-corner outline turns solid after stable detection. The yellow title region derives from the detected geometry.
+3. When artwork references are available, a candidate artwork fingerprint may identify the card; otherwise ML Kit tries OCR. A match is only a candidate name, **not a confirmed printing**.
+4. Remove the card before placing the next card. Tap **Review (N)** to return to the collection screen.
+5. Choose the physical set and collector number for each queued card, and confirm foil and condition as relevant. No cards are saved automatically based solely on the camera image.
 
-1. CameraX supplies live frames; OpenCV detects credible outer card quadrilaterals. The polygon overlay tracks the corners and yellow title area, with smoothing and rejection of sudden smaller artwork-box outlines.
-2. On stable geometry, a perspective-corrected frame is analyzed. The **artwork index is tried first** and uses a cheap cached 8×8 RGB fingerprint comparison. A match is accepted as a *name candidate* only with a conservative similarity and lead over competing names.
-3. If a credible artwork candidate is unavailable, ML Kit reads the title strip; up to four orientations are considered. Two agreeing OCR observations are queued, or **Keep title** can be used for an imperfect read.
-4. The camera stays open and a detected card is queued **once**. Physically remove/replace it to scan the next. Detection of a different artwork across stable frames also allows continuation. The camera does not stop for individual OCR failures.
-5. **Review (N)** ends capture and opens the queued results in the collection interface. Confirm the physical **set, collector number, artwork and foil status** for each card, or skip it. **No card is added merely because OCR or artwork matched a name.** The review process runs after the continuous camera session; it is not yet an in-camera instant-save interface.
-6. Once you confirm a printing, ManaVault asynchronously caches its Scryfall art crop for future artwork-first recognition. It will also optionally compare the selected printing's art against the scanned photo (advisory only).
+The status line reports `Artwork references: N`. When N is zero, artwork-first matching has no index to compare against and OCR fallback is expected; it is not an ML Kit error. The first build's optional index-generation step is visible in GitHub Actions logs. Identified printings can be learned into the native artwork cache after confirmation when their Scryfall art is reachable.
 
-The live metrics show approximate milliseconds spent on edge detection, perspective correction, artwork matching, and OCR. Scanner launch speed and card recognition speed are separate metrics. Neither is promised to be sub-second on all hardware.
+## Developer layout
 
-### Artwork-index coverage (important)
+- `app/src/main/assets/index.html` — collection UI, printing review, JS/native bridge, pricing, legacy camera
+- `app/src/main/assets/card-db.js` — offline Scryfall catalog
+- `app/src/main/assets/visual-index.json` — bundled artwork fingerprints (valid empty baseline; CI can populate)
+- `app/src/main/java/com/manavault/app/MainActivity.java` — WebView, native launch toolbar, scan batch bridge
+- `NativeScannerActivity.java` — CameraX analyzer, ML Kit OCR, scan queue, stage timing (same Java folder)
+- `CardQuadDetector.java` — OpenCV quadrilateral detector, rotation/perspective correction
+- `CardEdgeOverlay.java` — live green outline and yellow title overlay
+- `VisualMatcher.java` — bundled/learned artwork features and candidate matching
+- `ArtworkVerifier.java` — advisory artwork comparison during printing review
+- `tools/build_seed_visual_index.py` — optional small Scryfall-derived startup index for GitHub Actions
+- `tools/build_visual_index.py` and `tools/download_and_build_index.py` — optional *larger* reference-index generation utilities
+- `tools/check_scanner.js` — JavaScript syntax, recognition smoke tests, project/regression checks
 
-**v5.9 does not include a complete precomputed fingerprint database for every MTG printing.** Fingerprint comparison can identify a card from artwork only if the card's art appears in the reference index. Without references, ML Kit OCR remains the identification path. The native cache grows as you confirm printings and survives ordinary upgrades that preserve Android app data.
-
-You may optionally build a broader reference index from authorized Scryfall bulk metadata and art crops:
+A more comprehensive index can be built on a machine with internet access:
 
 ```bash
-python -m pip install pillow requests
-python tools/build_visual_index.py default_cards.json app/src/main/assets/visual-index.json --limit 3000
+python -m pip install requests pillow
+python tools/build_visual_index.py downloaded-scryfall-bulk.json app/src/main/assets/visual-index.json --limit 3000
 ```
 
-`default_cards.json` is a downloaded Scryfall default-cards bulk file. The script fetches art crops, so building a large index takes time, bandwidth and storage; comply with Scryfall usage policies. **Indexes beyond 28 MB are not supported by the current on-device parser.** `visual-index.json` is optional and is intentionally not included in the source package; keep it as a single file within Android assets if you build it. The compact index format is `manavault-visual-v1` (same reference layout the legacy scanner accepts). Artwork similarity is a heuristic, not definitive evidence of the exact edition.
+This process downloads reference artwork and may require substantial time. Respect Scryfall's rate limits and usage terms. Existing `VisualMatcher` loads a compact 8×8 RGB feature index with a 28 MB parser size limit. Reference-art comparison is approximate and can fail under glare, low light, or different artwork layouts. The app is not affiliated with TCGplayer, Wizards of the Coast, or Card Kingdom, and includes no proprietary code or extracted model from another app.
 
-## Implementation map
+## Running local checks
 
-- `MainActivity.java` — WebView collection interface; batches and review bridge; asynchronous Scryfall artwork-cache updates.
-- `NativeScannerActivity.java` — CameraX live session, scene gating, ML Kit OCR, multi-card queue and frame-stage timings.
-- `CardQuadDetector.java` — OpenCV outer-edge detection, perspective correction, localized OCR contrast.
-- `CardEdgeOverlay.java` — stabilized polygon and title region.
-- `VisualMatcher.java` — locally bundled/learned artwork index, bounded fingerprint cache, conservative matching.
-- `ArtworkVerifier.java` — optional selected-printing art comparison; never definitive.
-- `app/src/main/assets/index.html`, `card-db.js` — existing WebView UI, offline card catalog, pricing and printing confirmation.
-- `tools/build_visual_index.py` — optional creation of reference-art index.
-- `tools/check_scanner.js` — JS syntax, project and matching smoke checks.
-- `app/build.gradle`, `build.gradle` — two distinct Gradle files required for the Android build.
+```bash
+node tools/check_scanner.js  # includes the full no-network JS startup smoke test
+python -m py_compile tools/build_seed_visual_index.py tools/build_visual_index.py
+```
 
-There is one root `README.md` and one authoritative source per component. Obsolete copies should be deleted from GitHub when replacing the repository.
-
-## Limitations and troubleshooting
-
-- **No reference art / unexpected name:** Limited visual index coverage or dark/glared photos can produce a miss. OCR is a fallback, not a guarantee.
-- **Hard-to-detect borders:** Put the entire physical card in view with a contrasting mat. Internal rectangles and rotated Battle cards can still confuse early builds.
-- **Different printing of same artwork:** A visual match only proposes the name. Confirm the actual edition; the scanner never silently selects a different set.
-- **Duplicate detection:** Remove the first card fully before inserting another. Two copies with identical art may require visible removal, which resets the scene gate.
-- **Price unavailable:** Scryfall USD is a TCGplayer-referenced estimate. Card Kingdom feed access remains experimental; missing prices are not necessarily $0 value.
-- **Build fails:** Share the *first* Gradle compiler error from GitHub Actions. Browser JavaScript checks alone do not validate Android APIs.
-
-ManaVault is an unofficial personal project; it is not affiliated with Wizards of the Coast, TCGplayer or Card Kingdom.
+These tests do not compile the Android application. If GitHub Actions fails, use the **first Gradle error**, not later cascading errors, for troubleshooting.

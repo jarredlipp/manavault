@@ -51,5 +51,24 @@ assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
 assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
-assert.match(html,/v5\.9\.1/, 'Missing visible v5.9.1 build marker');
-console.log('ManaVault v5.9.1 native entry checks passed.');
+assert.match(html,/v5\.9\.2/, 'Missing visible v5.9.2 build marker');
+console.log('ManaVault v5.9.2 native entry checks passed.');
+
+// A syntax-only test missed a production crash: const info was reassigned by
+// the v5.3 pricing enhancement, aborting the native scan-review setup.
+assert.match(html,/\blet info=c=>/, 'info must be reassignable for pricing');
+assert.doesNotMatch(html,/\bconst info=c=>/, 'Fatal const reassignment regression');
+const indexFile=path.join(root,'app/src/main/assets/visual-index.json');
+assert.ok(fs.existsSync(indexFile),'Artwork index asset must exist (even when empty)');
+const visualIndex=JSON.parse(fs.readFileSync(indexFile,'utf8'));
+assert.equal(visualIndex.format,'manavault-visual-v1');
+assert.ok(Array.isArray(visualIndex.cards));
+for (const card of visualIndex.cards){
+  assert.equal(card.f.length,192,'Incorrect artwork fingerprint length');
+}
+assert.match(fs.readFileSync(path.join(root,'.github/workflows/build-apk.yml'),'utf8'),/build_seed_visual_index.py/);
+console.log('Pricing/runtime regression and artwork-index bundling checks passed ('+visualIndex.cards.length+' references).');
+
+// Also execute the complete inline application script with a minimal offline DOM.
+// This catches runtime const-reassignment mistakes missed by syntax checks.
+require('./check_runtime.js');

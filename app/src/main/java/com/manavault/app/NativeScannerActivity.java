@@ -12,6 +12,12 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.WindowManager;
+import android.view.DisplayCutout;
+import android.os.Build;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -67,7 +73,7 @@ public final class NativeScannerActivity extends ComponentActivity {
     private CardQuadDetector.Detection previous,smoothed;
     private int goodFrames=0,missingFrames=0,changeFrames=0;
     private long lastGoodAt=0,lastProcessAt=0,lastRecognitionAt=0,sessionStart=0;
-    private long lastCapturedHash=0;
+    private long lastCapturedHash=0,sceneStartedAt=0;
     private boolean waitingForNext=false;
     private String previousOcr="",lastSeenTitle="";
     private int previousOcrCount=0;
@@ -75,11 +81,17 @@ public final class NativeScannerActivity extends ComponentActivity {
     private volatile Bitmap availableCard;
     private long lastEdgeMs=0,lastWarpMs=0,lastArtMs=0,lastOcrMs=0;
     private int sourceWidth=1,sourceHeight=1;
+    private FrameLayout cameraRoot;
 
     @Override public void onCreate(Bundle savedInstanceState){
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(Color.BLACK);
-        getWindow().setNavigationBarColor(Color.BLACK);
+        // Camera must occupy the *entire* physical display. Merely placing a
+        // PreviewView MATCH_PARENT inside a normal Activity leaves reserved
+        // status/navigation-bar regions and cuts across the overlay controls.
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         sessionStart=SystemClock.elapsedRealtime();
         analysisExecutor.execute(()->{
             try{
@@ -91,43 +103,88 @@ public final class NativeScannerActivity extends ComponentActivity {
         preview.setScaleType(PreviewView.ScaleType.FILL_CENTER);
         preview.setImplementationMode(PreviewView.ImplementationMode.COMPATIBLE);
         overlay=new CardEdgeOverlay(this);
-        FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);
+        FrameLayout root=new FrameLayout(this);cameraRoot=root;root.setBackgroundColor(Color.BLACK);
         root.addView(preview,new FrameLayout.LayoutParams(-1,-1));
         root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.VERTICAL);
         top.setPadding(dp(14),dp(12),dp(14),dp(12));top.setBackgroundColor(0xA5000000);
         status=new TextView(this);status.setTextColor(Color.WHITE);status.setTextSize(15);
-        status.setText("Initializing native scanner…");top.addView(status);
+        status.setText("Native CameraX · starting…");top.addView(status);
         metrics=new TextView(this);metrics.setTextColor(0xFFBBDBCC);metrics.setTextSize(11);
         metrics.setText("Timing: waiting for frames");top.addView(metrics);
         root.addView(top,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));
         LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER);
-        actions.setPadding(dp(7),dp(10),dp(7),dp(18));actions.setBackgroundColor(0xAA000000);
-        Button back=new Button(this);back.setText("Cancel");back.setOnClickListener(v->finishBatch());
-        actions.addView(back,new LinearLayout.LayoutParams(0,dp(54),1));
-        torchButton=new Button(this);torchButton.setText("Light off");torchButton.setOnClickListener(v->toggleTorch());
-        actions.addView(torchButton,new LinearLayout.LayoutParams(0,dp(54),1));
-        keepButton=new Button(this);keepButton.setText("Keep title");keepButton.setEnabled(false);
+        actions.setPadding(dp(6),dp(8),dp(6),dp(16));actions.setBackgroundColor(0xD0000000);
+        Button back=new Button(this);back.setText("Close");back.setAllCaps(false);back.setTextSize(12);back.setMinWidth(0);back.setMinimumWidth(0);
+        back.setOnClickListener(v->finishBatch());
+        actions.addView(back,new LinearLayout.LayoutParams(0,dp(48),1));
+        torchButton=new Button(this);torchButton.setText("Light off");torchButton.setAllCaps(false);torchButton.setTextSize(12);torchButton.setMinWidth(0);torchButton.setMinimumWidth(0);
+        torchButton.setOnClickListener(v->toggleTorch());
+        actions.addView(torchButton,new LinearLayout.LayoutParams(0,dp(48),1));
+        keepButton=new Button(this);keepButton.setText("Keep title");keepButton.setAllCaps(false);keepButton.setTextSize(12);keepButton.setMinWidth(0);keepButton.setMinimumWidth(0);keepButton.setEnabled(false);
         keepButton.setOnClickListener(v->{
             Bitmap card=availableCard;
             if(card!=null&&!card.isRecycled()&&!lastSeenTitle.isEmpty()&&!waitingForNext)
                 enqueue(lastSeenTitle,"manual-title",0,null,card,previewHash);
         });
-        actions.addView(keepButton,new LinearLayout.LayoutParams(0,dp(54),1));
-        reviewButton=new Button(this);reviewButton.setText("Review (0)");reviewButton.setOnClickListener(v->finishBatch());
-        actions.addView(reviewButton,new LinearLayout.LayoutParams(0,dp(54),1));
+        actions.addView(keepButton,new LinearLayout.LayoutParams(0,dp(48),1));
+        reviewButton=new Button(this);reviewButton.setText("Review (0)");reviewButton.setAllCaps(false);reviewButton.setTextSize(12);reviewButton.setMinWidth(0);reviewButton.setMinimumWidth(0);
+        reviewButton.setOnClickListener(v->finishBatch());
+        actions.addView(reviewButton,new LinearLayout.LayoutParams(0,dp(48),1));
         root.addView(actions,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
+        // In immersive mode system bars are hidden. Reserve *only* camera-cutout
+        // safe area, not the old status/nav bar heights (which caused the overlap
+        // and reduced the useful preview area on Samsung gesture navigation).
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            int topSafe=0,bottomSafe=0,leftSafe=0,rightSafe=0;
+            if(Build.VERSION.SDK_INT>=28){
+                DisplayCutout cutout=insets.getDisplayCutout();
+                if(cutout!=null){
+                    topSafe=cutout.getSafeInsetTop();
+                    bottomSafe=cutout.getSafeInsetBottom();
+                    leftSafe=cutout.getSafeInsetLeft();
+                    rightSafe=cutout.getSafeInsetRight();
+                }
+            }
+            top.setPadding(dp(14)+leftSafe,dp(12)+topSafe,dp(14)+rightSafe,dp(12));
+            actions.setPadding(dp(6)+leftSafe,dp(8),dp(6)+rightSafe,dp(16)+bottomSafe);
+            return insets;
+        });
         setContentView(root);
+        applyImmersiveCamera();
+        root.requestApplyInsets();
         if(!OpenCVLoader.initLocal()){
             status.setText("OpenCV unavailable; return to legacy browser scanner.");return;
         }
         referenceExecutor.execute(()->{
-            try{visual=new VisualMatcher(getApplicationContext());}
-            catch(Exception e){Log.w(TAG,"Artwork index loading failed, using OCR",e);}
+            try{
+                VisualMatcher matcher=new VisualMatcher(getApplicationContext());
+                visual=matcher;
+                int refs=matcher.count();
+                runOnUiThread(()->{
+                    if(!closing)metrics.setText("Artwork references: "+refs+
+                        (refs==0?" · OCR fallback active (index not populated)":" · artwork-first enabled"));
+                });
+            }catch(Exception e){Log.w(TAG,"Artwork index loading failed, using OCR",e);}
         });
         recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         if(ContextCompat.checkSelfPermission(this,Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED)startCamera();
         else requestPermissions(new String[]{Manifest.permission.CAMERA},PERMISSION_REQUEST);
+    }
+    /** Re-hide bars when focus returns (permission dialogs and the torch can
+     * otherwise cause them to reappear). Swipe still reveals bars transiently. */
+    private void applyImmersiveCamera(){
+        if(cameraRoot==null)return;
+        WindowInsetsControllerCompat controller=WindowCompat.getInsetsController(getWindow(),cameraRoot);
+        if(controller!=null){
+            controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            controller.hide(WindowInsetsCompat.Type.systemBars());
+        }
+    }
+    @Override protected void onResume(){super.onResume();applyImmersiveCamera();}
+    @Override public void onWindowFocusChanged(boolean hasFocus){
+        super.onWindowFocusChanged(hasFocus);
+        if(hasFocus)applyImmersiveCamera();
     }
     private int dp(int dip){return (int)(getResources().getDisplayMetrics().density*dip+.5f);}
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){
@@ -212,13 +269,14 @@ public final class NativeScannerActivity extends ComponentActivity {
                     SystemClock.elapsedRealtime()-lastGoodAt<500)good=false;
             if(good){
                 if(drift(detected,previous,w,h)<.035f){goodFrames=Math.min(12,goodFrames+1);smoothed=smooth(smoothed,detected);}
-                else {goodFrames=1;smoothed=detected;}
+                else {goodFrames=1;smoothed=detected;if(!waitingForNext)sceneStartedAt=SystemClock.elapsedRealtime();}
                 previous=detected;missingFrames=0;lastGoodAt=SystemClock.elapsedRealtime();
             }else{
                 missingFrames++;
                 if(SystemClock.elapsedRealtime()-lastGoodAt>700){goodFrames=0;smoothed=null;previous=null;}
                 if(waitingForNext && missingFrames>=5){
                     waitingForNext=false;changeFrames=0;previousOcr="";previousOcrCount=0;
+                    sceneStartedAt=0;
                     runOnUiThread(()->{if(!closing)status.setText("Card removed · ready for next card");});
                 }
             }
@@ -239,6 +297,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                 else changeFrames=0;
                 if(changeFrames<4){corrected.recycle();return;}
                 waitingForNext=false;changeFrames=0;previousOcr="";previousOcrCount=0;
+                sceneStartedAt=SystemClock.elapsedRealtime();
             }
             if(!recognizing.compareAndSet(false,true)){corrected.recycle();return;}
             previewHash=hash;
@@ -328,6 +387,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             result.put("similarity",Math.round(score*1000)/1000.0);
             result.put("ocr_reads",source.equals("ocr")?previousOcrCount:0);
             result.put("elapsed",SystemClock.elapsedRealtime()-sessionStart);
+            result.put("card_ms",SystemClock.elapsedRealtime()-(sceneStartedAt>0?sceneStartedAt:sessionStart));
             result.put("image_path",photo.getAbsolutePath());
             result.put("edge_ms",lastEdgeMs);result.put("warp_ms",lastWarpMs);
             result.put("art_ms",lastArtMs);result.put("ocr_ms",lastOcrMs);
