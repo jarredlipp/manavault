@@ -11,9 +11,11 @@ const code=html.slice(start,end);
 const copies=[];
 let localCards=[];
 let imageResults=[];
+let printedLines=[];
+let symbolResults=[];
 const printings=[
- {id:'a',name:'Test Card',lang:'en',digital:false,nonfoil:true,foil:false,set:'one',set_name:'One Set',collector_number:'12',image_url:'https://cards.scryfall.io/art1.jpg',illustration_id:'art-1'},
- {id:'b',name:'Test Card',lang:'en',digital:false,nonfoil:true,foil:false,set:'two',set_name:'Two Set',collector_number:'49',image_url:'https://cards.scryfall.io/art2.jpg',illustration_id:'art-2'}
+ {id:'a',name:'Test Card',lang:'en',digital:false,nonfoil:true,foil:false,set:'one',set_name:'One Set',collector_number:'12',image_small:'https://cards.scryfall.io/small/front/a/b/a.jpg',image_url:'https://cards.scryfall.io/art1.jpg',illustration_id:'art-1'},
+ {id:'b',name:'Test Card',lang:'en',digital:false,nonfoil:true,foil:false,set:'two',set_name:'Two Set',collector_number:'49',image_small:'https://cards.scryfall.io/small/front/c/d/b.jpg',image_url:'https://cards.scryfall.io/art2.jpg',illustration_id:'art-2'}
 ];
 const context={
  window:{},console,
@@ -40,6 +42,14 @@ const context={
 context.window.ManaVaultCardDB=context.ManaVaultCardDB;
 context.window.ManaVaultNativeScanner={
  selectImage:()=>{},
+ readPrintingMarks:request=>{
+  const payload=JSON.parse(request);
+  context.window.mv61OnMarksResult({requestId:payload.requestId,lines:printedLines});
+ },
+ rankSetSymbols:request=>{
+  const payload=JSON.parse(request);
+  context.window.mv61OnSymbolResult({requestId:payload.requestId,matches:symbolResults,attempted:payload.choices.length,failed:0});
+ },
  rankPrintings:request=>{
   const payload=JSON.parse(request);
   context.window.mv60OnRankResult({requestId:payload.requestId,matches:imageResults,attempted:payload.choices.length,failed:0});
@@ -65,7 +75,37 @@ async function run(expr){return vm.runInContext(expr,context)}
  localCards=[printings[0],{...printings[1],illustration_id:'art-1'}];
  imageResults=[{id:'a',score:.985}];
  result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
- assert.match(result.reason,/share this illustration/,'Same artwork across editions is not enough');
+ assert.ok(result.reason,'Same artwork across editions is not enough without independent printing evidence');
+ // Independent printing evidence: printed collector number and expansion code.
+ localCards=printings;
+ printedLines=[{zone:'bottom-left',text:'49 TWO EN',confidence:.9}];
+ imageResults=[{id:'a',score:.98},{id:'b',score:.97}];
+ result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
+ assert.equal(result.printing?.id,'b','Matching collector number plus printed set code identifies the exact printing');
+ // Artwork reprints with shared illustration: number + expansion symbol.
+ localCards=[printings[0],{...printings[1],illustration_id:'art-1'}];
+ printedLines=[{zone:'bottom-left',text:'49',confidence:.9}];
+ imageResults=[{id:'a',score:.85}];
+ symbolResults=[{set:'two',score:.975},{set:'one',score:.81}];
+ result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
+ assert.equal(result.printing?.id,'b','Collector number plus expansion symbol resolves shared artwork');
+ // A tied symbol or an ambiguous footer may never auto-save.
+ symbolResults=[{set:'two',score:.975},{set:'one',score:.96}];
+ result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
+ assert.ok(result.reason,'Close expansion symbol scores require review');
+ printedLines=[{zone:'bottom-left',text:'12 49',confidence:.9}];
+ result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
+ assert.ok(result.reason,'Conflicting collector numbers require review');
+ // Contradictory footer fingerprints must veto an attractive artwork result.
+ localCards=printings;imageResults=[{id:'a',score:.991},{id:'b',score:.79}];
+ printedLines=[{zone:'bottom-left',text:'49 ONE EN',confidence:.9}];
+ result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
+ assert.ok(result.reason,'Conflicting collector number and set code cannot auto-save');
+ printedLines=[{zone:'bottom-left',text:'49',confidence:.9}];
+ result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
+ assert.match(result.reason,/Artwork conflicts/,'Artwork must not override conflicting collector number');
+ printedLines=[];symbolResults=[];
+
  localCards=[printings[0]];
  await run('window.mvNativeScanBatch([{name:"Test Card",source:"ocr-exact",ocr_reads:1}])');
  assert.equal(context.state.cards.length,1,'Automatic batch should save without review');
@@ -74,5 +114,5 @@ async function run(expr){return vm.runInContext(expr,context)}
  assert.equal(context.state.cards[0].qty,2,'Repeated physical scans must increment quantity');
  await run('mv60UndoLast()');
  assert.equal(context.state.cards[0].qty,1,'Undo must remove only the last auto-added copy');
- console.log('v5.10 automatic-saving checks passed: unique printing, uncertain OCR, clear artwork, tied artwork, shared illustration, and quantity increment.');
+ console.log('v5.10.1 automatic-saving checks passed: unique printing, uncertain OCR, clear artwork, tied artwork, shared illustration, and quantity increment.');
 })().catch(e=>{console.error(e);process.exitCode=1});

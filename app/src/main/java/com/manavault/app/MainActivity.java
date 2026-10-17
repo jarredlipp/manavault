@@ -86,7 +86,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.10.0"; }
+            @JavascriptInterface public String version() { return "5.10.1"; }
             /** Store a public name catalog for fast native exact-match recognition.
              * Write atomically and never block the WebView JavaScript thread. */
             @JavascriptInterface public void updateNameIndex(String json) {
@@ -102,6 +102,48 @@ public class MainActivity extends Activity {
                         }
                         if(!temp.renameTo(file))Log.w("ManaVaultNames","Could not install native name index");
                     }catch(Exception e){Log.w("ManaVaultNames","Name catalog update rejected",e);}
+                });
+            }
+            /** Read collector number / printed set code in the captured card footer.
+             * Run after the name is identified; never block CameraX frame analysis. */
+            @JavascriptInterface public void readPrintingMarks(String payload) {
+                org.json.JSONObject request;
+                try{request=new org.json.JSONObject(payload);}catch(Exception e){return;}
+                final File snapshot=lastNativeCard;
+                artworkExecutor.execute(()->{
+                    org.json.JSONObject result;
+                    try{
+                        if(snapshot==null||!snapshot.isFile())throw new java.io.IOException("Captured scan not available");
+                        result=PrintingFingerprintVerifier.readMarks(snapshot,request.optString("requestId",""));
+                    }catch(Exception e){
+                        result=new org.json.JSONObject();
+                        try{result.put("requestId",request.optString("requestId",""));
+                            result.put("error","Collector/set marks unreadable");}catch(Exception ignored){}
+                    }
+                    final String output=result.toString();
+                    runOnUiThread(()->{if(webView!=null)webView.evaluateJavascript(
+                        "window.mv61OnMarksResult && window.mv61OnMarksResult("+output+")",null);});
+                });
+            }
+            /** Compare the physical expansion symbol with candidate printings.
+             * Only official Scryfall full-card references are accepted. */
+            @JavascriptInterface public void rankSetSymbols(String payload) {
+                org.json.JSONObject request;
+                try{request=new org.json.JSONObject(payload);}catch(Exception e){return;}
+                final File snapshot=lastNativeCard;
+                artworkExecutor.execute(()->{
+                    org.json.JSONObject result;
+                    try{
+                        if(snapshot==null||!snapshot.isFile())throw new java.io.IOException("Captured scan not available");
+                        result=PrintingFingerprintVerifier.rankSymbols(snapshot,request);
+                    }catch(Exception e){
+                        result=new org.json.JSONObject();
+                        try{result.put("requestId",request.optString("requestId",""));
+                            result.put("error","Expansion symbol comparison unavailable");}catch(Exception ignored){}
+                    }
+                    final String output=result.toString();
+                    runOnUiThread(()->{if(webView!=null)webView.evaluateJavascript(
+                        "window.mv61OnSymbolResult && window.mv61OnSymbolResult("+output+")",null);});
                 });
             }
             @JavascriptInterface public void rankPrintings(String payload) {
@@ -181,7 +223,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.10.0 · CameraX");
+        versionLabel.setText("ManaVault 5.10.1 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));

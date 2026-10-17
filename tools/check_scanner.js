@@ -15,6 +15,7 @@ const files=[
   'app/src/main/java/com/manavault/app/CardEdgeOverlay.java',
   'app/src/main/java/com/manavault/app/CardQuadDetector.java',
   'app/src/main/java/com/manavault/app/ArtworkVerifier.java',
+  'app/src/main/java/com/manavault/app/PrintingFingerprintVerifier.java',
   'app/src/main/java/com/manavault/app/VisualMatcher.java',
   'app/src/main/AndroidManifest.xml',
   '.github/workflows/build-apk.yml',
@@ -53,7 +54,7 @@ assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
 assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
-assert.match(html,/ManaVault v5\.10\.0/, 'Missing visible v5.10 build marker');
+assert.match(html,/ManaVault v5\.10\.1/, 'Missing visible v5.10.1 build marker');
 console.log('ManaVault v5.9.2 native entry checks passed.');
 
 // A syntax-only test missed a production crash: const info was reassigned by
@@ -90,4 +91,14 @@ assert.match(html,/mv60RankArtwork/);
 assert.match(html,/Undo last auto-saved card/);
 const detectorSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/CardQuadDetector.java'),'utf8');
 assert.match(detectorSource,/frameArea \* 0\.075/);
-console.log('v5.9.4 scene and image persistence guards passed.');
+assert.match(native,/if\(waitingForNext\)\{corrected\.recycle\(\);return;\}/,'Must require real removal before rescan');
+assert.doesNotMatch(native,/else if\(previousOcrCount>=2\)\{enqueue\(name/, 'Must not queue unknown OCR as a card');
+const marks=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/PrintingFingerprintVerifier.java'),'utf8');
+const activity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
+assert.match(activity,/readPrintingMarks\(/);
+assert.match(activity,/rankSetSymbols\(/);
+assert.match(marks,/bottom-left/);
+assert.match(marks,/symbolSignature/);
+assert.match(html,/mv61ResolvePrinting/);
+assert.match(dbSource,/image_normal/);
+console.log('v5.10.1 scene, OCR, printing fingerprint, and image persistence guards passed.');

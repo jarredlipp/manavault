@@ -1,0 +1,165 @@
+package com.manavault.app;
+
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import com.google.android.gms.tasks.Tasks;
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.text.Text;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.File;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+/** Auxiliary PRINTING evidence, not a substitute for an identified card title.
+ * Reads the bottom collector/set text and compares printed set-symbol regions
+ * with the same region in official Scryfall printing photographs.
+ * Weak or indistinguishable evidence always goes to manual review.
+ */
+final class PrintingFingerprintVerifier {
+    private PrintingFingerprintVerifier() {}
+
+    static JSONObject readMarks(File photo, String requestId) throws Exception {
+        JSONObject out=new JSONObject();out.put("requestId",requestId);
+        JSONArray lines=new JSONArray();out.put("lines",lines);
+        Bitmap card=BitmapFactory.decodeFile(photo.getAbsolutePath());
+        if(card==null){out.put("error","Captured card image unavailable");return out;}
+        TextRecognizer reader=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        try {
+            // Keep the artwork/title out: copyright years and game rules are NOT
+            // valid collector-number evidence. Old and new frames position the
+            // small collector/expansion text differently near the bottom edge.
+            String[] zones={"bottom-left","bottom-band"};
+            for(int zone=0;zone<2;zone++){
+                float x=zone==0?.018f:.018f, y=zone==0?.905f:.92f;
+                float width=zone==0?.48f:.96f, height=zone==0?.087f:.073f;
+                Bitmap strip=Bitmap.createBitmap(card,Math.round(card.getWidth()*x),
+                    Math.round(card.getHeight()*y),
+                    Math.min(Math.round(card.getWidth()*width),card.getWidth()-Math.round(card.getWidth()*x)),
+                    Math.min(Math.round(card.getHeight()*height),card.getHeight()-Math.round(card.getHeight()*y)));
+                Bitmap enlarged=Bitmap.createScaledBitmap(strip,strip.getWidth()*3,strip.getHeight()*3,true);
+                strip.recycle();
+                try {
+                    Text words=Tasks.await(reader.process(InputImage.fromBitmap(enlarged,0)),4,TimeUnit.SECONDS);
+                    for(Text.TextBlock block:words.getTextBlocks())for(Text.Line line:block.getLines()){
+                        String value=line.getText().trim();
+                        if(value.isEmpty())continue;
+                        JSONObject item=new JSONObject();
+                        item.put("text",value);
+                        item.put("zone",zones[zone]);
+                        item.put("confidence",line.getConfidence());
+                        lines.put(item);
+                    }
+                }catch(Exception ignored){/* Missing footer OCR is never evidence of another edition. */}
+                finally{enlarged.recycle();}
+            }
+        }finally{reader.close();card.recycle();}
+        return out;
+    }
+
+    private static final ExecutorService NETWORK=Executors.newFixedThreadPool(4);
+    private static final Map<String,double[]> CACHE=new LinkedHashMap<String,double[]>(64,.75f,true){
+        @Override protected boolean removeEldestEntry(Map.Entry<String,double[]> entry){return size()>64;}
+    };
+    /** Compare only the printed expansion-symbol region, never the card artwork.
+     * A similarity is an uncalibrated score, NOT an identity probability.
+     * Callers must require a unique set and an independently established name.
+     */
+    static JSONObject rankSymbols(File photo, JSONObject request) throws Exception {
+        JSONObject out=new JSONObject();out.put("requestId",request.optString("requestId",""));
+        JSONArray choices=request.optJSONArray("choices");
+        if(choices==null||choices.length()<2||choices.length()>12){out.put("error","Unsupported expansion-symbol candidate count");return out;}
+        Bitmap photoCard=BitmapFactory.decodeFile(photo.getAbsolutePath());
+        if(photoCard==null){out.put("error","Captured card image unavailable");return out;}
+        double[] scanned;
+        try {scanned=symbolSignature(photoCard);}finally{photoCard.recycle();}
+        List<Future<JSONObject>> jobs=new ArrayList<>();
+        for(int i=0;i<choices.length();i++){
+            final JSONObject item=choices.optJSONObject(i);
+            jobs.add(NETWORK.submit(new Callable<JSONObject>(){
+                @Override public JSONObject call() throws Exception {
+                    if(item==null)return null;
+                    String reference=item.optString("image_normal","");
+                    double[] expected=referenceSymbol(reference);
+                    double score=similarity(scanned,expected);
+                    JSONObject row=new JSONObject();row.put("set",item.optString("set",""));
+                    row.put("score",Math.round(score*10000.)/10000.);
+                    return row;
+                }
+            }));
+        }
+        List<JSONObject> matches=new ArrayList<>();int failed=0;
+        for(Future<JSONObject> job:jobs)try{
+            JSONObject row=job.get(4,TimeUnit.SECONDS);
+            if(row==null)failed++;else matches.add(row);
+        }catch(Exception ex){failed++;job.cancel(true);}
+        matches.sort((a,b)->Double.compare(b.optDouble("score",0),a.optDouble("score",0)));
+        JSONArray ranked=new JSONArray();for(JSONObject match:matches)ranked.put(match);
+        out.put("matches",ranked);out.put("failed",failed);out.put("attempted",choices.length());
+        return out;
+    }
+    private static boolean safe(String path){
+        try {URL url=new URL(path);
+            return url.getProtocol().equals("https")&&url.getHost().equalsIgnoreCase("cards.scryfall.io")&&
+                url.getPath().contains("/normal/");
+        }catch(Exception e){return false;}
+    }
+    private static double[] referenceSymbol(String address) throws Exception {
+        if(!safe(address))throw new SecurityException("Expected an official Scryfall normal card image");
+        synchronized(CACHE){double[] cached=CACHE.get(address);if(cached!=null)return cached;}
+        HttpURLConnection connection=(HttpURLConnection)new URL(address).openConnection();
+        connection.setConnectTimeout(1800);connection.setReadTimeout(2300);
+        connection.setInstanceFollowRedirects(false);
+        connection.setRequestProperty("User-Agent","ManaVault/5.10.1 (printing evidence)");
+        Bitmap reference=null;
+        try{
+            if(connection.getResponseCode()!=200||connection.getContentLengthLong()>4_000_000)
+                throw new java.io.IOException("Expansion symbol reference unavailable");
+            reference=BitmapFactory.decodeStream(connection.getInputStream());
+            if(reference==null)throw new java.io.IOException("Unreadable printing reference");
+            double[] signature=symbolSignature(reference);
+            synchronized(CACHE){CACHE.put(address,signature);}
+            return signature;
+        }finally{if(reference!=null)reference.recycle();connection.disconnect();}
+    }
+    private static double[] symbolSignature(Bitmap card){
+        // The symbol is normally at the far right of the type bar. Exact
+        // nonstandard frames cannot be inferred from this crop and will fail
+        // the conservative similarity/margin checks rather than auto-save.
+        int x=Math.round(card.getWidth()*.855f),y=Math.round(card.getHeight()*.53f);
+        int w=Math.min(Math.round(card.getWidth()*.12f),card.getWidth()-x);
+        int h=Math.min(Math.round(card.getHeight()*.075f),card.getHeight()-y);
+        Bitmap roi=Bitmap.createBitmap(card,x,y,w,h);
+        Bitmap scaled=Bitmap.createScaledBitmap(roi,24,24,true);
+        roi.recycle();double[] signature=new double[576];double average=0;
+        for(int j=0;j<576;j++){
+            int rgb=scaled.getPixel(j%24,j/24);
+            double lum=.299*Color.red(rgb)+.587*Color.green(rgb)+.114*Color.blue(rgb);
+            signature[j]=lum;average+=lum;
+        }
+        scaled.recycle();average/=576;
+        double sum=0;for(int j=0;j<576;j++){signature[j]-=average;sum+=signature[j]*signature[j];}
+        double rms=Math.sqrt(sum);
+        if(rms>1e-6)for(int j=0;j<576;j++)signature[j]/=rms;
+        return signature;
+    }
+    private static double similarity(double[] a,double[] b){
+        double dot=0;for(int i=0;i<a.length;i++)dot+=a[i]*b[i];
+        return Math.max(0,Math.min(1,(dot+1)/2));
+    }
+}

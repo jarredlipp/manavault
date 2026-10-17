@@ -7,8 +7,8 @@ android {
         applicationId 'com.manavault.app'
         minSdk 26
         targetSdk 35
-        versionCode 64
-        versionName '5.10.0-native-auto'
+        versionCode 65
+        versionName '5.10.1-print-fingerprints'
     }
 }
 

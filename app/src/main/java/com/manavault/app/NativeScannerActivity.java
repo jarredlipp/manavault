@@ -132,7 +132,12 @@ public final class NativeScannerActivity extends ComponentActivity {
         keepButton=new Button(this);keepButton.setText("Keep title");keepButton.setAllCaps(false);keepButton.setTextSize(12);keepButton.setMinWidth(0);keepButton.setMinimumWidth(0);keepButton.setEnabled(false);
         keepButton.setOnClickListener(v->{
             Bitmap card=availableCard;
-            if(card!=null&&!card.isRecycled()&&!lastSeenTitle.isEmpty()&&!waitingForNext)
+            if(waitingForNext){
+                waitingForNext=false;sceneStartedAt=SystemClock.elapsedRealtime();
+                previousOcr="";previousOcrCount=0;goodFrames=0;
+                status.setText("Next card manually enabled · show a different card");
+                keepButton.setText("Keep title");keepButton.setEnabled(false);
+            }else if(card!=null&&!card.isRecycled()&&!lastSeenTitle.isEmpty())
                 enqueue(lastSeenTitle,"manual-title",0,null,card,previewHash);
         });
         actions.addView(keepButton,new LinearLayout.LayoutParams(0,dp(48),1));
@@ -362,6 +367,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                     if(missingFrames>=10&&changedEmptyFrames>=8&&
                             SystemClock.elapsedRealtime()-missingSince>=1400){
                         waitingForNext=false;changeFrames=0;previousOcr="";previousOcrCount=0;
+                        runOnUiThread(()->{keepButton.setText("Keep title");keepButton.setEnabled(false);});
                         sceneStartedAt=0;missingSince=0;
                         runOnUiThread(()->{if(!closing)status.setText("Scene changed · ready for next card");});
                     }
@@ -382,15 +388,10 @@ public final class NativeScannerActivity extends ComponentActivity {
             Bitmap corrected=detector.rectify(frame,smoothed);
             lastWarpMs=SystemClock.elapsedRealtime()-begin;
             long hash=VisualMatcher.quickHash(corrected);
-            if(waitingForNext){
-                int difference=Long.bitCount(hash^lastCapturedHash);
-                if(difference>=15){changeFrames++;}
-                else changeFrames=0;
-                if(changeFrames<4){corrected.recycle();return;}
-                waitingForNext=false;changeFrames=0;previousOcr="";previousOcrCount=0;
-                sceneStartedAt=SystemClock.elapsedRealtime();
-                runOnUiThread(()->{if(!closing)status.setText("New card detected · identifying…");});
-            }
+            // A changed artwork hash, glare, or exposure is NEVER proof that
+            // the previous physical card was removed. Re-arm only after the
+            // confirmed empty-stand event above (or explicit Next card tap).
+            if(waitingForNext){corrected.recycle();return;}
             if(!recognizing.compareAndSet(false,true)){corrected.recycle();return;}
             previewHash=hash;
             Bitmap old=availableCard;availableCard=corrected;
@@ -434,6 +435,23 @@ public final class NativeScannerActivity extends ComponentActivity {
         }
         return best;
     }
+    /** Detect two-line stylized titles, but only when the combined text is a
+     * real indexed card name. Never concatenate arbitrary rules text. */
+    private static String indexedTwoLineTitle(Text result,NativeNameIndex index){
+        if(index==null)return null;
+        ArrayList<Text.Line> lines=new ArrayList<>();
+        for(Text.TextBlock block:result.getTextBlocks())lines.addAll(block.getLines());
+        for(int i=0;i<lines.size();i++)for(int j=i+1;j<lines.size();j++){
+            Text.Line a=lines.get(i),b=lines.get(j);
+            android.graphics.Rect r=a.getBoundingBox(),t=b.getBoundingBox();
+            if(r==null||t==null||t.top<r.top||t.top-r.bottom>Math.max(40,r.height()*1.8))continue;
+            if(Math.abs(r.left-t.left)>Math.max(65,r.width()*.5))continue;
+            String combined=a.getText().trim()+" "+b.getText().trim();
+            String canonical=index.exact(combined);
+            if(canonical!=null)return canonical;
+        }
+        return null;
+    }
     private void readTitle(Bitmap card,long hash,int rotationIndex,long began){
         if(closing){recognizing.set(false);return;}
         int[] rotations={0,180,90,270};
@@ -441,7 +459,11 @@ public final class NativeScannerActivity extends ComponentActivity {
         Bitmap strip=titleImage(rotated);
         recognizer.process(InputImage.fromBitmap(strip,0)).addOnCompleteListener(task->{
             String name="";
-            if(task.isSuccessful())name=selectTitle(task.getResult());
+            if(task.isSuccessful()){
+                name=selectTitle(task.getResult());
+                String paired=indexedTwoLineTitle(task.getResult(),names);
+                if(paired!=null)name=paired;
+            }
             else Log.w(TAG,"ML Kit title read failed",task.getException());
             strip.recycle();if(rotated!=card)rotated.recycle();
             if(closing){recognizing.set(false);return;}
@@ -464,7 +486,9 @@ public final class NativeScannerActivity extends ComponentActivity {
                 // Exact canonical names bypass the repeated OCR wait. For an
                 // unknown or incomplete catalog, retain two-read protection.
                 if(canonical!=null){enqueue(canonical,"ocr-exact",1f,null,card,hash);}
-                else if(previousOcrCount>=2){enqueue(name,"ocr",0,null,card,hash);}
+                // Do not queue a raw OCR string even after repeated reads.
+                // Unknown names remain visible for an explicit manual action;
+                // JS must never auto-save an unvalidated title.
                 recognizing.set(false);
             }else if(rotationIndex<3){
                 readTitle(card,hash,rotationIndex+1,began);
@@ -501,7 +525,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             lastSeenTitle="";previousOcr="";previousOcrCount=0;
             final String msg="Captured "+name+" ("+source+") · "+captured.size()+" queued · remove card";
             runOnUiThread(()->{if(!closing){
-                status.setText(msg);keepButton.setEnabled(false);
+                status.setText(msg);keepButton.setText("Next card");keepButton.setEnabled(true);
                 reviewButton.setText("Finish / save ("+captured.size()+")");
                 metrics.setText("Edge "+lastEdgeMs+" ms · rectify "+lastWarpMs+" ms · artwork "+lastArtMs+" ms · OCR "+lastOcrMs+" ms · references "+(visual==null?0:visual.count()));
             }});
