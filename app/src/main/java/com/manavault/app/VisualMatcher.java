@@ -26,9 +26,12 @@ final class VisualMatcher {
     private static final String TAG="ManaVaultVisual";
     private static final int MAX_BUNDLED=60000;
     private static final int MAX_LEARNED=800;
+    private static final int MAX_OBSERVED=300;
     private final File learnedFile;
+    private final File observedFile;
     private final ArrayList<Entry> entries=new ArrayList<>();
     private final ArrayList<Entry> learned=new ArrayList<>();
+    private final ArrayList<Entry> observed=new ArrayList<>();
     private final java.util.LinkedHashMap<Long,Match> cache=new java.util.LinkedHashMap<Long,Match>(180,.75f,true){
         @Override protected boolean removeEldestEntry(java.util.Map.Entry<Long,Match> eldest){return size()>160;}
     };
@@ -53,6 +56,7 @@ final class VisualMatcher {
     }
     VisualMatcher(Context context){
         learnedFile=new File(context.getFilesDir(),"learned-artwork-v59.json");
+        observedFile=new File(context.getFilesDir(),"observed-artwork-v5104.json");
         try(InputStream in=context.getAssets().open("visual-index.json")){
             byte[] bytes=readLimited(in,28_000_000);
             JSONArray cards=new JSONObject(new String(bytes,java.nio.charset.StandardCharsets.UTF_8)).optJSONArray("cards");
@@ -68,6 +72,13 @@ final class VisualMatcher {
             }
         }catch(Exception e){Log.w(TAG,"Unable to read learned artwork",e);}
         entries.addAll(learned);
+        try{
+            if(observedFile.isFile())try(InputStream in=new java.io.FileInputStream(observedFile)){
+                JSONArray cards=new JSONArray(new String(readLimited(in,1_000_000),java.nio.charset.StandardCharsets.UTF_8));
+                load(cards,observed,MAX_OBSERVED);
+            }
+        }catch(Exception e){Log.w(TAG,"Unable to read observed name-only artwork",e);}
+        entries.addAll(observed);
     }
     int count(){return entries.size();}
     private static byte[] readLimited(InputStream in,int limit) throws java.io.IOException {
@@ -127,6 +138,33 @@ final class VisualMatcher {
         Match result=new Match(winner.name,winner.id,best,best-Math.max(0,second),entries.size());
         cache.put(key,result);
         return result;
+    }
+    /** Learn a name-only camera fingerprint from an EXACT offline-catalog OCR title.
+     * This cache improves later name recognition but has no printing ID and can never
+     * be used as independent evidence for edition, foil or condition.
+     * The image itself is not retained and the user's card photos are not uploaded.
+     */
+    synchronized boolean learnObservedName(String canonicalName, byte[] feature){
+        if(canonicalName==null||canonicalName.trim().length()<3||feature==null||feature.length!=192)return false;
+        String key=canonicalName.trim();
+        for(Entry item:entries)if(item.name.equalsIgnoreCase(key)&&item.id.isEmpty())return false;
+        byte[] copy=feature.clone();Entry entry=new Entry(key,"",copy);
+        observed.add(entry);entries.add(entry);cache.clear();
+        while(observed.size()>MAX_OBSERVED){Entry removed=observed.remove(0);entries.remove(removed);}
+        JSONArray saved=new JSONArray();
+        try{
+            for(Entry item:observed){
+                JSONObject o=new JSONObject();o.put("name",item.name);o.put("id","");
+                JSONArray f=new JSONArray();for(byte b:item.f)f.put(b&255);
+                o.put("f",f);saved.put(o);
+            }
+            File tmp=new File(observedFile.getParentFile(),"observed-artwork-v5104.tmp");
+            try(FileOutputStream out=new FileOutputStream(tmp)){
+                out.write(saved.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            if(!tmp.renameTo(observedFile))Log.w(TAG,"Could not persist name-only artwork fingerprint");
+            return true;
+        }catch(Exception e){Log.w(TAG,"Could not save observed artwork fingerprint",e);return false;}
     }
     /** Cache only explicitly confirmed artwork references; no user identifiers or tokens. */
     synchronized boolean learn(String name,String id,String referenceUrl){

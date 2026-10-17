@@ -48,9 +48,10 @@ final class PrintingFingerprintVerifier {
             // collector text varies across modern, old, promo, and token frames.
             // The type bar is inspected separately to avoid confusing a Jace
             // token planeswalker with a normal planeswalker of the same name.
-            String[] zones={"bottom-left","bottom-band","bottom-left","type-bar"};
+            String[] zones={"bottom-left","bottom-band","bottom-left","bottom-right","bottom-band","type-bar"};
             float[][] regions={{.018f,.905f,.48f,.087f},
                 {.018f,.920f,.96f,.073f},{.018f,.865f,.53f,.125f},
+                {.48f,.87f,.50f,.12f},{.018f,.885f,.95f,.09f},
                 {.035f,.585f,.93f,.095f}};
             for(int zone=0;zone<zones.length;zone++){
                 float[] region=regions[zone];
@@ -71,7 +72,7 @@ final class PrintingFingerprintVerifier {
                         item.put("zone",zones[zone]);
                         item.put("confidence",line.getConfidence());
                         lines.put(item);
-                        if(zone==3 && value.toLowerCase(Locale.ROOT).contains("token"))
+                        if(zones[zone].equals("type-bar") && value.toLowerCase(Locale.ROOT).contains("token"))
                             out.put("token",true);
                     }
                 }catch(Exception ignored){/* Missing OCR is never proof of another edition. */}
@@ -114,7 +115,7 @@ final class PrintingFingerprintVerifier {
         }
         List<JSONObject> matches=new ArrayList<>();int failed=0;
         for(Future<JSONObject> job:jobs)try{
-            JSONObject row=job.get(4,TimeUnit.SECONDS);
+            JSONObject row=job.get(9,TimeUnit.SECONDS);
             if(row==null)failed++;else matches.add(row);
         }catch(Exception ex){failed++;job.cancel(true);}
         matches.sort((a,b)->Double.compare(b.optDouble("score",0),a.optDouble("score",0)));
@@ -131,10 +132,12 @@ final class PrintingFingerprintVerifier {
     private static double[] referenceSymbol(String address) throws Exception {
         if(!safe(address))throw new SecurityException("Expected an official Scryfall normal card image");
         synchronized(CACHE){double[] cached=CACHE.get(address);if(cached!=null)return cached;}
+        double[] saved=ReferenceFingerprintCache.get("symbol-v2",address);
+        if(saved!=null){synchronized(CACHE){CACHE.put(address,saved);}return saved;}
         HttpURLConnection connection=(HttpURLConnection)new URL(address).openConnection();
         connection.setConnectTimeout(1800);connection.setReadTimeout(2300);
         connection.setInstanceFollowRedirects(false);
-        connection.setRequestProperty("User-Agent","ManaVault/5.10.2 (printing evidence)");
+        connection.setRequestProperty("User-Agent","ManaVault/5.10.6 (printing evidence)");
         Bitmap reference=null;
         try{
             if(connection.getResponseCode()!=200||connection.getContentLengthLong()>4_000_000)
@@ -143,32 +146,49 @@ final class PrintingFingerprintVerifier {
             if(reference==null)throw new java.io.IOException("Unreadable printing reference");
             double[] signature=symbolSignature(reference);
             synchronized(CACHE){CACHE.put(address,signature);}
+            ReferenceFingerprintCache.put("symbol-v2",address,signature);
             return signature;
         }finally{if(reference!=null)reference.recycle();connection.disconnect();}
     }
+    /** Sample several type-bar placements. The preceding single y=.53 crop
+     * missed modern/token/showcase symbols whenever the type bar shifted.
+     * Only compare the SAME placement against the reference to avoid picking
+     * up an unrelated artwork detail in a different location. */
     private static double[] symbolSignature(Bitmap card){
-        // The symbol is normally at the far right of the type bar. Exact
-        // nonstandard frames cannot be inferred from this crop and will fail
-        // the conservative similarity/margin checks rather than auto-save.
-        int x=Math.round(card.getWidth()*.855f),y=Math.round(card.getHeight()*.53f);
-        int w=Math.min(Math.round(card.getWidth()*.12f),card.getWidth()-x);
-        int h=Math.min(Math.round(card.getHeight()*.075f),card.getHeight()-y);
-        Bitmap roi=Bitmap.createBitmap(card,x,y,w,h);
-        Bitmap scaled=Bitmap.createScaledBitmap(roi,24,24,true);
-        roi.recycle();double[] signature=new double[576];double average=0;
-        for(int j=0;j<576;j++){
-            int rgb=scaled.getPixel(j%24,j/24);
-            double lum=.299*Color.red(rgb)+.587*Color.green(rgb)+.114*Color.blue(rgb);
-            signature[j]=lum;average+=lum;
+        float[] positions={.515f,.548f,.580f};
+        double[] signatures=new double[positions.length*576];
+        for(int zone=0;zone<positions.length;zone++){
+            int x=Math.round(card.getWidth()*.82f),y=Math.round(card.getHeight()*positions[zone]);
+            int w=Math.max(1,Math.min(Math.round(card.getWidth()*.16f),card.getWidth()-x));
+            int h=Math.max(1,Math.min(Math.round(card.getHeight()*.075f),card.getHeight()-y));
+            Bitmap roi=Bitmap.createBitmap(card,x,y,w,h);
+            Bitmap scaled=Bitmap.createScaledBitmap(roi,24,24,true);
+            roi.recycle();double average=0;
+            for(int j=0;j<576;j++){
+                int rgb=scaled.getPixel(j%24,j/24);
+                double lum=.299*Color.red(rgb)+.587*Color.green(rgb)+.114*Color.blue(rgb);
+                signatures[zone*576+j]=lum;average+=lum;
+            }
+            scaled.recycle();average/=576;
+            double sum=0;
+            for(int j=0;j<576;j++){
+                int k=zone*576+j;
+                signatures[k]-=average;sum+=signatures[k]*signatures[k];
+            }
+            double rms=Math.sqrt(sum);
+            if(rms>1e-6)for(int j=0;j<576;j++)signatures[zone*576+j]/=rms;
         }
-        scaled.recycle();average/=576;
-        double sum=0;for(int j=0;j<576;j++){signature[j]-=average;sum+=signature[j]*signature[j];}
-        double rms=Math.sqrt(sum);
-        if(rms>1e-6)for(int j=0;j<576;j++)signature[j]/=rms;
-        return signature;
+        return signatures;
     }
     private static double similarity(double[] a,double[] b){
-        double dot=0;for(int i=0;i<a.length;i++)dot+=a[i]*b[i];
-        return Math.max(0,Math.min(1,(dot+1)/2));
+        if(a==null||b==null||a.length!=1728||b.length!=1728)return 0;
+        double best=0;
+        for(int region=0;region<3;region++){
+            double dot=0;
+            for(int i=0;i<576;i++)dot+=a[region*576+i]*b[region*576+i];
+            best=Math.max(best,Math.max(0,Math.min(1,(dot+1)/2)));
+        }
+        return best;
     }
+
 }

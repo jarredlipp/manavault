@@ -176,7 +176,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                 visual=matcher;
                 int refs=matcher.count();
                 runOnUiThread(()->{
-                    if(!closing)metrics.setText("Artwork references: "+refs+" · name index: "+(names==null?0:names.size())+
+                    if(!closing)metrics.setText("Bundled/learned artwork: "+refs+" · cached edition fingerprints: "+ReferenceFingerprintCache.count()+" · name index: "+(names==null?0:names.size())+
                         (refs==0?" · OCR fallback active (index not populated)":" · artwork-first enabled"));
                 });
             }catch(Exception e){Log.w(TAG,"Artwork index loading failed, using OCR",e);}
@@ -487,7 +487,19 @@ public final class NativeScannerActivity extends ComponentActivity {
                 });
                 // Exact canonical names bypass the repeated OCR wait. For an
                 // unknown or incomplete catalog, retain two-read protection.
-                if(canonical!=null){enqueue(canonical,"ocr-exact",1f,null,card,hash);}
+                if(canonical!=null){
+                    // Learn only safely oriented, exact catalog-title scans. A name
+                    // fingerprint is NOT a verified printing (the ID stays empty).
+                    if(rotationIndex==0 && visual!=null && !waitingForNext){
+                        Bitmap art=VisualMatcher.artRegion(card);
+                        byte[] features=VisualMatcher.fingerprint(art);
+                        art.recycle();
+                        final VisualMatcher matcher=visual;
+                        final String observedName=canonical;
+                        referenceExecutor.execute(()->matcher.learnObservedName(observedName,features));
+                    }
+                    enqueue(canonical,"ocr-exact",1f,null,card,hash);
+                }
                 // A stable but imperfect title is still a useful scan. Queue it
                 // for the catalog's fuzzy name matcher after two independent
                 // camera reads; NEVER treat it as an exact printing identity.

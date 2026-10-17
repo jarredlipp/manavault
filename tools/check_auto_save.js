@@ -136,7 +136,21 @@ async function run(expr){return vm.runInContext(expr,context)}
   'One fuzzy OCR reading cannot create a provisional card');
  assert.equal(await run('mv60CanSaveNameOnly({name:"Test Card",source:"ocr-candidate",ocr_reads:2})'),'Test Card',
   'Two matching OCR reads can save a recognized name without inventing an edition');
+ // A printed fraction such as 049/280 contains only one collector number.
+ localCards=printings;
+ const fractionLines=[{zone:'bottom-left',text:'049 / 280 TWO EN',confidence:.92}];
+ assert.equal((await run(`mv61CollectorCandidates(${JSON.stringify(fractionLines)},${JSON.stringify(printings)})`)).join(','),'49',
+  'Printed denominator must not be interpreted as a second collector number');
+ assert.equal((await run(`mv61SetHints(${JSON.stringify(fractionLines)},${JSON.stringify(printings)})`)).join(','),'two');
+ // Name matching must not imply an exact edition if neither marks nor art
+ // independently distinguishes the set (including long reprint histories).
+ const many=Array.from({length:16},(_,i)=>({...printings[0],id:'many'+i,set:'s'+String(i+100),collector_number:String(i+90),illustration_id:'shared'}));
+ localCards=many;
+ printedLines=[];symbolResults=[];imageResults=[{id:'many0',score:.97}];
+ let manyOutcome=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
+ assert.ok(manyOutcome.reason,'Same art across >12 editions cannot silently select an edition');
+ localCards=printings;
  assert.equal(await run('mv61CollectorKey("T0005")'),'t5');
  assert.equal(await run('mv61CollectorKey("0032a")'),'32a');
- console.log('v5.10.3 auto-save checks passed: exact printings, token conflict, unverified-name storage, undo, collector prefixes, and quantities.');
+ console.log('v5.10.6 auto-save checks passed: exact printings, token conflict, unverified-name storage, undo, collector prefixes, and quantities.');
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -77,6 +77,10 @@ final class ArtworkVerifier {
     private static double[] readReference(String address) throws Exception {
         if(!validReference(address))throw new SecurityException("Not a Scryfall art_crop URL");
         synchronized(referenceCache){double[] cached=referenceCache.get(address);if(cached!=null)return cached;}
+        // Edition artwork is discovered on demand; reuse the fingerprint on
+        // subsequent scans and after app restarts without redownloading images.
+        double[] saved=ReferenceFingerprintCache.get("art",address);
+        if(saved!=null){synchronized(referenceCache){referenceCache.put(address,saved);}return saved;}
         HttpURLConnection conn=null;Bitmap art=null;
         try{
             conn=(HttpURLConnection)new URL(address).openConnection();
@@ -93,6 +97,7 @@ final class ArtworkVerifier {
             if(art==null)throw new java.io.IOException("Unreadable artwork");
             double[] sig=signature(art);
             synchronized(referenceCache){referenceCache.put(address,sig);}
+            ReferenceFingerprintCache.put("art",address,sig);
             return sig;
         }finally{if(art!=null)art.recycle();if(conn!=null)conn.disconnect();}
     }
@@ -128,7 +133,7 @@ final class ArtworkVerifier {
             }
             ArrayList<JSONObject> sorted=new ArrayList<>();int failures=0;
             for(Future<JSONObject> task:tasks){
-                try{JSONObject candidate=task.get(4,TimeUnit.SECONDS);
+                try{JSONObject candidate=task.get(9,TimeUnit.SECONDS);
                     if(candidate==null)failures++;else sorted.add(candidate);
                 }catch(Exception e){failures++;task.cancel(true);}
             }

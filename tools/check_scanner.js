@@ -15,6 +15,7 @@ const files=[
   'app/src/main/java/com/manavault/app/CardEdgeOverlay.java',
   'app/src/main/java/com/manavault/app/CardQuadDetector.java',
   'app/src/main/java/com/manavault/app/ArtworkVerifier.java',
+  'app/src/main/java/com/manavault/app/ReferenceFingerprintCache.java',
   'app/src/main/java/com/manavault/app/PrintingFingerprintVerifier.java',
   'app/src/main/java/com/manavault/app/VisualMatcher.java',
   'app/src/main/AndroidManifest.xml',
@@ -51,10 +52,11 @@ console.log('ManaVault v5.9 checks passed: JS syntax, repository layout, recogni
 
 const mainActivity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
 assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android-native launch button');
+assert.match(mainActivity,/ManaVault 5\.10\.6/, 'Android launcher version label out of sync');
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
 assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
-assert.match(html,/ManaVault v5\.10\.3/, 'Missing visible v5.10.3 build marker');
+assert.match(html,/ManaVault v5\.10\.6/, 'Missing visible v5.10.6 build marker');
 console.log('ManaVault v5.9.2 native entry checks passed.');
 
 // A syntax-only test missed a production crash: const info was reassigned by
@@ -104,4 +106,29 @@ assert.match(dbSource,/image_normal/);
 assert.match(html,/Printing unverified/, 'Missing provisional printing labeling');
 assert.match(html,/mv60ResolveUnverified/, 'Missing later edition resolution');
 assert.match(html,/mv60StoreUnverifiedName/, 'Missing automatic name-only collection path');
-console.log('v5.10.3 scene, OCR, printing evidence, and provisional-collection guards passed.');
+console.log('v5.10.6 scene, OCR, printing evidence, and provisional-collection guards passed.');
+
+// v5.10.6: an all-empty bundled index must never silently ship, and exact
+// OCR can learn a name-only art fingerprint without pretending to know a set.
+const matcher=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/VisualMatcher.java'),'utf8');
+const workflow=fs.readFileSync(path.join(root,'.github/workflows/build-apk.yml'),'utf8');
+assert.match(workflow,/if n<12:/, 'Do not release an APK with zero bundled artwork references');
+assert.match(workflow,/Build blocked: fewer than 12 artwork references/, 'Missing actionable seed build failure');
+assert.match(matcher,/learnObservedName\(String canonicalName, byte\[\] feature\)/, 'Missing OCR name-only artwork bootstrap');
+assert.match(matcher,/new Entry\(key,"",copy\)/, 'Observed artwork must never be stamped with a guessed printing ID');
+assert.match(native,/rotationIndex==0 && visual!=null/, 'Do not learn from rotated or missing art crops');
+assert.match(native,/referenceExecutor\.execute\(\(\)->matcher\.learnObservedName/, 'Artwork learning must not delay scanning');
+assert.match(dbSource,/if\(existing>=MIN_PRINTINGS&&stamp===await meta\('source'\)\)/, 'Manual update must not redownload unchanged Scryfall bulk data');
+console.log('v5.10.6 artwork bootstrap and catalog-update guards passed.');
+
+// v5.10.6: edition image signatures must be cached across application launches.
+const artSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/ArtworkVerifier.java'),'utf8');
+const cacheSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/ReferenceFingerprintCache.java'),'utf8');
+assert.match(artSource,/ReferenceFingerprintCache\.get\("art"/, 'Candidate-art cache lookup missing');
+assert.match(artSource,/ReferenceFingerprintCache\.put\("art"/, 'Candidate-art cache persistence missing');
+assert.match(marks,/ReferenceFingerprintCache\.get\("symbol-v2"/, 'Set-symbol cache lookup missing');
+assert.match(marks,/ReferenceFingerprintCache\.put\("symbol-v2"/, 'Set-symbol cache persistence missing');
+assert.match(activity,/ReferenceFingerprintCache\.configure\(getApplicationContext\(\)\)/);
+assert.match(cacheSource,/MAX_FILES = 2500/);
+assert.match(native,/cached edition fingerprints:/);
+console.log('v5.10.6 reference-cache wiring checks passed.');

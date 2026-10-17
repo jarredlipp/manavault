@@ -7,8 +7,8 @@ android {
         applicationId 'com.manavault.app'
         minSdk 26
         targetSdk 35
-        versionCode 67
-        versionName '5.10.3-auto-collection'
+        versionCode 70
+        versionName '5.10.6-printing-evidence'
     }
 }
 
