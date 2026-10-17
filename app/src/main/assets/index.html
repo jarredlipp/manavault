@@ -220,11 +220,36 @@ function mvHybridEdit(a,b){let prev=Array.from({length:b.length+1},(_,i)=>i);for
 let mvHybridBuckets=new Map(),mvHybridExact=new Map();
 function mvHybridIndex(names){mvNames=names;mvHybridBuckets.clear();mvHybridExact.clear();for(let name of names){let n=mvHybridNorm(name);if(!n)continue;mvHybridExact.set(n,name);let key=n.slice(0,2);if(!mvHybridBuckets.has(key))mvHybridBuckets.set(key,[]);mvHybridBuckets.get(key).push({name,n})}mvNamesReady=true;mvLogCamera('Hybrid name index loaded: '+names.length+' cards')}
 async function mvHybridLoadNames(){if(mvNamesReady)return;try{let saved=localStorage.getItem('mv_hybrid_names_v1');if(saved){let parsed=JSON.parse(saved);if(Array.isArray(parsed)&&parsed.length>1000){mvHybridIndex(parsed);return}}}catch{}try{let res=await fetch('https://api.scryfall.com/catalog/card-names');if(!res.ok)throw Error('HTTP '+res.status);let obj=await res.json();if(Array.isArray(obj.data)){mvHybridIndex(obj.data);try{localStorage.setItem('mv_hybrid_names_v1',JSON.stringify(obj.data))}catch{}}}catch(e){mvLogCamera('Name catalog unavailable; online fuzzy fallback: '+e.message,'info')}}
-function mvHybridCandidates(raw){let n=mvHybridNorm(raw).replace(/\b[0-9]+$/,'').trim();if(n.length<2)return[];if(mvHybridExact.has(n))return [{name:mvHybridExact.get(n),score:1,exact:true}];if(n.length<5)return[];let pool=[];
-if(mvNamesReady){let words=n.split(' ');let prefix=n.slice(0,2);pool=[...(mvHybridBuckets.get(prefix)||[])];if(pool.length<8){for(let k of [n[0]+'',n.slice(0,1)])for(let [key,entries] of mvHybridBuckets)if(key.startsWith(k))pool.push(...entries)}
-let seen=new Set();let ranked=[];for(let item of pool){if(seen.has(item.name))continue;seen.add(item.name);let a=item.n;let score=1-mvHybridEdit(n,a)/Math.max(n.length,a.length);if(a===n)score=1;else if(a.startsWith(n)&&n.length>=5)score=Math.max(score,.83);else if(n.length>=5 && (' '+n+' ').includes(' '+a+' '))score=Math.max(score,.94);if(score>=.76)ranked.push({name:item.name,score})}ranked.sort((a,b)=>b.score-a.score);return ranked.slice(0,3)}
-return [{name:raw.replace(/\s+[0-9]+$/,'').trim(),score:.68}]
+// v4.7: OCR evidence is not the same as confidence in a catalog candidate.
+// Reject one-character and generic-text candidates, and compare title-shaped
+// substrings so an extra mana symbol does not defeat a valid reading.
+function mvHybridCandidates(raw){
+ const n=mvHybridNorm(raw).replace(/\b[0-9]+$/,'').trim();
+ if(n.length<3||!mvNamesReady)return[];
+ if(mvHybridExact.has(n))return [{name:mvHybridExact.get(n),score:1,exact:true}];
+ const tokens=n.split(' ').filter(Boolean);
+ const ranked=[],seen=new Set();
+ // Search buckets for the first plausible word, plus embedded title words.
+ const pools=[];
+ for(const word of tokens){if(word.length>=3){
+   pools.push(...(mvHybridBuckets.get(word.slice(0,2))||[]))
+ }}
+ // A short title can be surrounded by OCR artifacts, e.g. 'P23 Spirit Summons HRD'.
+ // For each candidate, require a complete title substring or a close edit distance.
+ for(const item of pools){if(seen.has(item.name))continue;seen.add(item.name);
+   const a=item.n;if(a.length<4)continue;
+   let score=1-mvHybridEdit(n,a)/Math.max(n.length,a.length);
+   const whole=(' '+n+' ').includes(' '+a+' ');
+   if(whole && a.length>=5)score=1;
+   else if(a.length>=6 && n.includes(a))score=Math.max(score,.94);
+   // A single short word such as 'Jace' is too ambiguous to infer a printing.
+   if(a.length<=5 && !whole)continue;
+   if(score>=.84)ranked.push({name:item.name,score,exact:whole});
+ }
+ ranked.sort((a,b)=>b.score-a.score||b.name.length-a.name.length);
+ return ranked.slice(0,3);
 }
+
 async function mvHybridFetchCard(name){if(mvHybridLookupCache.has(name))return mvHybridLookupCache.get(name);try{let local=await ManaVaultCardDB.get(name);if(local){let card={...local,image_uris:local.image_url?{art_crop:local.image_url}:undefined};mvHybridLookupCache.set(name,card);return card}}catch{}let now=Date.now();if(now-mvHybridLastLookup<120)await new Promise(r=>setTimeout(r,120-(now-mvHybridLastLookup)));mvHybridLastLookup=Date.now();try{let card=await scry('/cards/named?'+(mvNamesReady?'exact=':'fuzzy=')+encodeURIComponent(name));mvHybridLookupCache.set(name,card);return card}catch(e){mvLogCamera('Card lookup: '+e.message,'info');return null}}
 function mvHybridFeatures(canvas){let t=document.createElement('canvas');t.width=12;t.height=12;let x=t.getContext('2d',{willReadFrequently:true});x.drawImage(canvas,0,0,12,12);let d=x.getImageData(0,0,12,12).data;let out=[];for(let i=0;i<d.length;i+=4){out.push(d[i]/255,d[i+1]/255,d[i+2]/255)}return out}
 function mvHybridSimilarity(a,b){if(!a||!b||a.length!==b.length)return null;let err=0;for(let i=0;i<a.length;i++)err+=Math.abs(a[i]-b[i]);return Math.max(0,1-err/a.length)}
@@ -396,8 +421,8 @@ let tctx=title.getContext('2d',{willReadFrequently:true});let mvR=mvCropRect(c);
 // Alternate layouts: bottom-name full-art lands, poster/showcase titles and bright-frame cards.
 // Use one additional region only after repeated unsuccessful standard-title reads.
 let regionLabel='standard title';
-if(mvOcrMisses>=3 && mvOcrRegionStep%2===1)mvOcrRegionStep++;
-if(mvOcrMisses>=3 && (mvOcrRegionStep%2===0)){
+if(mvOcrMisses>=6 && mvOcrRegionStep%2===1)mvOcrRegionStep++;
+if(mvOcrMisses>=6 && (mvOcrRegionStep%2===0)){
  const regions=[
   {label:'bottom title (full-art land)',x:.07,y:.84,w:.86,h:.105},
   {label:'upper-center showcase title',x:.09,y:.10,w:.82,h:.23},
@@ -426,6 +451,7 @@ if(!mvFastCandidate||mvFastCandidate.name!==best.name||mvFastCandidate.epoch!==m
 mvFastCandidate.reads++;mvFastCandidate.score=Math.max(mvFastCandidate.score,best.score);
 liveStatus('Candidate: '+best.name+' · OCR '+Math.round(best.score*100)+'% · '+mvFastCandidate.reads+' reads');
 const exact=best.score===1&&mvHybridNorm(name)===mvHybridNorm(best.name);
+// An embedded title still needs two agreeing frames; no fuzzy one-shot accepts.
 const ready=exact||(best.score>=.88&&mvFastCandidate.reads>=2);
 if(!ready)return;
 // Clear scene-specific artwork candidate before async lookup. A later card
@@ -433,6 +459,8 @@ if(!ready)return;
 const epoch=mvSceneEpoch,requestedName=best.name;
 let match=await mvHybridFetchCard(requestedName);
 if(!liveActive||livePaused||epoch!==mvSceneEpoch||!match)return;
+// Guard against an unrelated/stale printing being returned by lookup.
+if(mvHybridNorm(match.name)!==mvHybridNorm(requestedName)){liveStatus('Lookup disagreed with OCR; rescan');return;}
 // An exact name is not necessarily an exact printing. Always confirm the
 // edition, and do not automatically save a printing based only on OCR.
 livePaused=true;mvLastRecognizedAt=performance.now();
@@ -440,7 +468,7 @@ let elapsed=Math.round(mvLastRecognizedAt-mvFastCandidate.first);
 let scoreEl=document.getElementById('mvHybridScore');
 if(scoreEl)scoreEl.textContent='OCR: '+Math.round(best.score*100)+'% · '+requestedName+' · '+elapsed+' ms candidate-to-review (includes lookup)';
 liveStatus('Recognized: '+match.name+' — confirm printing');
-let el=document.getElementById('liveReview');if(el)await mvPrintingReview(match,el,'OCR '+Math.round(best.score*100)+'%');
+let el=document.getElementById('liveReview');if(el)await mvPrintingReview(match,el,'title similarity '+Math.round(best.score*100)+'%');
 
 }catch(e){livePaused=true;liveStatus('Scanner paused: '+e.message)}finally{liveBusy=false;if(liveActive&&!livePaused)liveLoop=setTimeout(liveTick,90)}}
 async function liveStart(){if(liveActive)return;let diag=document.getElementById('liveDiagnostics');if(diag)diag.textContent='Secure: '+window.isSecureContext+' · getUserMedia: '+!!navigator.mediaDevices?.getUserMedia+' · Origin: '+location.origin;if(!navigator.mediaDevices?.getUserMedia){liveStatus('Live camera unavailable here. Open ManaVault from HTTPS or localhost, not a local file.');return}try{try{let AC=window.AudioContext||window.webkitAudioContext;if(AC){scanAudioContext ||= new AC();scanAudioContext.resume().catch(()=>{})}}catch{}liveStatus('Requesting camera permission');liveStream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}});let v=document.getElementById('liveVideo');if(diag)diag.textContent+=' · Camera stream obtained';v.srcObject=liveStream;v.style.display='block';let frame=document.getElementById('mvLiveFrame');if(frame)frame.style.display='block';await v.play();await mvConfigureCamera();mvTorchUpdateUI(true);if(diag)diag.textContent+=' · Video playing';liveStatus('Loading OCR');if(!window.Tesseract)await new Promise((res,rej)=>{let s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=res;s.onerror=()=>rej(Error('OCR library unavailable'));document.head.appendChild(s)});liveWorker=await Tesseract.createWorker('eng');if(diag)diag.textContent+=' · OCR ready';liveActive=true;livePaused=false;livePreviousFrame=null;mvOcrMisses=0;mvOcrRegionStep=0;liveSavedSignature='';livePending='';livePendingCount=0;mvResetRecognitionScene();liveStatus('Ready — show one card');mvHybridLoadNames();if(!mvVisualIndex.length)mvLoadBundledVisualIndex();liveLoop=setTimeout(liveTick,90)}catch(e){liveStop();liveStatus('Unable to start: '+(e?.name||'Error')+' — '+(e?.message||String(e)));console.error('ManaVault camera start failed',e)}}

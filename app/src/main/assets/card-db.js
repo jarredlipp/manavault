@@ -22,7 +22,19 @@ function clear(db,s){return new Promise((resolve,reject)=>{let tx=db.transaction
 function putBatch(db,s,rows){return new Promise((resolve,reject)=>{let tx=db.transaction(s,'readwrite'),st=tx.objectStore(s);for(let r of rows)st.put(r);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
 async function ingest(stream,db,s){const reader=stream.getReader(),decoder=new TextDecoder();let collecting=false,depth=0,inString=false,escaped=false,obj='',rows=[],processed=0;
  async function flush(){if(!rows.length)return;await putBatch(db,s,rows);processed+=rows.length;rows=[];if(processed%5000<400)status('Importing '+processed.toLocaleString()+' printings…')}
- async function feed(chunk){for(let i=0;i<chunk.length;i++){const ch=chunk[i];if(!collecting){if(ch==='{'){collecting=true;depth=1;inString=false;escaped=false;obj='{'}continue}obj+=ch;if(inString){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')inString=false;continue}if(ch==='"'){inString=true;continue}if(ch==='{')depth++;else if(ch==='}'){depth--;if(depth===0){const c=JSON.parse(obj);if(c.id&&c.name)rows.push(record(c));collecting=false;obj='';if(rows.length>=350)await flush()}}}}
+ async function feed(chunk){for(let i=0;i<chunk.length;i++){
+  const ch=chunk[i];
+  if(!collecting){if(ch==='{'){collecting=true;depth=1;inString=false;escaped=false;obj='{';}continue;}
+  obj+=ch;
+  if(inString){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')inString=false;continue}
+  if(ch==='"'){inString=true;continue}
+  if(ch==='{')depth++;
+  else if(ch==='}'){
+    depth--;
+    if(depth===0){const c=JSON.parse(obj);if(c.id&&c.name)rows.push(record(c));collecting=false;obj='';if(rows.length>=350)await flush()}
+  }
+ }}
+
  try{while(true){const {value,done}=await reader.read();if(done)break;await feed(decoder.decode(value,{stream:true}))}await feed(decoder.decode());if(collecting)throw Error('Incomplete JSON bulk download');await flush();return processed}finally{reader.releaseLock()}
 }
 async function sync(force=false){if(running)return running;running=(async()=>{let button=document.getElementById('mvDbSync');if(button)button.disabled=true;try{let existing=await count();let checked=Number(await meta('checked')||0);if(!force&&existing>=MIN_PRINTINGS&&Date.now()-checked<DAY){status('Ready: '+existing.toLocaleString()+' printings offline; checked within 24 hours.');return}if(!navigator.onLine){status(existing?'Offline: '+existing.toLocaleString()+' cached printings':'Offline: download begins when connected');return}
@@ -41,31 +53,9 @@ async function sync(force=false){if(running)return running;running=(async()=>{le
  let m=pickBulk(await fetchMeta('https://api.scryfall.com/bulk-data/default_cards'));
  if(!m)m=pickBulk(await fetchMeta('https://api.scryfall.com/bulk-data'));
  if(!m){
-   status('Scryfall bulk metadata incomplete; trying paginated card API (slower)…');
-   const db=await open(),target=(await active())===STORE_A?STORE_B:STORE_A;
-   await clear(db,target);
-   let page=1,processed=0,next='https://api.scryfall.com/cards/search?q=game%3Apaper&unique=prints&order=name';
-   while(next){
-     const response=await fetch(next,{cache:'no-store',headers});
-     if(!response.ok)throw Error('Scryfall card search page '+page+' HTTP '+response.status+' URL '+new URL(next).pathname);
-     const result=await response.json();
-     if(!Array.isArray(result.data))throw Error('Scryfall card API returned no records on page '+page);
-     await putBatch(db,target,result.data.filter(c=>c.id&&c.name).map(record));
-     processed+=result.data.length;
-     if(page%10===0)status('Importing via Scryfall pages: '+processed.toLocaleString()+' records…');
-     next=result.has_more?result.next_page:null;
-     if(result.has_more&&!next)throw Error('Scryfall page '+page+' omitted next_page');
-     page++;
-     if(next)await new Promise(r=>setTimeout(r,120));
-   }
-   const stored=await req(db.transaction(target,'readonly').objectStore(target).count());
-   if(stored<MIN_PRINTINGS)throw Error('Paginated import returned '+stored+' printings (minimum '+MIN_PRINTINGS+'); previous catalog retained');
-   await putMeta('active',target);
-   await putMeta('source','pages-'+new Date().toISOString().slice(0,10));
-   await putMeta('checked',Date.now());
-   status('Ready: '+stored.toLocaleString()+' printings offline (paginated Scryfall sync).');
-   return;
+   throw Error('Scryfall bulk metadata returned no usable download_uri. Check API response/network; existing offline catalog preserved.');
  }
+
  let stamp=m.updated_at||m.id,url=m.jsonl_download_uri||m.download_uri;
  if(!url)throw Error('Scryfall metadata has no download_uri after endpoint, listing, and retry. Check network filtering or API response; no database was replaced.');if(!force&&existing>=MIN_PRINTINGS&&stamp===await meta('source')){await putMeta('checked',Date.now());status('Up to date: '+existing.toLocaleString()+' printings.');return}
  let db=await open(),target=(await active())===STORE_A?STORE_B:STORE_A;await clear(db,target);status('Downloading '+(m.size?Math.round(m.size/1048576)+' MB':'bulk file')+' of Scryfall printings…');let bulk=await fetch(url);if(!bulk.ok||!bulk.body)throw Error('Bulk download failed (HTTP '+bulk.status+')');let stream=bulk.body;if(/\.gz(?:\?|$)/.test(url)){if(!window.DecompressionStream)throw Error('Gzip unsupported');stream=stream.pipeThrough(new DecompressionStream('gzip'))}

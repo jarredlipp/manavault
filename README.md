@@ -1,19 +1,19 @@
-# ManaVault v4.6 — Fast candidate recognition
+# ManaVault Android — v4.7 source update
 
-## Build
-Upload the contents of this folder to the root of the GitHub repository. Run the **Build ManaVault Android APK** GitHub Actions workflow and install the debug APK artifact.
+Build: push the project contents to the repository root, then run **Build ManaVault Android APK** in GitHub Actions. Download the debug APK from workflow artifacts.
 
-## Changes from v4.5
-- Exact local-catalog name OCR enters printing review after the first matching read; fuzzy results require two agreeing reads.
-- Eliminated artwork-only review that could reintroduce a previously scanned card.
-- Reset recognition candidates when a new scene is detected or a scan is rejected/resumed.
-- Standard OCR gets priority over alternate title regions.
-- Reduced idle delay between OCR passes from 550 ms to 90 ms; actual Tesseract processing remains the dominant latency.
-- Printing confirmation remains required to avoid incorrect set/collector-number saves.
-- One README only.
+## v4.7 changes
+- Stronger OCR-to-catalog candidate matching: rejects very short/noisy guesses and checks whole title substrings; no unknown-name fallback.
+- Confirms that the fetched card name agrees with the candidate name.
+- Gives the calibrated standard title more opportunities before switching to alternate layouts.
+- Repairs nested-object parsing in the streamed Scryfall JSON importer.
+- Removes the broken paginated fallback that returned HTTP 404; an unsuccessful bulk metadata request now preserves the existing catalog and reports its real failure.
+
+## Known limitations
+- **500 ms recognition is a performance target, not validated on a device.**
+- A complete visual-index.json is NOT bundled; artwork recognition still requires a separately generated/imported index. Do not mistake OCR fallback for an operational visual index.
+- The Scryfall bulk download requires connectivity and adequate phone storage; metadata/network behavior has not been device-tested.
+- Exact printing still requires review.
 
 ## Test
-Scan Living Lands, then Jace token, then Defile. Confirm the title and printing on each. Jace tokens/emblems may not exist in the regular Scryfall card-name catalog and may still require a dedicated token catalog; this update does not claim token coverage. Check that Living Lands never reappears as a visual candidate when Defile is shown.
-
-## Limits
-The scanner still uses Tesseract.js and optional network card lookups. This is a latency reduction, **not** a proven sub-100-ms recognizer. Artwork-index packaging and bulk-data availability must be verified separately.
+Start with Defile, Living Lands, Webstrike Elite and Spirit Summons. Compare the title shown in the OCR crop with the selected candidate; reject false matches and report diagnostic logs.
