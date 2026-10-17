@@ -1,1 +1,0 @@
-ManaVault v4.1 repair: Scryfall bulk listing fallback, less sensitive frame motion threshold, live calibration crop preview, larger preview, and correct diagnostic crop height. Artwork index remains a build-time asset; workflow requires it and will fail if unavailable. This is not a neural recognition engine.
