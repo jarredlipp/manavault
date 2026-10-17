@@ -169,5 +169,36 @@ async function run(expr){return vm.runInContext(expr,context)}
  localCards=printings;
  assert.equal(await run('mv61CollectorKey("T0005")'),'t5');
  assert.equal(await run('mv61CollectorKey("0032a")'),'32a');
- console.log('v5.10.8 auto-save checks passed: exact printings, token conflict, unverified-name storage, undo, collector prefixes, and quantities.');
+ // v5.10.9: paired footer must outrank stray artwork/rules OCR numerals,
+ // but never assign an edition from a copyright year or conflicting marks.
+ const printed={id:'dft345',name:'Webstrike Elite',set:'dft',collector_number:'345'};
+ const other={id:'other',name:'Webstrike Elite',set:'abc',collector_number:'345'};
+ let pair=await run(`mv109FooterPairs([{zone:'footer-left',text:'R 0345 DFT EN'}],${JSON.stringify([printed,other])})`);
+ assert.equal(pair?.printing?.id,'dft345','Collector/set pair in genuine footer should resolve edition');
+ pair=await run(`mv109FooterPairs([{zone:'footer-left',text:'RO345 DFT EN'}],${JSON.stringify([printed,other])})`);
+ assert.equal(pair?.printing?.id,'dft345','Rarity + O-for-zero OCR should recover collector number');
+ pair=await run(`mv109FooterPairs([{zone:'footer-left',text:'© 2025 Wizards of the Coast DFT'}],${JSON.stringify([printed,other])})`);
+ assert.equal(pair,null,'Copyright notices must not act as printing evidence');
+ pair=await run(`mv109FooterPairs([{zone:'type-bar',text:'R 0345 DFT EN'}],${JSON.stringify([printed,other])})`);
+ assert.equal(pair,null,'Set+collector must come from footer, never rules text');
+ pair=await run(`mv109FooterPairs([{zone:'footer-left',text:'R 0345 DFT EN'},{zone:'footer-left',text:'R 0345 ABC EN'}],${JSON.stringify([printed,other])})`);
+ assert.equal(pair,null,'Conflicting trusted footer lines must not silently pick a printing');
+ // v5.11.0: a capture is persisted as soon as CameraX emits it;
+ // pressing Finish must NOT be required to trigger printing resolution.
+ localCards=[printings[0]];printedLines=[];imageResults=[];symbolResults=[];
+ const liveReceipts=[];
+ context.window.ManaVaultNativeScanner.scanResolved=payload=>liveReceipts.push(JSON.parse(payload));
+ const beforeLive=context.state.cards.find(c=>c.id==='a')?.qty||0;
+ await run('window.mvNativeScanLive({scan_id:"live-session-1",scan_index:0,name:"Test Card",source:"ocr-exact",ocr_reads:2})');
+ await run('mvLiveRunning');
+ const afterLive=context.state.cards.find(c=>c.id==='a')?.qty||0;
+ assert.equal(afterLive,beforeLive+1,'Live CameraX event must save immediately before Finish');
+ assert.equal(liveReceipts.at(-1)?.status,'verified','Camera receives an acknowledgement after save');
+ await run('window.mvNativeScanBatch([{scan_id:"live-session-1",scan_index:0,name:"Test Card",source:"ocr-exact",ocr_reads:2}])');
+ assert.equal(context.state.cards.find(c=>c.id==='a')?.qty,afterLive,'Finish/replay must not save a second copy');
+ assert.match(fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/manavault/app/NativeScannerActivity.java'),'utf8'),/MainActivity\.deliverLiveCapture\(result\)/);
+ assert.match(fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/manavault/app/MainActivity.java'),'utf8'),/mvNativeScanLive/);
+ assert.match(fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/manavault/app/NativeScannerActivity.java'),'utf8'),/resolvedScanIds\.size\(\)>=captured\.size\(\)/);
+ console.log('v5.11.0 live-save checks passed: persisted before Finish, receipt delivered, no duplicate on Finish.');
+ console.log('v5.10.9 auto-save checks passed: footer pair matching, copyright exclusion, conflicts, and existing scanner cases.');
 })().catch(e=>{console.error(e);process.exitCode=1});

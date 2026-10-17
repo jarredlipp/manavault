@@ -1,6 +1,7 @@
 package com.manavault.app;
 
 import android.Manifest;
+import org.json.JSONObject;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -35,13 +36,36 @@ public class MainActivity extends Activity {
     private PermissionRequest pendingCameraRequest;
     private ValueCallback<Uri[]> fileCallback;
     private final ExecutorService artworkExecutor = Executors.newSingleThreadExecutor();
-    private File lastNativeCard;
+    private volatile File lastNativeCard;
     private final java.util.ArrayList<File> lastNativeBatchPhotos = new java.util.ArrayList<>();
     private final ExecutorService indexExecutor = Executors.newSingleThreadExecutor();
     private VisualMatcher artworkIndex;
     private final ExecutorService metadataExecutor = Executors.newSingleThreadExecutor();
     private boolean pendingNativeOpen=false;
     private String pendingScanScript;
+    private boolean nativeScannerOpen=false;
+    private static java.lang.ref.WeakReference<MainActivity> liveHost = new java.lang.ref.WeakReference<>(null);
+    /** Native CameraX delivers each capture immediately; resolving happens in the
+     * existing background WebView while the camera stays in the foreground. */
+    static void deliverLiveCapture(JSONObject scan) {
+        MainActivity host=liveHost.get();
+        if(host!=null)host.runOnUiThread(()->host.receiveLiveCapture(scan));
+    }
+    private void receiveLiveCapture(org.json.JSONObject scan) {
+        if(webView==null)return;
+        String path=scan.optString("image_path","");
+        File photo=new File(getCacheDir(),new File(path).getName());
+        if(!photo.getAbsolutePath().equals(path)||!photo.isFile())photo=null;
+        int index=scan.optInt("scan_index",-1);
+        if(index<0||index>=150)return;
+        synchronized(lastNativeBatchPhotos){
+            while(lastNativeBatchPhotos.size()<=index)lastNativeBatchPhotos.add(null);
+            lastNativeBatchPhotos.set(index,photo);
+            lastNativeCard=photo;
+        }
+        webView.evaluateJavascript("window.mvNativeScanLive && window.mvNativeScanLive("+scan.toString()+")",null);
+    }
+
 
     private int dp(int dips) {
         return (int)(dips * getResources().getDisplayMetrics().density + 0.5f);
@@ -54,6 +78,8 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_REQUEST);
             return;
         }
+        nativeScannerOpen=true;
+        synchronized(lastNativeBatchPhotos){lastNativeBatchPhotos.clear();}
         startActivityForResult(new Intent(this, NativeScannerActivity.class), NATIVE_SCANNER_REQUEST);
     }
 
@@ -65,6 +91,7 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        liveHost=new java.lang.ref.WeakReference<>(this);
         ReferenceFingerprintCache.configure(getApplicationContext());
         webView = new WebView(this);
         // Index is loaded lazily after the first confirmed printing; never block app launch.
@@ -87,7 +114,14 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.10.8"; }
+            @JavascriptInterface public String version() { return "5.11.0"; }
+            /** Receipt means the collection mutation was persisted, not merely recognized. */
+            @JavascriptInterface public void scanResolved(String payload){
+                try{
+                    org.json.JSONObject response=new org.json.JSONObject(payload);
+                    NativeScannerActivity.receiveLiveResolution(response);
+                }catch(Exception e){Log.w("ManaVaultLive","Bad scan receipt",e);}
+            }
             @JavascriptInterface public int cachedPrintingFingerprints() {
                 return ReferenceFingerprintCache.count();
             }
@@ -227,7 +261,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.10.8 · CameraX");
+        versionLabel.setText("ManaVault 5.11.0 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
@@ -316,6 +350,8 @@ public class MainActivity extends Activity {
         if (requestCode == CAMERA_REQUEST && pendingNativeOpen) {
             pendingNativeOpen=false;
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                nativeScannerOpen=true;
+                synchronized(lastNativeBatchPhotos){lastNativeBatchPhotos.clear();}
                 startActivityForResult(new Intent(this, NativeScannerActivity.class), NATIVE_SCANNER_REQUEST);
             }
             return;
@@ -330,6 +366,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == NATIVE_SCANNER_REQUEST) nativeScannerOpen=false;
         if (requestCode == NATIVE_SCANNER_REQUEST && resultCode == RESULT_OK && data != null) {
             String packed = data.getStringExtra("scan_results");
             if(packed != null && webView != null){
@@ -356,7 +393,9 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onPause() {
-        webView.onPause();
+        // CameraX overlays this Activity; keep the hidden resolver responsive
+        // while scans are being saved and compared in the background.
+        if(!nativeScannerOpen)webView.onPause();
         super.onPause();
     }
     @Override protected void onResume() {
@@ -372,6 +411,7 @@ public class MainActivity extends Activity {
     @Override protected void onDestroy() {
         if (pendingCameraRequest != null) pendingCameraRequest.deny();
         if (fileCallback != null) fileCallback.onReceiveValue(null);
+        liveHost.clear();
         artworkExecutor.shutdownNow();
         metadataExecutor.shutdownNow();
         indexExecutor.shutdownNow();

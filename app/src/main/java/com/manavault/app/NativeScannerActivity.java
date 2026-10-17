@@ -63,6 +63,32 @@ public final class NativeScannerActivity extends ComponentActivity {
     private final CardQuadDetector detector=new CardQuadDetector();
     private final AtomicBoolean recognizing=new AtomicBoolean(false);
     private final ArrayList<JSONObject> captured=new ArrayList<>();
+    private static volatile java.lang.ref.WeakReference<NativeScannerActivity> liveScanner = new java.lang.ref.WeakReference<>(null);
+    private final java.util.HashSet<String> resolvedScanIds=new java.util.HashSet<>();
+    private int verifiedCount=0,unverifiedCount=0,reviewCount=0;
+    private boolean finishRequested=false,forceFinishEnabled=false;
+    private final String sessionId=java.util.UUID.randomUUID().toString();
+    /** Receipts are sent only after a card has been written to the collection. */
+    static void receiveLiveResolution(JSONObject message){
+        NativeScannerActivity current=liveScanner.get();
+        if(current!=null)current.runOnUiThread(()->current.showLiveResolution(message));
+    }
+    private void showLiveResolution(JSONObject message){
+        String id=message.optString("scan_id","");
+        if(id.isEmpty()||!id.startsWith(sessionId+"-")||!resolvedScanIds.add(id))return;
+        String result=message.optString("status","review");
+        if("verified".equals(result))verifiedCount++;
+        else if("unverified".equals(result))unverifiedCount++;
+        else reviewCount++;
+        if(!closing){
+            reviewButton.setText(finishRequested?"Saving… ("+Math.max(0,captured.size()-resolvedScanIds.size())+" pending)":
+                    "Finish ("+(verifiedCount+unverifiedCount)+" saved)");
+            if(waitingForNext && captured.size()>0 && id.equals(captured.get(captured.size()-1).optString("scan_id")))
+                status.setText(("verified".equals(result)?"Saved printing": "unverified".equals(result)?"Saved name · edition pending":"Needs review")+
+                    ": "+message.optString("name","")+" · remove card");
+            if(finishRequested && resolvedScanIds.size()>=captured.size())completeBatch();
+        }
+    }
     private PreviewView preview;
     private CardEdgeOverlay overlay;
     private TextView status,metrics;
@@ -72,6 +98,11 @@ public final class NativeScannerActivity extends ComponentActivity {
     private int cameraQuality=QUALITY_HIGH;
     private volatile int activeSensorWidth=0,activeSensorHeight=0,activeUprightWidth=0,activeUprightHeight=0;
     private volatile int activeCropWidth=0,activeCropHeight=0;
+    // CameraX zoom crops the sensor image BEFORE the 1920x1440 analysis frame
+    // is emitted. Unlike scaling the 630px perspective crop, this can supply
+    // genuinely more sampled pixels for tiny footer text on a fixed stand.
+    private boolean standZoomEvaluated=false;
+    private float standZoomApplied=1f;
     private String lastTiming="";
     private int lastArtworkRefs=-1;
     private Button torchButton,reviewButton,keepButton;
@@ -103,6 +134,7 @@ public final class NativeScannerActivity extends ComponentActivity {
     private FrameLayout cameraRoot;
 
     @Override public void onCreate(Bundle savedInstanceState){
+        liveScanner=new java.lang.ref.WeakReference<>(this);
         super.onCreate(savedInstanceState);
         // Camera must occupy the *entire* physical display. Merely placing a
         // PreviewView MATCH_PARENT inside a normal Activity leaves reserved
@@ -172,7 +204,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                 enqueue(lastSeenTitle,"manual-title",0,null,card,previewHash);
         });
         actions.addView(keepButton,new LinearLayout.LayoutParams(0,dp(48),1));
-        reviewButton=new Button(this);reviewButton.setText("Finish / save (0)");reviewButton.setAllCaps(false);reviewButton.setTextSize(12);reviewButton.setMinWidth(0);reviewButton.setMinimumWidth(0);
+        reviewButton=new Button(this);reviewButton.setText("Finish (0 saved)");reviewButton.setAllCaps(false);reviewButton.setTextSize(12);reviewButton.setMinWidth(0);reviewButton.setMinimumWidth(0);
         reviewButton.setOnClickListener(v->finishBatch());
         actions.addView(reviewButton,new LinearLayout.LayoutParams(0,dp(48),1));
         root.addView(actions,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
@@ -261,6 +293,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         activeSensorWidth=activeSensorHeight=activeUprightWidth=activeUprightHeight=0;
         activeCropWidth=activeCropHeight=0;
         previous=null;smoothed=null;goodFrames=0;missingFrames=0;
+        standZoomEvaluated=false;standZoomApplied=1f;
         ImageAnalysis analysis=new ImageAnalysis.Builder()
             .setResolutionSelector(selectResolution(quality))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -302,9 +335,46 @@ public final class NativeScannerActivity extends ComponentActivity {
             " · upright "+activeUprightWidth+"×"+activeUprightHeight:
             "Camera negotiating ("+qualityLabel()+")";
         String cardInfo=activeCropWidth>0?" · card crop "+activeCropWidth+"×"+activeCropHeight:"";
+        if(standZoomApplied>1.02f)cardInfo+=" · stand zoom "+String.format(Locale.US,"%.2f",standZoomApplied)+"×";
         String detail=lastTiming.isEmpty()?"": "\n"+lastTiming;
         if(lastArtworkRefs>=0)detail+="\nArtwork refs: "+lastArtworkRefs+" · cached edition fingerprints: "+ReferenceFingerprintCache.count();
         metrics.setText(cameraInfo+cardInfo+detail);
+    }
+    /** Apply ONE conservative sensor zoom per scanner session, not one per card.
+     * We never crop a card off-screen to force a target pixel count. Digital zoom
+     * on a sensor with no spare detail may still provide no OCR benefit.
+     */
+    private boolean adjustFixedStandZoom(CardQuadDetector.Detection card,int frameW,int frameH){
+        if(standZoomEvaluated||camera==null||cameraQuality!=QUALITY_HIGH||
+                waitingForNext||captured.size()>0||goodFrames<4)return false;
+        float minX=Float.MAX_VALUE,minY=Float.MAX_VALUE,maxX=0,maxY=0;
+        for(PointF p:card.corners){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);
+            maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}
+        float width=maxX-minX,height=maxY-minY;
+        if(width<=0||height<=0)return false;
+        // Do not zoom if there is already adequate physical resolution.
+        if(width>=850){standZoomEvaluated=true;return false;}
+        float centerX=frameW/2f,centerY=frameH/2f;
+        float extentX=Math.max(Math.abs(minX-centerX),Math.abs(maxX-centerX));
+        float extentY=Math.max(Math.abs(minY-centerY),Math.abs(maxY-centerY));
+        // Keep at least 10% of the frame as breathing room on every side.
+        float fit=Math.min(frameW*.43f/Math.max(1,extentX),
+                frameH*.43f/Math.max(1,extentY));
+        androidx.lifecycle.LiveData<androidx.camera.core.ZoomState> state=
+                camera.getCameraInfo().getZoomState();
+        androidx.camera.core.ZoomState available=state.getValue();
+        if(available==null){standZoomEvaluated=true;return false;}
+        float ratio=Math.min(Math.min(850f/width,1.65f),
+                Math.min(fit,available.getMaxZoomRatio()));
+        standZoomEvaluated=true;
+        if(ratio<1.12f)return false;
+        standZoomApplied=ratio;
+        camera.getCameraControl().setZoomRatio(ratio);
+        previous=null;smoothed=null;goodFrames=0;missingFrames=0;
+        lastRecognitionAt=SystemClock.elapsedRealtime()+450;
+        Log.i(TAG,"Fixed-stand sensor zoom " + ratio + "x; prior card width " + width + "px");
+        runOnUiThread(()->{if(!closing){status.setText("Refining card detail with safe stand zoom…");showMetrics();}});
+        return true;
     }
     private void toggleTorch(){
         if(camera==null||!camera.getCameraInfo().hasFlashUnit()){
@@ -468,10 +538,15 @@ public final class NativeScannerActivity extends ComponentActivity {
                 currentFrameSceneHash=wholeHash;
                 currentCardBrightness=regionBrightness(frame,smoothed.corners);
             }
+            if(good&&smoothed!=null&&adjustFixedStandZoom(smoothed,w,h))return;
             boolean stable=good&&goodFrames>=2&&smoothed!=null;
             CardQuadDetector.Detection overlayDetection=smoothed;
             runOnUiThread(()->{if(!closing)overlay.update(overlayDetection,w,h,stable);});
             if(!stable||recognizing.get()||closing)return;
+            // Wait for at least four stable frames before the FIRST recognition
+            // in high-quality mode; otherwise OCR may capture the small card
+            // before the fixed-stand zoom ever has a chance to engage.
+            if(cameraQuality==QUALITY_HIGH && captured.isEmpty() && !standZoomEvaluated)return;
             long now=SystemClock.elapsedRealtime();
             if(now-lastRecognitionAt<200)return;
             lastRecognitionAt=now;
@@ -610,7 +685,7 @@ public final class NativeScannerActivity extends ComponentActivity {
     /** Called on analyzer or ML Kit callback thread. Store each capture once, then wait
      * for real removal/replacement before allowing another result. */
     private synchronized void enqueue(String name,String source,float score,String imageId,Bitmap card,long hash){
-        if(closing||waitingForNext||captured.size()>=150)return;
+        if(closing||finishRequested||waitingForNext||captured.size()>=150)return;
         try{
             int number=captured.size()+1;
             File photo=new File(getCacheDir(),"native-scan-"+sessionStart+"-"+number+".jpg");
@@ -622,9 +697,14 @@ public final class NativeScannerActivity extends ComponentActivity {
             result.put("elapsed",SystemClock.elapsedRealtime()-sessionStart);
             result.put("card_ms",SystemClock.elapsedRealtime()-(sceneStartedAt>0?sceneStartedAt:sessionStart));
             result.put("image_path",photo.getAbsolutePath());
+            result.put("scan_id",sessionId+"-"+number);
+            result.put("scan_index",number-1);
             result.put("edge_ms",lastEdgeMs);result.put("warp_ms",lastWarpMs);
             result.put("art_ms",lastArtMs);result.put("ocr_ms",lastOcrMs);
             captured.add(result);
+            // Resolve and save now, while the camera is open. This capture is
+            // also included in the final handoff for retry after interruptions.
+            MainActivity.deliverLiveCapture(result);
             waitingForNext=true;changeFrames=0;lastCapturedHash=hash;
             lastCapturedSceneHash=currentFrameSceneHash;
             if(smoothed!=null){
@@ -638,12 +718,36 @@ public final class NativeScannerActivity extends ComponentActivity {
             final String msg="Captured "+name+" ("+source+") · "+captured.size()+" queued · remove card";
             runOnUiThread(()->{if(!closing){
                 status.setText(msg);keepButton.setText("Next card");keepButton.setEnabled(true);
-                reviewButton.setText("Finish / save ("+captured.size()+")");
+                reviewButton.setText("Finish ("+(verifiedCount+unverifiedCount)+" saved)");
                 lastTiming="Edge "+lastEdgeMs+" ms · warp "+lastWarpMs+" ms · art "+lastArtMs+" ms · OCR "+lastOcrMs+" ms · references "+(visual==null?0:visual.count());showMetrics();
             }});
         }catch(Exception e){Log.e(TAG,"Could not queue card",e);}
     }
     private void finishBatch(){
+        if(closing)return;
+        if(forceFinishEnabled || captured.isEmpty() || resolvedScanIds.size()>=captured.size()){
+            completeBatch();return;
+        }
+        // Do not close the camera and process the whole backlog afterwards.
+        // Wait for the background resolver to finish each captured card first.
+        finishRequested=true;
+        int pending=captured.size()-resolvedScanIds.size();
+        status.setText("Finalizing "+pending+" captured card(s) · collection is saving now…");
+        reviewButton.setText("Saving… ("+pending+" pending)");
+        reviewButton.setEnabled(false);
+        // Escape hatch if Android suspends the hidden WebView or its network
+        // requests never return. Unsaved captures are replayed on return.
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->{
+            if(!closing && finishRequested && resolvedScanIds.size()<captured.size()){
+                forceFinishEnabled=true;
+                reviewButton.setEnabled(true);
+                reviewButton.setText("Close anyway");
+                status.setText("Still resolving "+(captured.size()-resolvedScanIds.size())+
+                    " scan(s). Tap Close anyway to finish and retry them.");
+            }
+        },45000);
+    }
+    private void completeBatch(){
         if(closing)return;
         closing=true;
         try{
@@ -656,6 +760,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         finish();
     }
     @Override protected void onDestroy(){
+        liveScanner.clear();
         closing=true;
         if(provider!=null)provider.unbindAll();
         if(recognizer!=null)recognizer.close();

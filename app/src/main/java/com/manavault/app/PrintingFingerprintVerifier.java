@@ -48,10 +48,13 @@ final class PrintingFingerprintVerifier {
             // collector text varies across modern, old, promo, and token frames.
             // The type bar is inspected separately to avoid confusing a Jace
             // token planeswalker with a normal planeswalker of the same name.
-            String[] zones={"bottom-left","bottom-band","bottom-left","bottom-right","bottom-band","type-bar"};
-            float[][] regions={{.018f,.905f,.48f,.087f},
-                {.018f,.920f,.96f,.073f},{.018f,.865f,.53f,.125f},
-                {.48f,.87f,.50f,.12f},{.018f,.885f,.95f,.09f},
+            // The two first crops isolate the collector/set row, not copyright
+            // notices or power/toughness. They receive both color and enhanced OCR.
+            String[] zones={"footer-left","footer-line","bottom-left","bottom-band",
+                "bottom-left","bottom-right","type-bar"};
+            float[][] regions={{.020f,.928f,.46f,.058f},{.018f,.925f,.75f,.060f},
+                {.018f,.905f,.48f,.087f},{.018f,.920f,.96f,.073f},
+                {.018f,.865f,.53f,.125f},{.48f,.87f,.50f,.12f},
                 {.035f,.585f,.93f,.095f}};
             for(int zone=0;zone<zones.length;zone++){
                 float[] region=regions[zone];
@@ -71,7 +74,7 @@ final class PrintingFingerprintVerifier {
                 if(enlarged!=strip)strip.recycle();
                 try {
                     readRegion(reader,enlarged,zones[zone],"color",lines,out);
-                    if(zone==0 || zone==2){
+                    if(zone==0 || zone==1 || zone==2 || zone==4){
                         Bitmap enhanced=CardQuadDetector.enhanceTitle(enlarged);
                         try{readRegion(reader,enhanced,zones[zone],"contrast",lines,out);}
                         finally{enhanced.recycle();}
@@ -156,7 +159,7 @@ final class PrintingFingerprintVerifier {
         HttpURLConnection connection=(HttpURLConnection)new URL(address).openConnection();
         connection.setConnectTimeout(1800);connection.setReadTimeout(2300);
         connection.setInstanceFollowRedirects(false);
-        connection.setRequestProperty("User-Agent","ManaVault/5.10.8 (printing evidence)");
+        connection.setRequestProperty("User-Agent","ManaVault/5.11.0 (printing evidence)");
         Bitmap reference=null;
         try{
             if(connection.getResponseCode()!=200||connection.getContentLengthLong()>4_000_000)
