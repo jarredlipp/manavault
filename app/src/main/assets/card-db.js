@@ -26,16 +26,48 @@ async function ingest(stream,db,s){const reader=stream.getReader(),decoder=new T
  try{while(true){const {value,done}=await reader.read();if(done)break;await feed(decoder.decode(value,{stream:true}))}await feed(decoder.decode());if(collecting)throw Error('Incomplete JSON bulk download');await flush();return processed}finally{reader.releaseLock()}
 }
 async function sync(force=false){if(running)return running;running=(async()=>{let button=document.getElementById('mvDbSync');if(button)button.disabled=true;try{let existing=await count();let checked=Number(await meta('checked')||0);if(!force&&existing>=MIN_PRINTINGS&&Date.now()-checked<DAY){status('Ready: '+existing.toLocaleString()+' printings offline; checked within 24 hours.');return}if(!navigator.onLine){status(existing?'Offline: '+existing.toLocaleString()+' cached printings':'Offline: download begins when connected');return}
- status(existing?'Checking Scryfall printing updates…':'Downloading complete Scryfall printing database…');let res=await fetch('https://api.scryfall.com/bulk-data/default_cards',{cache:'no-store'});if(!res.ok)throw Error('Scryfall metadata HTTP '+res.status);let m=await res.json();
- // /bulk-data/default_cards may return an error payload on some gateways; fall back to the listing.
- if(!m.download_uri){
-   let listing=await fetch('https://api.scryfall.com/bulk-data',{cache:'no-store'});
-   if(!listing.ok)throw Error('Scryfall bulk listing HTTP '+listing.status);
-   let payload=await listing.json();
-   m=(payload.data||[]).find(x=>x.type==='default_cards'||x.id==='default_cards')||m;
+ status(existing?'Checking Scryfall printing updates…':'Downloading complete Scryfall printing database…');
+ const headers={'Accept':'application/json','User-Agent':'ManaVault/4.2'};
+ async function fetchMeta(url){
+   const r=await fetch(url,{cache:'no-store',headers});
+   if(!r.ok)throw Error('Scryfall metadata HTTP '+r.status+' ('+new URL(url).pathname+')');
+   const payload=await r.json();
+   return payload;
+ }
+ function pickBulk(obj){
+   const entries=[obj,...(Array.isArray(obj?.data)?obj.data:[]),...(Array.isArray(obj?.results)?obj.results:[])].filter(Boolean);
+   return entries.find(x=>x.type==='default_cards'&&typeof x.download_uri==='string'&&/^https:\/\//.test(x.download_uri));
+ }
+ let m=pickBulk(await fetchMeta('https://api.scryfall.com/bulk-data/default_cards'));
+ if(!m)m=pickBulk(await fetchMeta('https://api.scryfall.com/bulk-data'));
+ if(!m){
+   status('Scryfall bulk metadata incomplete; trying paginated card API (slower)…');
+   const db=await open(),target=(await active())===STORE_A?STORE_B:STORE_A;
+   await clear(db,target);
+   let page=1,processed=0,next='https://api.scryfall.com/cards?order=name&unique=prints';
+   while(next){
+     const response=await fetch(next,{cache:'no-store',headers});
+     if(!response.ok)throw Error('Scryfall card page '+page+' HTTP '+response.status);
+     const result=await response.json();
+     if(!Array.isArray(result.data))throw Error('Scryfall card API returned no records on page '+page);
+     await putBatch(db,target,result.data.filter(c=>c.id&&c.name).map(record));
+     processed+=result.data.length;
+     if(page%10===0)status('Importing via Scryfall pages: '+processed.toLocaleString()+' records…');
+     next=result.has_more?result.next_page:null;
+     if(result.has_more&&!next)throw Error('Scryfall page '+page+' omitted next_page');
+     page++;
+     if(next)await new Promise(r=>setTimeout(r,120));
+   }
+   const stored=await req(db.transaction(target,'readonly').objectStore(target).count());
+   if(stored<MIN_PRINTINGS)throw Error('Paginated import returned '+stored+' printings (minimum '+MIN_PRINTINGS+'); previous catalog retained');
+   await putMeta('active',target);
+   await putMeta('source','pages-'+new Date().toISOString().slice(0,10));
+   await putMeta('checked',Date.now());
+   status('Ready: '+stored.toLocaleString()+' printings offline (paginated Scryfall sync).');
+   return;
  }
  let stamp=m.updated_at||m.id,url=m.download_uri;
- if(!url)throw Error('Scryfall did not provide a default_cards download URL; metadata: '+JSON.stringify({object:m.object,type:m.type,details:m.details}).slice(0,180));if(!force&&existing>=MIN_PRINTINGS&&stamp===await meta('source')){await putMeta('checked',Date.now());status('Up to date: '+existing.toLocaleString()+' printings.');return}
+ if(!url)throw Error('Scryfall metadata has no download_uri after endpoint, listing, and retry. Check network filtering or API response; no database was replaced.');if(!force&&existing>=MIN_PRINTINGS&&stamp===await meta('source')){await putMeta('checked',Date.now());status('Up to date: '+existing.toLocaleString()+' printings.');return}
  let db=await open(),target=(await active())===STORE_A?STORE_B:STORE_A;await clear(db,target);status('Downloading '+(m.size?Math.round(m.size/1048576)+' MB':'bulk file')+' of Scryfall printings…');let bulk=await fetch(url);if(!bulk.ok||!bulk.body)throw Error('Bulk download failed (HTTP '+bulk.status+')');let stream=bulk.body;if(/\.gz(?:\?|$)/.test(url)){if(!window.DecompressionStream)throw Error('Gzip unsupported');stream=stream.pipeThrough(new DecompressionStream('gzip'))}
  let n=await ingest(stream,db,target);if(n<MIN_PRINTINGS)throw Error('Received only '+n.toLocaleString()+' printings; existing catalog retained');let stored=await req(db.transaction(target,'readonly').objectStore(target).count());if(stored<MIN_PRINTINGS)throw Error('Only '+stored+' unique printing IDs; existing catalog retained');await putMeta('active',target);await putMeta('source',stamp);await putMeta('checked',Date.now());status('Ready: '+stored.toLocaleString()+' printings offline. Updated '+stamp+'.')
  }catch(e){let existing=await count().catch(()=>0);status('Sync failed: '+e.message+(existing?' — '+existing.toLocaleString()+' previous printings preserved':''))}finally{if(button)button.disabled=false}})();try{return await running}finally{running=null}}

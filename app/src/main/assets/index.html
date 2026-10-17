@@ -174,7 +174,7 @@ let footer=document.querySelector('.footer');if(footer)footer.textContent=footer
 // v1.7 Continuous live-camera scanner: camera stays open between cards.
 let liveStream=null,liveWorker=null,liveActive=false,liveLoop=null,liveBusy=false,liveLastSignature='',livePending='',livePendingCount=0,liveSavedSignature='',liveScanned=0,livePaused=false;
 const liveScannerBase=scanner;
-scanner=function(){return liveScannerBase()+`<section class="panel" id="continuousPanel"><h2>Continuous camera scan (v4.0 foundation)</h2><label class='small'><input type='checkbox' id='mvAutoFrame' style='width:auto' ${localStorage.getItem('mv_auto_frame')==='1'?'checked':''}> Experimental automatic card framing (disable for fixed phone stand)</label><label class="small"><input type="checkbox" id="mvFixedStand" style="width:auto" ${localStorage.getItem('mv_fixed_stand')!=='0'?'checked':''}> Fixed phone stand: card positioned low, as in your photo (recommended)</label><p class='muted small'>Multi-region OCR automatically checks alternate title positions after three unsuccessful reads. Bottom-title lands and showcase frames may still require manual confirmation.</p><p class='muted small'>For exact editions, confirm the set and collector number in the printing review. Scan destination supports your collection and existing Commander decks.</p><p class="muted small">Keep your camera pointed at the scanning area. Place one card at a time; the app automatically checks the title and adds confidently recognized cards without pressing the camera button again. Remove each card before placing the next. Works only in a secure browser context (HTTPS or localhost); local HTML files may block camera access.</p><div class="flex"><button id="liveStart" class="primary">Start continuous camera</button><button id="mvTestLiveSound">Test success sound</button><button id="liveStop">Stop camera</button><button id="mvTorch" type="button" disabled>Flash: unavailable</button><button id="liveResume">Resume after review</button></div><div id="mvZoomPanel" class="panel" style="margin-top:12px"><label for="mvZoom">Camera zoom: <strong id="mvZoomValue">2.0×</strong></label><input type="range" id="mvZoom" min="1" max="4" step="0.1" value="2" style="width:100%"><p id="mvFocusStatus" class="small muted">Autofocus requested when supported. Zoom will activate when camera starts.</p></div><div id="mvLiveFrame" style="display:none;position:relative;width:100%;max-width:430px;margin-top:12px;overflow:hidden;border-radius:10px;background:#111"><video id="liveVideo" autoplay muted playsinline style="display:block;width:100%"></video><div style="position:absolute;pointer-events:none;left:12%;top:29%;width:76%;height:63%;border:2px solid #80e7a1;border-radius:10px;box-sizing:border-box"><div id="mvLiveOcrGuide" style="position:absolute;left:2%;top:2%;width:96%;height:7%;border:2px dashed #ffdb7b;box-sizing:border-box"></div></div></div><div id="mvCalibration" class="panel" style="margin-top:10px;max-width:430px"><strong>Live calibration · camera and controls together</strong><p class="small muted">The title crop below updates during scanning. Keep this panel directly under the camera.</p><div class="panel"><strong>OCR title alignment</strong><p class="small muted">Adjust the title strip if the yellow guide does not line up with the printed card name.</p><label>Title vertical position <input id="mvTitleY" type="range" min="0" max="80" value="9" step="1"></label><label>Title band height <input id="mvTitleH" type="range" min="14" max="75" value="28" step="1"></label><label>Title width <input id="mvTitleW" type="range" min="175" max="295" value="245" step="5"></label><button id="mvResetCrop">Reset OCR alignment</button><p class="small muted" id="mvCropInfo"></p></div><p id="mvOcrPreview" class="small muted">Last OCR: none</p><div id="mvTitlePreview" style="max-width:100%;overflow:hidden;min-height:130px;background:#101722;border:1px solid #52627a;border-radius:10px;padding:6px"></div><div class="flex"><button id="mvSaveDebugFrame" type="button">Save diagnostic frame + OCR crop</button></div><p class="small muted" id="mvFrameDiagnostic">Diagnostic images are saved only when requested.</p></div><p class="small muted">Fixed stand: position the card as in your screenshot, with its top approximately 29% down the preview. The yellow band should cover the name. Start at 2× and adjust zoom until the title is sharp.</p><p id="mvHybridScore" class="small muted">Visual index: not loaded · hybrid fallback ready</p><div class="panel"><strong>Offline Magic card database</strong><p class="small muted" id="mvDbStatus">Checking local database…</p><button id="mvDbSync">Check / refresh Scryfall database now</button><p class="small muted">Automatically downloads Scryfall Default Cards (100,000+ printing records) on first launch and checks for updates every 24 hours. Stores each printing by unique Scryfall ID; preserves the previous complete catalog if a download fails. The artwork index is separate.</p></div><div class="flex"><label class="small">Load visual index <input id="mvIndexFile" type="file" accept="application/json,.json" /></label><button id="mvIndexClear">Clear visual index</button></div><p id="mvIndexStatus" class="small muted">Bundled visual index loads automatically when Scan cards opens; optional JSON import remains available.</p><p id="liveStatus" class="small muted" aria-live="polite">Camera off. Saved this session: 0.</p><p class="small muted" id="liveDiagnostics">Camera diagnostics: checking environment…</p><div id="liveReview" class="small"></div><p class="small muted">Hybrid scanning groups OCR readings by candidate card name and compares artwork when available. High-confidence results save automatically; uncertain results require review. Confirm the destination deck and the “also add to collection” option above before starting. This mode identifies card names, not exact printings. The card must visibly leave the camera frame between scans to prevent duplicate counts.</p></section>`};
+scanner=function(){return liveScannerBase()+`<section class="panel" id="continuousPanel"><h2>Continuous camera scan (v4.3)</h2><label class='small'><input type='checkbox' id='mvAutoFrame' style='width:auto' ${localStorage.getItem('mv_auto_frame')==='1'?'checked':''}> Experimental automatic card framing (disable for fixed phone stand)</label><label class="small"><input type="checkbox" id="mvFixedStand" style="width:auto" ${localStorage.getItem('mv_fixed_stand')!=='0'?'checked':''}> Fixed phone stand: card positioned low, as in your photo (recommended)</label><p class='muted small'>Multi-region OCR automatically checks alternate title positions after three unsuccessful reads. Bottom-title lands and showcase frames may still require manual confirmation.</p><p class='muted small'>For exact editions, confirm the set and collector number in the printing review. Scan destination supports your collection and existing Commander decks.</p><p class="muted small">Keep your camera pointed at the scanning area. Place one card at a time; the app automatically checks the title and adds confidently recognized cards without pressing the camera button again. Remove each card before placing the next. Works only in a secure browser context (HTTPS or localhost); local HTML files may block camera access.</p><div class="flex"><button id="liveStart" class="primary">Start continuous camera</button><button id="mvTestLiveSound">Test success sound</button><button id="liveStop">Stop camera</button><button id="mvTorch" type="button" disabled>Flash: unavailable</button><button id="liveResume">Resume after review</button></div><details id="mvAdvancedScanner"><summary>Camera zoom and advanced controls</summary><div id="mvZoomPanel" class="panel" style="margin-top:12px"><label for="mvZoom">Camera zoom: <strong id="mvZoomValue">2.0×</strong></label><input type="range" id="mvZoom" min="1" max="4" step="0.1" value="2" style="width:100%"><p id="mvFocusStatus" class="small muted">Autofocus requested when supported. Zoom will activate when camera starts.</p></div></details><div id="mvLiveFrame" style="display:none;position:relative;width:100%;max-width:430px;height:min(46vh,440px);margin-top:12px;overflow:hidden;border-radius:10px;background:#111"><video id="liveVideo" autoplay muted playsinline style="display:block;width:100%;height:100%;object-fit:cover"></video><div style="position:absolute;pointer-events:none;left:17%;top:24%;width:77%;height:72%;border:2px solid #80e7a1;border-radius:10px;box-sizing:border-box"><div id="mvLiveOcrGuide" style="position:absolute;left:2%;top:2%;width:96%;height:7%;border:2px dashed #ffdb7b;box-sizing:border-box"></div></div></div><div id="mvCalibration" class="panel" style="margin-top:10px;max-width:430px;padding:10px"><strong>Live calibration · camera and controls together</strong><p class="small muted">The title crop below updates during scanning. Keep this panel directly under the camera.</p><div class="panel" style="padding:10px"><strong>OCR title alignment</strong><p class="small muted">Adjust the title strip if the yellow guide does not line up with the printed card name.</p><label>Title vertical position <input id="mvTitleY" type="range" min="0" max="180" value="9" step="1"></label><label>Title band height <input id="mvTitleH" type="range" min="14" max="75" value="28" step="1"></label><label>Title width <input id="mvTitleW" type="range" min="175" max="295" value="245" step="5"></label><button id="mvResetCrop">Reset OCR alignment</button><p class="small muted" id="mvCropInfo"></p></div><p id="mvOcrPreview" class="small muted">Last OCR: none</p><p class="small muted">The large preview below shows the exact standard-title crop. Alternate-layout OCR may examine another region.</p><div id="mvTitlePreview" style="max-width:100%;overflow:hidden;min-height:110px;background:#101722;border:1px solid #52627a;border-radius:10px;padding:6px"></div><div class="flex"><button id="mvSaveDebugFrame" type="button">Save diagnostic frame + OCR crop</button></div><p class="small muted" id="mvFrameDiagnostic">Diagnostic images are saved only when requested.</p></div><p class="small muted">Fixed stand: align the green guide to the card, then move the yellow title guide onto the name. The yellow band should cover the name. Start at 2× and adjust zoom until the title is sharp.</p><p id="mvHybridScore" class="small muted">Visual index: not loaded · hybrid fallback ready</p><details><summary>Database and artwork index status</summary><div class="panel"><strong>Offline Magic card database</strong><p class="small muted" id="mvDbStatus">Checking local database…</p><button id="mvDbSync">Check / refresh Scryfall database now</button><p class="small muted">Automatically downloads Scryfall Default Cards (100,000+ printing records) on first launch and checks for updates every 24 hours. Stores each printing by unique Scryfall ID; preserves the previous complete catalog if a download fails. The artwork index is separate.</p></div><div class="flex"><label class="small">Load visual index <input id="mvIndexFile" type="file" accept="application/json,.json" /></label><button id="mvIndexClear">Clear visual index</button></div><p id="mvIndexStatus" class="small muted">Bundled visual index loads automatically when Scan cards opens; optional JSON import remains available.</p></details><p id="liveStatus" class="small muted" aria-live="polite">Camera off. Saved this session: 0.</p><p class="small muted" id="liveDiagnostics">Camera diagnostics: checking environment…</p><div id="liveReview" class="small"></div><p class="small muted">Hybrid scanning groups OCR readings by candidate card name and compares artwork when available. High-confidence results save automatically; uncertain results require review. Confirm the destination deck and the “also add to collection” option above before starting. This mode identifies card names, not exact printings. The card must visibly leave the camera frame between scans to prevent duplicate counts.</p></section>`};
 function liveStatus(msg){let el=document.getElementById('liveStatus');if(el)el.textContent=msg+' · Saved this session: '+liveScanned}
 function liveStop(){mvTorchEnabled=false;mvTorchUpdateUI(false);liveActive=false;livePaused=false;if(liveLoop)clearTimeout(liveLoop);liveLoop=null;if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null}if(liveWorker){let w=liveWorker;liveWorker=null;w.terminate().catch(()=>{})}let v=document.getElementById('liveVideo');if(v){v.pause();v.srcObject=null;v.style.display='none';let frame=document.getElementById('mvLiveFrame');if(frame)frame.style.display='none'}liveStatus('Camera stopped')}
 function liveSignature(ctx,w,h){let a=ctx.getImageData(0,0,w,h).data,parts=[];for(let y=0;y<h;y+=10)for(let x=0;x<w;x+=10){let i=(y*w+x)*4;parts.push(Math.floor((a[i]+a[i+1]+a[i+2])/3/24))}return parts}
@@ -211,7 +211,7 @@ async function mvApplyZoom(value){
  let caps=typeof track.getCapabilities==='function'?track.getCapabilities():{};
  if(caps.zoom){try{await track.applyConstraints({advanced:[{zoom:mvZoomWanted}]})}catch(e){mvLogCamera('Zoom adjustment failed: '+e.message,'error')}}
  // When hardware zoom is unavailable, zoom the preview and OCR source consistently via video CSS + frame cropping.
- let video=document.getElementById('liveVideo');if(video&&!caps.zoom)video.style.transform='scale('+mvZoomWanted+')';else if(video)video.style.transform='';
+ let video=document.getElementById('liveVideo');if(video)video.style.transform=caps.zoom?'':'scale('+mvZoomWanted+')'; // Preview zoom and source mapping use the same center crop.
 }
 
 // v2.1 hybrid: local indexed names (one Scryfall catalog download), fuzzy OCR, selective artwork comparison.
@@ -253,7 +253,7 @@ async function mvLoadBundledVisualIndex(){
 function mvVisualFingerprint(canvas){let tmp=document.createElement('canvas');tmp.width=8;tmp.height=8;let g=tmp.getContext('2d',{willReadFrequently:true});g.drawImage(canvas,0,0,8,8);let d=g.getImageData(0,0,8,8).data,a=[];for(let i=0;i<d.length;i+=4)a.push(d[i],d[i+1],d[i+2]);return a}
 function mvVisualTop(frame){if(!mvVisualIndex.length)return[];
  let art=document.createElement('canvas');art.width=96;art.height=96;
- art.getContext('2d').drawImage(frame,78,252,804,528,0,0,96,96);
+ art.getContext('2d').drawImage(frame,67,132,826,660,0,0,96,96);
  let a=mvVisualFingerprint(art),results=[];
  for(let c of mvVisualIndex){let err=0;for(let i=0;i<192;i++)err+=Math.abs(a[i]-c.f[i]);let score=1-err/(192*255);if(results.length<3||score>results[results.length-1].score){results.push({name:c.name,id:c.id,score});results.sort((x,y)=>y.score-x.score);if(results.length>3)results.pop()}}
  return results;
@@ -316,15 +316,53 @@ function mvAutoFrame(video,vw,vh){
  if(!best||best.score<17)return null;
  return {x:best.x/w*vw,y:best.y/h*vh,w:best.cw/w*vw,h:best.ch/h*vh,score:best.score};
 }
+let mvMotionMisses=0;
 let mvCalibrationFrame=null;
+// Geometry shared by the video overlay, OCR and diagnostic preview.
+const MV_CARD_BOX={x:.17,y:.24,w:.77,h:.72};
+// Render the exact CSS object-fit:cover viewport, including software zoom, before
+// selecting the green card rectangle. This prevents native-video vs display drift.
+function mvDisplayedVideoFrame(video){
+ const host=document.getElementById('mvLiveFrame');
+ const dw=Math.max(1,host?.clientWidth||320),dh=Math.max(1,host?.clientHeight||440);
+ const vw=video.videoWidth,vh=video.videoHeight;
+ const caps=liveStream?.getVideoTracks()?.[0]?.getCapabilities?.()||{};
+ const zoom=caps.zoom?1:mvZoomWanted;
+ const scale=Math.max(dw/vw,dh/vh)*zoom;
+ const sw=dw/scale,sh=dh/scale,sx=(vw-sw)/2,sy=(vh-sh)/2;
+ const frame=document.createElement('canvas');frame.width=960;frame.height=Math.round(960*dh/dw);
+ frame.getContext('2d',{willReadFrequently:true}).drawImage(video,sx,sy,sw,sh,0,0,frame.width,frame.height);
+ return frame;
+}
+function mvCardGeometry(v){
+ const vw=v.videoWidth,vh=v.videoHeight,host=document.getElementById('mvLiveFrame');
+ const dw=host?.clientWidth||320,dh=host?.clientHeight||440;
+ const caps=liveStream?.getVideoTracks()?.[0]?.getCapabilities?.()||{};
+ const zoom=caps.zoom?1:mvZoomWanted;
+ const scale=Math.max(dw/vw,dh/vh)*zoom;
+ const sw=dw/scale,sh=dh/scale;
+ return {x:(vw-sw)/2+sw*MV_CARD_BOX.x,y:(vh-sh)/2+sh*MV_CARD_BOX.y,w:sw*MV_CARD_BOX.w,h:sh*MV_CARD_BOX.h};
+}
+function mvCropRect(c){
+ // Calibration sliders are in legacy 320 x 440 CARD coordinates, not video pixels.
+ // All drawing and OCR use this exact rectangle on the same 960 x 1320 card canvas.
+ const y=Math.max(0,Number(localStorage.getItem('mv_crop_y')??9));
+ const h=Math.max(14,Number(localStorage.getItem('mv_crop_h')??28));
+ const w=Math.max(175,Number(localStorage.getItem('mv_crop_w')??295));
+ return {x:Math.round(c.width*.055),y:Math.round(c.height*y/440),
+  w:Math.min(c.width*.945,Math.round(c.width*w/320)),
+  h:Math.min(c.height-Math.round(c.height*y/440),Math.round(c.height*h/440))};
+}
 function mvRefreshCalibrationPreview(){
- const c=mvCalibrationFrame,preview=document.getElementById('mvTitlePreview');if(!c||!preview)return;
+ const c=mvCalibrationFrame,preview=document.getElementById('mvTitlePreview');
+ const guide=document.getElementById('mvLiveOcrGuide');
  const y=Number(localStorage.getItem('mv_crop_y')??9),h=Number(localStorage.getItem('mv_crop_h')??28),w=Number(localStorage.getItem('mv_crop_w')??295);
- const crop=document.createElement('canvas');crop.width=1280;crop.height=240;
- crop.getContext('2d').drawImage(c,24,y*3,Math.min(304,w)*3,h*3,0,0,1280,240);
- preview.replaceChildren(crop);crop.style.cssText='display:block;width:100%;height:auto;image-rendering:auto;border-radius:7px';
- const info=document.getElementById('mvCropInfo');if(info)info.textContent=`Title region: y=${y}, height=${h}, width=${w} (preview updates live)`;
- const guide=document.getElementById('mvLiveOcrGuide');if(guide){guide.style.top=(29+(.63*y*3/1320)*100)+'%';guide.style.height=Math.max(1,(.63*h*3/1320)*100)+'%';guide.style.width=(.76*w/320*100)+'%';}
+ if(guide){guide.style.left='5.5%';guide.style.top=(y/440*100)+'%';guide.style.height=(h/440*100)+'%';guide.style.width=(Math.min(94.5,w/320*100))+'%';}
+ const info=document.getElementById('mvCropInfo');if(info)info.textContent=`Title region: y=${y}, height=${h}, width=${w} (live)`;
+ if(!c||!preview)return;
+ const r=mvCropRect(c),crop=document.createElement('canvas');crop.width=1280;crop.height=240;
+ crop.getContext('2d').drawImage(c,r.x,r.y,r.w,r.h,0,0,1280,240);
+ preview.replaceChildren(crop);crop.style.cssText='display:block;width:100%;height:auto;border-radius:7px';
 }
 async function liveTick(){if(!liveActive||livePaused||liveBusy)return;liveBusy=true;try{let v=document.getElementById('liveVideo');if(!v||v.readyState<2)return;// Read the center card guide in native video coordinates; do not distort 16:9 video into a 320x440 card.
 let vw=v.videoWidth,vh=v.videoHeight;if(!vw||!vh)return;
@@ -336,18 +374,14 @@ let ctx=c.getContext('2d',{willReadFrequently:true});
 // The physical card in the supplied screenshot spans ~12–88% X and ~29–92% Y.
 // Draw the full frame into an upright viewport before cropping the card rectangle.
 if(localStorage.getItem('mv_fixed_stand')!=='0' && localStorage.getItem('mv_auto_frame')!=='1'){
- let viewportW=vw,viewportH=vh;
- // Center-crop landscape camera video to portrait preview (object-fit:cover equivalent).
- let targetRatio=320/440;
- if(vw/vh>targetRatio){viewportW=vh*targetRatio;sourceX=(vw-viewportW)/2;sourceY=0;}
- else{viewportH=vw/targetRatio;sourceY=(vh-viewportH)/2;sourceX=0;}
- sourceW=viewportW;sourceH=viewportH;
- ctx.drawImage(v,sourceX+sourceW*.12,sourceY+sourceH*.29,sourceW*.76,sourceH*.63,0,0,960,1320);
-}else ctx.drawImage(v,sourceX,sourceY,sourceW,sourceH,0,0,960,1320);
+ const displayed=mvDisplayedVideoFrame(v);
+ ctx.drawImage(displayed,displayed.width*MV_CARD_BOX.x,displayed.height*MV_CARD_BOX.y,
+ displayed.width*MV_CARD_BOX.w,displayed.height*MV_CARD_BOX.h,0,0,c.width,c.height);
+}else ctx.drawImage(v,sourceX,sourceY,sourceW,sourceH,0,0,c.width,c.height);
 mvCalibrationFrame=c;mvRefreshCalibrationPreview();let sig=liveSignature(ctx,960,1320);let delta=liveDiff(sig,livePreviousFrame);livePreviousFrame=sig;
 if(liveSavedSignature){let changed=liveDiff(sig,mvSavedFrame);if(changed>0.32)liveEmptyCount++;else liveEmptyCount=0;if(liveEmptyCount>=3){liveSavedSignature='';livePending='';livePendingCount=0;mvHybridVotes.clear();liveEmptyCount=0;mvSavedFrame=null;liveStatus('New scene detected — checking card')}else{return}}
 // Avoid running OCR and image matching on moving/blurry frames.
-if(delta>0.30){liveStatus('Card moving — waiting for stable frame');return}
+if(delta>0.48){mvMotionMisses++;if(mvMotionMisses<=4){if(mvMotionMisses===1)liveStatus('Checking image stability');return}}else mvMotionMisses=0
 let mvArtCandidates=mvVisualTop(c);
 if(mvArtCandidates.length){let top=mvArtCandidates[0],runner=mvArtCandidates[1];let scoreEl=document.getElementById('mvHybridScore');
 if(scoreEl)scoreEl.textContent='Artwork-first: '+top.name+' '+Math.round(top.score*100)+'% · margin '+Math.round((top.score-(runner?.score||0))*100)+'%';
@@ -359,7 +393,7 @@ if(top.score>=.90 && top.score-(runner?.score||0)>=.07){
  }else mvVisualCandidate=null;
 }
 let title=document.createElement('canvas');title.width=1280;title.height=240;let mvCropY=Number(localStorage.getItem('mv_crop_y')??9),mvCropH=Number(localStorage.getItem('mv_crop_h')??28),mvCropW=Number(localStorage.getItem('mv_crop_w')??295);
-let tctx=title.getContext('2d',{willReadFrequently:true});tctx.drawImage(c,24,mvCropY*3,Math.min(304,mvCropW)*3,mvCropH*3,0,0,1280,240);
+let tctx=title.getContext('2d',{willReadFrequently:true});let mvR=mvCropRect(c);tctx.drawImage(c,mvR.x,mvR.y,mvR.w,mvR.h,0,0,1280,240);
 // Keep original high-resolution pixels; hard min/max stretch amplified noise on dark cards.
 
 // Alternate layouts: bottom-name full-art lands, poster/showcase titles and bright-frame cards.
