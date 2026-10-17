@@ -39,6 +39,7 @@ public class MainActivity extends Activity {
     private final java.util.ArrayList<File> lastNativeBatchPhotos = new java.util.ArrayList<>();
     private final ExecutorService indexExecutor = Executors.newSingleThreadExecutor();
     private VisualMatcher artworkIndex;
+    private final ExecutorService metadataExecutor = Executors.newSingleThreadExecutor();
     private boolean pendingNativeOpen=false;
     private String pendingScanScript;
 
@@ -85,7 +86,57 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.9.3"; }
+            @JavascriptInterface public String version() { return "5.10.0"; }
+            /** Store a public name catalog for fast native exact-match recognition.
+             * Write atomically and never block the WebView JavaScript thread. */
+            @JavascriptInterface public void updateNameIndex(String json) {
+                if(json==null||json.length()>3_000_000)return;
+                metadataExecutor.execute(()->{
+                    try{
+                        org.json.JSONArray names=new org.json.JSONArray(json);
+                        if(names.length()<1000||names.length()>100000)return;
+                        File file=new File(getFilesDir(),"native-card-names.json");
+                        File temp=new File(getFilesDir(),"native-card-names.tmp");
+                        try(java.io.FileOutputStream out=new java.io.FileOutputStream(temp)){
+                            out.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        }
+                        if(!temp.renameTo(file))Log.w("ManaVaultNames","Could not install native name index");
+                    }catch(Exception e){Log.w("ManaVaultNames","Name catalog update rejected",e);}
+                });
+            }
+            @JavascriptInterface public void rankPrintings(String payload) {
+                final org.json.JSONObject request;
+                try{request=new org.json.JSONObject(payload);}catch(Exception e){return;}
+                final File snapshot=lastNativeCard;
+                if(snapshot==null||!snapshot.isFile()){
+                    try{
+                        org.json.JSONObject response=new org.json.JSONObject();
+                        response.put("requestId",request.optString("requestId",""));
+                        response.put("error","Captured photo unavailable");
+                        String output=response.toString();
+                        runOnUiThread(()->{
+                            if(webView!=null)webView.evaluateJavascript(
+                                "window.mv60OnRankResult && window.mv60OnRankResult("+output+")",null);
+                        });
+                    }catch(Exception ignored){}
+                    return;
+                }
+                artworkExecutor.execute(()->{
+                    org.json.JSONObject result;
+                    try{result=ArtworkVerifier.rank(snapshot,request);}
+                    catch(Exception e){
+                        Log.w("ManaVaultArtwork","Printing comparison failed",e);
+                        result=new org.json.JSONObject();
+                        try{result.put("requestId",request.optString("requestId",""));
+                            result.put("error","Artwork comparison unavailable");}catch(Exception ignored){}
+                    }
+                    final String output=result.toString();
+                    runOnUiThread(()->{
+                        if(webView!=null)webView.evaluateJavascript(
+                            "window.mv60OnRankResult && window.mv60OnRankResult("+output+")",null);
+                    });
+                });
+            }
             @JavascriptInterface public void selectImage(int index) {
                 synchronized(lastNativeBatchPhotos){
                     if(index>=0 && index<lastNativeBatchPhotos.size())lastNativeCard=lastNativeBatchPhotos.get(index);
@@ -130,7 +181,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.9.3 · CameraX");
+        versionLabel.setText("ManaVault 5.10.0 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
@@ -276,6 +327,7 @@ public class MainActivity extends Activity {
         if (pendingCameraRequest != null) pendingCameraRequest.deny();
         if (fileCallback != null) fileCallback.onReceiveValue(null);
         artworkExecutor.shutdownNow();
+        metadataExecutor.shutdownNow();
         indexExecutor.shutdownNow();
         webView.destroy();webView=null;
         super.onDestroy();

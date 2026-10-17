@@ -68,13 +68,21 @@ public final class NativeScannerActivity extends ComponentActivity {
     private ProcessCameraProvider provider;
     private TextRecognizer recognizer;
     private volatile VisualMatcher visual;
+    private volatile NativeNameIndex names;
     private volatile boolean closing=false;
     private boolean torch=false;
-    private CardQuadDetector.Detection previous,smoothed;
+    private CardQuadDetector.Detection previous;
+    private volatile CardQuadDetector.Detection smoothed;
     private int goodFrames=0,missingFrames=0,changeFrames=0;
     private long lastGoodAt=0,lastProcessAt=0,lastRecognitionAt=0,sessionStart=0;
-    private long lastCapturedHash=0,sceneStartedAt=0;
-    private boolean waitingForNext=false;
+    private volatile long lastCapturedHash=0,lastCapturedSceneHash=0;
+    private long sceneStartedAt=0;
+    private long missingSince=0;
+    private int changedEmptyFrames=0;
+    private volatile long currentFrameSceneHash=0;
+    private volatile PointF[] lastCapturedCorners=null;
+    private volatile double lastCapturedBrightness=0,currentCardBrightness=0;
+    private volatile boolean waitingForNext=false;
     private String previousOcr="",lastSeenTitle="";
     private int previousOcrCount=0;
     private long previewHash=0;
@@ -128,7 +136,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                 enqueue(lastSeenTitle,"manual-title",0,null,card,previewHash);
         });
         actions.addView(keepButton,new LinearLayout.LayoutParams(0,dp(48),1));
-        reviewButton=new Button(this);reviewButton.setText("Review (0)");reviewButton.setAllCaps(false);reviewButton.setTextSize(12);reviewButton.setMinWidth(0);reviewButton.setMinimumWidth(0);
+        reviewButton=new Button(this);reviewButton.setText("Finish / save (0)");reviewButton.setAllCaps(false);reviewButton.setTextSize(12);reviewButton.setMinWidth(0);reviewButton.setMinimumWidth(0);
         reviewButton.setOnClickListener(v->finishBatch());
         actions.addView(reviewButton,new LinearLayout.LayoutParams(0,dp(48),1));
         root.addView(actions,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
@@ -158,11 +166,12 @@ public final class NativeScannerActivity extends ComponentActivity {
         }
         referenceExecutor.execute(()->{
             try{
+                names=new NativeNameIndex(getApplicationContext());
                 VisualMatcher matcher=new VisualMatcher(getApplicationContext());
                 visual=matcher;
                 int refs=matcher.count();
                 runOnUiThread(()->{
-                    if(!closing)metrics.setText("Artwork references: "+refs+
+                    if(!closing)metrics.setText("Artwork references: "+refs+" · name index: "+(names==null?0:names.size())+
                         (refs==0?" · OCR fallback active (index not populated)":" · artwork-first enabled"));
                 });
             }catch(Exception e){Log.w(TAG,"Artwork index loading failed, using OCR",e);}
@@ -208,7 +217,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888).build();
                 analysis.setAnalyzer(analysisExecutor,this::analyzeFrame);
                 camera=provider.bindToLifecycle(this,CameraSelector.DEFAULT_BACK_CAMERA,p,analysis);
-                status.setText("Ready · find card edges · artwork refs load in background");
+                status.setText("Ready · fast edge tracking · artwork/OCR");
             }catch(Exception e){Log.e(TAG,"CameraX startup failed",e);status.setText("Camera failed: "+e.getMessage());}
         },ContextCompat.getMainExecutor(this));
     }
@@ -239,6 +248,64 @@ public final class NativeScannerActivity extends ComponentActivity {
         double total=0;for(int i=0;i<4;i++)total+=Math.hypot(a.corners[i].x-b.corners[i].x,a.corners[i].y-b.corners[i].y);
         return (float)(total/4/Math.hypot(w,h));
     }
+    /** Sample the physical card region in camera coordinates, even if the
+     *  contour detector temporarily stops finding edges. This catches removal
+     *  from a bright stand without mistaking a single missed outline for it. */
+    private static double regionBrightness(Bitmap frame,PointF[] corners){
+        if(corners==null)return -1;
+        double sum=0;int count=0,w=frame.getWidth(),h=frame.getHeight();
+        for(int yi=1;yi<=10;yi++)for(int xi=1;xi<=8;xi++){
+            float u=xi/9f,v=yi/11f;
+            float x=(1-u)*(1-v)*corners[0].x+u*(1-v)*corners[1].x+
+                    u*v*corners[2].x+(1-u)*v*corners[3].x;
+            float y=(1-u)*(1-v)*corners[0].y+u*(1-v)*corners[1].y+
+                    u*v*corners[2].y+(1-u)*v*corners[3].y;
+            int ix=Math.round(x),iy=Math.round(y);
+            if(ix<0||iy<0||ix>=w||iy>=h)continue;
+            int c=frame.getPixel(ix,iy);
+            sum+=(Color.red(c)*30+Color.green(c)*59+Color.blue(c)*11)/100.;
+            count++;
+        }
+        return count>0?sum/count:-1;
+    }
+    /** Estimate the exposed stand around the previously detected card.
+     * A flashlight/exposure change alone must not count as card removal. */
+    private static double surroundingBrightness(Bitmap frame,PointF[] corners){
+        if(corners==null)return -1;
+        float minX=Float.MAX_VALUE,minY=Float.MAX_VALUE,maxX=-1,maxY=-1;
+        for(PointF p:corners){minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);
+            minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);}
+        int w=frame.getWidth(),h=frame.getHeight();
+        double pad=Math.max(8,Math.min(maxX-minX,maxY-minY)*.075);
+        double sum=0;int count=0;
+        for(int i=1;i<=12;i++){
+            float t=i/13f;
+            float x=minX+(maxX-minX)*t,y=minY+(maxY-minY)*t;
+            int[][] points={{Math.round(x),(int)(minY-pad)},
+                    {Math.round(x),(int)(maxY+pad)},
+                    {(int)(minX-pad),Math.round(y)},
+                    {(int)(maxX+pad),Math.round(y)}};
+            for(int[] point:points){int px=point[0],py=point[1];
+                if(px<0||py<0||px>=w||py>=h)continue;
+                int c=frame.getPixel(px,py);
+                sum+=(Color.red(c)*30+Color.green(c)*59+Color.blue(c)*11)/100.;count++;
+            }
+        }
+        return count>=10?sum/count:-1;
+    }
+    /** Low-resolution fingerprint of the whole camera frame, separate from
+     *  card-art hashes. An occasional missed border does NOT mean removal. */
+    private static long wholeFrameHash(Bitmap frame){
+        Bitmap reduced=Bitmap.createScaledBitmap(frame,9,8,true);
+        long hash=0L;
+        for(int y=0;y<8;y++)for(int x=0;x<8;x++){
+            int a=reduced.getPixel(x,y),b=reduced.getPixel(x+1,y);
+            int la=(Color.red(a)*30+Color.green(a)*59+Color.blue(a)*11)/100;
+            int lb=(Color.red(b)*30+Color.green(b)*59+Color.blue(b)*11)/100;
+            if(la>lb)hash|=1L<<(y*8+x);
+        }
+        reduced.recycle();return hash;
+    }
     private static CardQuadDetector.Detection smooth(CardQuadDetector.Detection older,CardQuadDetector.Detection current){
         if(older==null)return current;
         PointF[] result=new PointF[4];
@@ -250,7 +317,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         Bitmap frame=null;
         try{
             long now=SystemClock.elapsedRealtime();
-            if(closing||now-lastProcessAt<100)return;
+            if(closing||now-lastProcessAt<75)return;
             lastProcessAt=now;
             frame=uprightFrame(proxy);
         }catch(Throwable e){Log.w(TAG,"Could not read CameraX frame",e);}
@@ -258,34 +325,58 @@ public final class NativeScannerActivity extends ComponentActivity {
         if(frame==null||closing)return;
         try{
             long begin=SystemClock.elapsedRealtime();
-            CardQuadDetector.Detection detected=detector.find(frame);
+            CardQuadDetector.Detection detected=detector.find(frame,smoothed);
             lastEdgeMs=SystemClock.elapsedRealtime()-begin;
             int w=frame.getWidth(),h=frame.getHeight();sourceWidth=w;sourceHeight=h;
-            boolean good=detected!=null&&detected.confidence>=.57f;
+            long wholeHash=wholeFrameHash(frame);
+            boolean good=detected!=null&&detected.confidence>=.56f;
             // When an inner artwork rectangle suddenly replaces a large established card,
             // discard that reading rather than moving the visible outline into artwork.
             if(good&&smoothed!=null&&goodFrames>=3&&
                     detected.areaFraction<smoothed.areaFraction*.72f&&
                     SystemClock.elapsedRealtime()-lastGoodAt<500)good=false;
             if(good){
+                missingSince=0;changedEmptyFrames=0;
                 if(drift(detected,previous,w,h)<.035f){goodFrames=Math.min(12,goodFrames+1);smoothed=smooth(smoothed,detected);}
                 else {goodFrames=1;smoothed=detected;if(!waitingForNext)sceneStartedAt=SystemClock.elapsedRealtime();}
                 previous=detected;missingFrames=0;lastGoodAt=SystemClock.elapsedRealtime();
             }else{
                 missingFrames++;
+                if(missingSince==0)missingSince=SystemClock.elapsedRealtime();
                 if(SystemClock.elapsedRealtime()-lastGoodAt>700){goodFrames=0;smoothed=null;previous=null;}
-                if(waitingForNext && missingFrames>=5){
-                    waitingForNext=false;changeFrames=0;previousOcr="";previousOcrCount=0;
-                    sceneStartedAt=0;
-                    runOnUiThread(()->{if(!closing)status.setText("Card removed · ready for next card");});
+                // A card can remain present for seconds while glare/low contrast
+                // temporarily defeats contour finding. Only report removal after
+                // a sustained loss AND a materially different whole-camera view.
+                // Never use the artwork-only hash to compare with an empty scene.
+                if(waitingForNext){
+                    double brightness=regionBrightness(frame,lastCapturedCorners);
+                    double stand=surroundingBrightness(frame,lastCapturedCorners);
+                    boolean exposedStand=brightness>=0&&stand>=0&&
+                            brightness-lastCapturedBrightness>=30&&
+                            Math.abs(brightness-stand)<43;
+                    // Both the card region and its surrounding scene must
+                    // indicate removal; a lighting change is not enough.
+                    if(exposedStand&&Long.bitCount(wholeHash^lastCapturedSceneHash)>=10)
+                        changedEmptyFrames++;
+                    else changedEmptyFrames=0;
+                    if(missingFrames>=10&&changedEmptyFrames>=8&&
+                            SystemClock.elapsedRealtime()-missingSince>=1400){
+                        waitingForNext=false;changeFrames=0;previousOcr="";previousOcrCount=0;
+                        sceneStartedAt=0;missingSince=0;
+                        runOnUiThread(()->{if(!closing)status.setText("Scene changed · ready for next card");});
+                    }
                 }
             }
-            boolean stable=good&&goodFrames>=3&&smoothed!=null;
+            if(good&&goodFrames>=2){
+                currentFrameSceneHash=wholeHash;
+                currentCardBrightness=regionBrightness(frame,smoothed.corners);
+            }
+            boolean stable=good&&goodFrames>=2&&smoothed!=null;
             CardQuadDetector.Detection overlayDetection=smoothed;
             runOnUiThread(()->{if(!closing)overlay.update(overlayDetection,w,h,stable);});
             if(!stable||recognizing.get()||closing)return;
             long now=SystemClock.elapsedRealtime();
-            if(now-lastRecognitionAt<350)return;
+            if(now-lastRecognitionAt<200)return;
             lastRecognitionAt=now;
             begin=SystemClock.elapsedRealtime();
             Bitmap corrected=detector.rectify(frame,smoothed);
@@ -298,6 +389,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                 if(changeFrames<4){corrected.recycle();return;}
                 waitingForNext=false;changeFrames=0;previousOcr="";previousOcrCount=0;
                 sceneStartedAt=SystemClock.elapsedRealtime();
+                runOnUiThread(()->{if(!closing)status.setText("New card detected · identifying…");});
             }
             if(!recognizing.compareAndSet(false,true)){corrected.recycle();return;}
             previewHash=hash;
@@ -358,8 +450,10 @@ public final class NativeScannerActivity extends ComponentActivity {
                 String normalized=name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");
                 if(normalized.equals(previousOcr))previousOcrCount++;
                 else{previousOcr=normalized;previousOcrCount=1;}
-                lastSeenTitle=name;
-                final String current=name;
+                NativeNameIndex index=names;
+                String canonical=index==null?null:index.exact(name);
+                lastSeenTitle=canonical!=null?canonical:name;
+                final String current=lastSeenTitle;
                 runOnUiThread(()->{
                     if(!closing){
                         status.setText("OCR candidate: "+current+" · "+previousOcrCount+" read(s) · "+captured.size()+" queued");
@@ -367,7 +461,10 @@ public final class NativeScannerActivity extends ComponentActivity {
                         metrics.setText("Edge "+lastEdgeMs+" ms · rectify "+lastWarpMs+" ms · artwork "+lastArtMs+" ms · OCR "+lastOcrMs+" ms");
                     }
                 });
-                if(previousOcrCount>=2){enqueue(name,"ocr",0,null,card,hash);}
+                // Exact canonical names bypass the repeated OCR wait. For an
+                // unknown or incomplete catalog, retain two-read protection.
+                if(canonical!=null){enqueue(canonical,"ocr-exact",1f,null,card,hash);}
+                else if(previousOcrCount>=2){enqueue(name,"ocr",0,null,card,hash);}
                 recognizing.set(false);
             }else if(rotationIndex<3){
                 readTitle(card,hash,rotationIndex+1,began);
@@ -385,7 +482,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             JSONObject result=new JSONObject();
             result.put("name",name);result.put("source",source);result.put("artworkId",imageId==null?"":imageId);
             result.put("similarity",Math.round(score*1000)/1000.0);
-            result.put("ocr_reads",source.equals("ocr")?previousOcrCount:0);
+            result.put("ocr_reads",source.startsWith("ocr")?previousOcrCount:0);
             result.put("elapsed",SystemClock.elapsedRealtime()-sessionStart);
             result.put("card_ms",SystemClock.elapsedRealtime()-(sceneStartedAt>0?sceneStartedAt:sessionStart));
             result.put("image_path",photo.getAbsolutePath());
@@ -393,11 +490,19 @@ public final class NativeScannerActivity extends ComponentActivity {
             result.put("art_ms",lastArtMs);result.put("ocr_ms",lastOcrMs);
             captured.add(result);
             waitingForNext=true;changeFrames=0;lastCapturedHash=hash;
+            lastCapturedSceneHash=currentFrameSceneHash;
+            if(smoothed!=null){
+                lastCapturedCorners=new PointF[4];
+                for(int i=0;i<4;i++)lastCapturedCorners[i]=
+                        new PointF(smoothed.corners[i].x,smoothed.corners[i].y);
+            }
+            lastCapturedBrightness=currentCardBrightness;
+            missingSince=0;changedEmptyFrames=0;
             lastSeenTitle="";previousOcr="";previousOcrCount=0;
             final String msg="Captured "+name+" ("+source+") · "+captured.size()+" queued · remove card";
             runOnUiThread(()->{if(!closing){
                 status.setText(msg);keepButton.setEnabled(false);
-                reviewButton.setText("Review ("+captured.size()+")");
+                reviewButton.setText("Finish / save ("+captured.size()+")");
                 metrics.setText("Edge "+lastEdgeMs+" ms · rectify "+lastWarpMs+" ms · artwork "+lastArtMs+" ms · OCR "+lastOcrMs+" ms · references "+(visual==null?0:visual.count()));
             }});
         }catch(Exception e){Log.e(TAG,"Could not queue card",e);}

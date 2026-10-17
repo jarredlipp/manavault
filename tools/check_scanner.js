@@ -9,6 +9,7 @@ for (const [i, script] of [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/sc
   new vm.Script(script[1],{filename:`index-script-${i+1}.js`});
 }
 const files=[
+  'app/src/main/java/com/manavault/app/NativeNameIndex.java',
   'app/src/main/java/com/manavault/app/MainActivity.java',
   'app/src/main/java/com/manavault/app/NativeScannerActivity.java',
   'app/src/main/java/com/manavault/app/CardEdgeOverlay.java',
@@ -27,8 +28,8 @@ let script=html.slice(from,to).replace(
  'let mvHybridBuckets=new Map(),mvHybridExact=new Map(),mvUnknownNameTried=new Set();',
  'mvHybridBuckets=new Map();mvHybridExact=new Map();let mvUnknownNameTried=new Set();');
 const test=new Function('let mvNames=[],mvNamesReady=false;let mvHybridBuckets,mvHybridExact;const mvLogCamera=()=>{};'+script+`
- mvHybridIndex(['Fall','Jace','Tuinvale Treefolk // Oaken Boon','Webstrike Elite','Prismite','Read the Bones','New Horizons']);
- return ['Fall','Jace','Tuinvale Treefolk','Oaken Boon','WEVSTRIKE Ri.','RRRRRRRRRRRR','LIASY'].map(mvHybridCandidates);`);
+ mvHybridIndex(['Forest','Forest // Forest','Fall','Jace','Tuinvale Treefolk // Oaken Boon','Webstrike Elite','Prismite','Read the Bones','New Horizons']);
+ return ['Fall','Jace','Tuinvale Treefolk','Oaken Boon','WEVSTRIKE Ri.','RRRRRRRRRRRR','LIASY','Forest'].map(mvHybridCandidates);`);
 const results=test();
 assert.equal(results[0][0]?.name,'Fall');
 assert.equal(results[1][0]?.name,'Jace');
@@ -37,6 +38,7 @@ assert.equal(results[3][0]?.name,'Tuinvale Treefolk // Oaken Boon');
 assert.equal(results[4][0]?.name,'Webstrike Elite');
 assert.equal(results[5].length,0);
 assert.equal(results[6].length,0);
+assert.equal(results[7][0]?.name,'Forest','A normal Forest must take precedence over art-series aliases');
 assert.match(html,/mvNativeScanBatch/, 'Missing native batch review callback');
 assert.match(html,/mv59AfterReviewChoice/, 'Missing scan queue completion handler');
 assert.match(html,/learnArtwork\(/, 'Missing confirmed-printing reference cache');
@@ -51,7 +53,7 @@ assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
 assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
-assert.match(html,/v5\.9\.2/, 'Missing visible v5.9.2 build marker');
+assert.match(html,/ManaVault v5\.10\.0/, 'Missing visible v5.10 build marker');
 console.log('ManaVault v5.9.2 native entry checks passed.');
 
 // A syntax-only test missed a production crash: const info was reassigned by
@@ -72,3 +74,20 @@ console.log('Pricing/runtime regression and artwork-index bundling checks passed
 // Also execute the complete inline application script with a minimal offline DOM.
 // This catches runtime const-reassignment mistakes missed by syntax checks.
 require('./check_runtime.js');
+
+// v5.9.4: a broken or empty image is never displayed as a browser broken-icon;
+// existing image-less printings can be repaired offline by exact Scryfall ID.
+const dbSource=fs.readFileSync(path.join(root,'app/src/main/assets/card-db.js'),'utf8');
+assert.match(dbSource,/async function byId\(id\)/);
+assert.match(html,/local\?\.image_small/);
+assert.match(html,/mv594RepairSavedImages/);
+assert.match(html,/mv594Placeholder/);
+assert.match(native,/missingSince>=1400/);
+assert.match(native,/regionBrightness\(frame,lastCapturedCorners\)/);
+assert.match(native,/NativeNameIndex/);
+assert.match(html,/mv60CollectPrintings/);
+assert.match(html,/mv60RankArtwork/);
+assert.match(html,/Undo last auto-saved card/);
+const detectorSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/CardQuadDetector.java'),'utf8');
+assert.match(detectorSource,/frameArea \* 0\.075/);
+console.log('v5.9.4 scene and image persistence guards passed.');

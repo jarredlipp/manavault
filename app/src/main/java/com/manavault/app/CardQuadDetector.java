@@ -30,28 +30,70 @@ final class CardQuadDetector {
         }
     }
 
-    Detection find(Bitmap image) {
+    Detection find(Bitmap image) { return detectWhole(image); }
+
+    /** Track a recently validated outer border inside a padded local search.
+     * Smaller contour searches are faster and less likely to lock to a text box.
+     * A hint is advisory: full-frame detection remains the recovery path. */
+    Detection find(Bitmap image, Detection hint) {
+        if(hint!=null){
+            float left=Float.MAX_VALUE,top=Float.MAX_VALUE,right=-1,bottom=-1;
+            for(PointF p:hint.corners){left=Math.min(left,p.x);right=Math.max(right,p.x);
+                top=Math.min(top,p.y);bottom=Math.max(bottom,p.y);}
+            float padX=(right-left)*.25f,padY=(bottom-top)*.25f;
+            int x=Math.max(0,(int)Math.floor(left-padX));
+            int y=Math.max(0,(int)Math.floor(top-padY));
+            int r=Math.min(image.getWidth(),(int)Math.ceil(right+padX));
+            int b=Math.min(image.getHeight(),(int)Math.ceil(bottom+padY));
+            if(r-x>100&&b-y>100){
+                Bitmap roi=null;
+                try{
+                    roi=Bitmap.createBitmap(image,x,y,r-x,b-y);
+                    Detection d=detectWhole(roi);
+                    if(d!=null){
+                        PointF[] corners=new PointF[4];
+                        for(int i=0;i<4;i++)corners[i]=new PointF(d.corners[i].x+x,d.corners[i].y+y);
+                        float area=d.areaFraction*(r-x)*(b-y)/(float)(image.getWidth()*image.getHeight());
+                        Detection candidate=new Detection(corners,d.confidence,area);
+                        if(area>hint.areaFraction*.74f&&area<hint.areaFraction*1.30f &&
+                            distance(candidate,hint,image.getWidth(),image.getHeight())<.075f)
+                            return candidate;
+                    }
+                }catch(Exception ignored){}
+                finally{if(roi!=null)roi.recycle();}
+            }
+        }
+        return detectWhole(image);
+    }
+    private static float distance(Detection a,Detection b,int w,int h){
+        double d=0;for(int i=0;i<4;i++)d+=Math.hypot(a.corners[i].x-b.corners[i].x,a.corners[i].y-b.corners[i].y);
+        return (float)(d/4/Math.hypot(w,h));
+    }
+    private Detection detectWhole(Bitmap image) {
         Mat rgba = new Mat(), gray = new Mat(), blurred = new Mat(), edges = new Mat();
         Mat hierarchy = new Mat();
         List<MatOfPoint> contours = new ArrayList<>();
         try {
             Utils.bitmapToMat(image, rgba);
-            double scale = Math.min(1.0, 440.0 / Math.max(image.getWidth(), image.getHeight()));
+            double scale = Math.min(1.0, 380.0 / Math.max(image.getWidth(), image.getHeight()));
             Mat small = new Mat();
             Imgproc.resize(rgba, small, new Size(), scale, scale, Imgproc.INTER_AREA);
             Imgproc.cvtColor(small, gray, Imgproc.COLOR_RGBA2GRAY);
             Imgproc.GaussianBlur(gray, blurred, new Size(5, 5), 0);
             Imgproc.Canny(blurred, edges, 45, 130);
-            Imgproc.dilate(edges, edges, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3, 3)));
-            Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
+            Mat kernel=Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(3,3));
+            Imgproc.dilate(edges,edges,kernel);kernel.release();
+            Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
             double frameArea = small.rows() * small.cols();
             double bestScore = -1;
             Detection best = null;
             // A real card is usually the largest convincing 63:88 quadrilateral.
+            // Allow cards occupying ~8% of analysis frame; full-screen CameraX
+            // often previews cards at a smaller scale than the earlier WebView.
             // Artwork, type boxes, and surrounding fixtures should score lower.
             for (MatOfPoint contour : contours) {
                 double area = Math.abs(Imgproc.contourArea(contour));
-                if (area < frameArea * 0.17 || area > frameArea * 0.91) continue;
+                if (area < frameArea * 0.075 || area > frameArea * 0.91) continue;
                 MatOfPoint2f curve = new MatOfPoint2f(contour.toArray());
                 MatOfPoint2f approx = new MatOfPoint2f();
                 Imgproc.approxPolyDP(curve, approx, .025 * Imgproc.arcLength(curve, true), true);
@@ -81,7 +123,11 @@ final class CardQuadDetector {
                     bestScore = score;
                     PointF[] scaled = new PointF[4];
                     for (int i=0;i<4;i++) scaled[i]=new PointF((float)(ordered[i].x/scale),(float)(ordered[i].y/scale));
-                    float confidence = (float)Math.max(0,Math.min(1, .42 + fraction*.8 - Math.abs(aspect-88.0/63.0)*.8));
+                    // Confidence must remain consistent with the 7.5%-area floor;
+                    // the previous .42 base rejected every valid card below ~19%
+                    // of the analysis frame, even after lowering the area limit.
+                    float confidence = (float)Math.max(0,Math.min(1,
+                            .52 + fraction*.90 - Math.abs(aspect-88.0/63.0)*.85));
                     best = new Detection(scaled, confidence, (float)fraction);
                 }
             }
