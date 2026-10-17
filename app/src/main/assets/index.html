@@ -174,7 +174,7 @@ let footer=document.querySelector('.footer');if(footer)footer.textContent=footer
 // v1.7 Continuous live-camera scanner: camera stays open between cards.
 let liveStream=null,liveWorker=null,liveActive=false,liveLoop=null,liveBusy=false,liveLastSignature='',livePending='',livePendingCount=0,liveSavedSignature='',liveScanned=0,livePaused=false;
 const liveScannerBase=scanner;
-scanner=function(){return liveScannerBase()+`<section class="panel" id="continuousPanel"><h2>Continuous camera scan (v4.6)</h2><label class='small'><input type='checkbox' id='mvAutoFrame' style='width:auto' ${localStorage.getItem('mv_auto_frame')==='1'?'checked':''}> Experimental automatic card framing (disable for fixed phone stand)</label><label class="small"><input type="checkbox" id="mvFixedStand" style="width:auto" ${localStorage.getItem('mv_fixed_stand')!=='0'?'checked':''}> Fixed phone stand: card positioned low, as in your photo (recommended)</label><p class='muted small'>Multi-region OCR automatically checks alternate title positions after three unsuccessful reads. Bottom-title lands and showcase frames may still require manual confirmation.</p><p class='muted small'>For exact editions, confirm the set and collector number in the printing review. Scan destination supports your collection and existing Commander decks.</p><p class="muted small">Keep your camera pointed at the scanning area. Place one card at a time; the app automatically checks the title and adds confidently recognized cards without pressing the camera button again. Remove each card before placing the next. Works only in a secure browser context (HTTPS or localhost); local HTML files may block camera access.</p><div class="flex"><button id="liveStart" class="primary">Start continuous camera</button><button id="mvTestLiveSound">Test success sound</button><button id="liveStop">Stop camera</button><button id="mvTorch" type="button" disabled>Flash: unavailable</button><button id="liveResume">Resume after review</button></div><details id="mvAdvancedScanner"><summary>Camera zoom and advanced controls</summary><div id="mvZoomPanel" class="panel" style="margin-top:12px"><label for="mvZoom">Camera zoom: <strong id="mvZoomValue">2.0×</strong></label><input type="range" id="mvZoom" min="1" max="4" step="0.1" value="2" style="width:100%"><p id="mvFocusStatus" class="small muted">Autofocus requested when supported. Zoom will activate when camera starts.</p></div></details><div id="mvLiveFrame" style="display:none;position:relative;width:100%;max-width:430px;height:min(46vh,440px);margin-top:12px;overflow:hidden;border-radius:10px;background:#111"><video id="liveVideo" autoplay muted playsinline style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;object-fit:cover"></video><canvas id="mvVisibleCanvas" style="display:block;width:100%;height:100%;object-fit:fill"></canvas><div style="position:absolute;pointer-events:none;left:17%;top:24%;width:77%;height:72%;border:2px solid #80e7a1;border-radius:10px;box-sizing:border-box"><div id="mvLiveOcrGuide" style="position:absolute;left:2%;top:2%;width:96%;height:7%;border:2px dashed #ffdb7b;box-sizing:border-box"></div></div></div><div id="mvCalibration" class="panel" style="margin-top:10px;max-width:430px;padding:10px"><strong>Live calibration · camera and controls together</strong><p class="small muted">The title crop below updates during scanning. Keep this panel directly under the camera.</p><div class="panel" style="padding:10px"><strong>OCR title alignment</strong><p class="small muted">Adjust the title strip if the yellow guide does not line up with the printed card name.</p><label>Title vertical position <input id="mvTitleY" type="range" min="0" max="180" value="9" step="1"></label><label>Title band height <input id="mvTitleH" type="range" min="14" max="75" value="28" step="1"></label><label>Title width <input id="mvTitleW" type="range" min="175" max="295" value="245" step="5"></label><button id="mvResetCrop">Reset OCR alignment</button><button id="mvTestCrop" type="button">Test this exact OCR crop</button><p class="small muted" id="mvCropInfo"></p></div><p id="mvOcrPreview" class="small muted">Last OCR: none</p><p class="small muted">The large preview below shows the exact standard-title crop. Alternate-layout OCR may examine another region.</p><div id="mvTitlePreview" style="max-width:100%;overflow:hidden;min-height:110px;background:#101722;border:1px solid #52627a;border-radius:10px;padding:6px"></div><div class="flex"><button id="mvSaveDebugFrame" type="button">Save diagnostic frame + OCR crop</button></div><p class="small muted" id="mvFrameDiagnostic">Diagnostic images are saved only when requested.</p></div><p class="small muted">Fixed stand: align the green guide to the card, then move the yellow title guide onto the name. The yellow band should cover the name. Start at 2× and adjust zoom until the title is sharp.</p><p id="mvHybridScore" class="small muted">Visual index: not loaded · hybrid fallback ready</p><details><summary>Database and artwork index status</summary><div class="panel"><strong>Offline Magic card database</strong><p class="small muted" id="mvDbStatus">Checking local database…</p><button id="mvDbSync">Check / refresh Scryfall database now</button><p class="small muted">Automatically downloads Scryfall Default Cards (100,000+ printing records) on first launch and checks for updates every 24 hours. Stores each printing by unique Scryfall ID; preserves the previous complete catalog if a download fails. The artwork index is separate.</p></div><div class="flex"><label class="small">Load visual index <input id="mvIndexFile" type="file" accept="application/json,.json" /></label><button id="mvIndexClear">Clear visual index</button></div><p id="mvIndexStatus" class="small muted">Bundled visual index loads automatically when Scan cards opens; optional JSON import remains available.</p></details><p id="liveStatus" class="small muted" aria-live="polite">Camera off. Saved this session: 0.</p><p class="small muted" id="liveDiagnostics">Camera diagnostics: checking environment…</p><div id="liveReview" class="small"></div><p class="small muted">Fast scanning uses exact local-name matches immediately and confirms the printing before saving. Fuzzy OCR needs two agreeing reads. Artwork-only matches never override OCR. Confirm the destination deck and the “also add to collection” option above before starting. This mode identifies card names, not exact printings. The card must visibly leave the camera frame between scans to prevent duplicate counts.</p></section>`};
+scanner=function(){return liveScannerBase()+`<section class="panel" id="continuousPanel"><h2>Continuous camera scan (v4.8)</h2><label class='small'><input type='checkbox' id='mvAutoFrame' style='width:auto' ${localStorage.getItem('mv_auto_frame')==='1'?'checked':''}> Experimental automatic card framing (disable for fixed phone stand)</label><label class="small"><input type="checkbox" id="mvFixedStand" style="width:auto" ${localStorage.getItem('mv_fixed_stand')!=='0'?'checked':''}> Fixed phone stand: card positioned low, as in your photo (recommended)</label><p class='muted small'>OCR searches the calibrated title first, then title bands within the top 40% of the card outline before trying unusual layouts. Bottom-title lands and showcase frames may still require manual confirmation.</p><p class='muted small'>For exact editions, confirm the set and collector number in the printing review. Scan destination supports your collection and existing Commander decks.</p><p class="muted small">Keep your camera pointed at the scanning area. Place one card at a time; the app automatically checks the title and adds confidently recognized cards without pressing the camera button again. Remove each card before placing the next. Works only in a secure browser context (HTTPS or localhost); local HTML files may block camera access.</p><div class="flex"><button id="liveStart" class="primary">Start continuous camera</button><button id="mvTestLiveSound">Test success sound</button><button id="liveStop">Stop camera</button><button id="mvTorch" type="button" disabled>Flash: unavailable</button><button id="liveResume">Resume after review</button></div><details id="mvAdvancedScanner"><summary>Camera zoom and advanced controls</summary><div id="mvZoomPanel" class="panel" style="margin-top:12px"><label for="mvZoom">Camera zoom: <strong id="mvZoomValue">2.0×</strong></label><input type="range" id="mvZoom" min="1" max="4" step="0.1" value="2" style="width:100%"><p id="mvFocusStatus" class="small muted">Autofocus requested when supported. Zoom will activate when camera starts.</p></div></details><div id="mvLiveFrame" style="display:none;position:relative;width:100%;max-width:430px;height:min(46vh,440px);margin-top:12px;overflow:hidden;border-radius:10px;background:#111"><video id="liveVideo" autoplay muted playsinline style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;object-fit:cover"></video><canvas id="mvVisibleCanvas" style="display:block;width:100%;height:100%;object-fit:fill"></canvas><div style="position:absolute;pointer-events:none;left:17%;top:24%;width:77%;height:72%;border:2px solid #80e7a1;border-radius:10px;box-sizing:border-box"><div id="mvLiveOcrGuide" style="position:absolute;left:2%;top:2%;width:96%;height:7%;border:2px dashed #ffdb7b;box-sizing:border-box"></div></div></div><div id="mvCalibration" class="panel" style="margin-top:10px;max-width:430px;padding:10px"><strong>Live calibration · camera and controls together</strong><p class="small muted">The title crop below updates during scanning. Keep this panel directly under the camera.</p><div class="panel" style="padding:10px"><strong>OCR title alignment</strong><p class="small muted">Adjust the title strip if the yellow guide does not line up with the printed card name.</p><label>Title vertical position <input id="mvTitleY" type="range" min="0" max="180" value="9" step="1"></label><label>Title band height <input id="mvTitleH" type="range" min="14" max="75" value="28" step="1"></label><label>Title width <input id="mvTitleW" type="range" min="175" max="295" value="245" step="5"></label><button id="mvResetCrop">Reset OCR alignment</button><button id="mvTestCrop" type="button">Test this exact OCR crop</button><p class="small muted" id="mvCropInfo"></p></div><p id="mvOcrPreview" class="small muted">Last OCR: none</p><p class="small muted">The large preview below shows the exact standard-title crop. Alternate-layout OCR may examine another region.</p><div id="mvTitlePreview" style="max-width:100%;overflow:hidden;min-height:110px;background:#101722;border:1px solid #52627a;border-radius:10px;padding:6px"></div><div class="flex"><button id="mvSaveDebugFrame" type="button">Save diagnostic frame + OCR crop</button></div><p class="small muted" id="mvFrameDiagnostic">Diagnostic images are saved only when requested.</p></div><p class="small muted">Fixed stand: align the green guide to the card, then move the yellow title guide onto the name. The yellow band should cover the name. Start at 2× and adjust zoom until the title is sharp.</p><p id="mvHybridScore" class="small muted">Visual index: not loaded · hybrid fallback ready</p><details><summary>Database and artwork index status</summary><div class="panel"><strong>Offline Magic card database</strong><p class="small muted" id="mvDbStatus">Checking local database…</p><button id="mvDbSync">Check / refresh Scryfall database now</button><p class="small muted">Automatically downloads Scryfall Default Cards (100,000+ printing records) on first launch and checks for updates every 24 hours. Stores each printing by unique Scryfall ID; preserves the previous complete catalog if a download fails. The artwork index is separate.</p></div><div class="flex"><label class="small">Load visual index <input id="mvIndexFile" type="file" accept="application/json,.json" /></label><button id="mvIndexClear">Clear visual index</button></div><p id="mvIndexStatus" class="small muted">Bundled visual index loads automatically when Scan cards opens; optional JSON import remains available.</p></details><p id="liveStatus" class="small muted" aria-live="polite">Camera off. Saved this session: 0.</p><p class="small muted" id="liveDiagnostics">Camera diagnostics: checking environment…</p><div id="liveReview" class="small"></div><p class="small muted">Fast scanning uses exact local-name matches immediately and confirms the printing before saving. Fuzzy OCR needs two agreeing reads. Artwork-only matches never override OCR. Confirm the destination deck and the “also add to collection” option above before starting. This mode identifies card names, not exact printings. The card must visibly leave the camera frame between scans to prevent duplicate counts.</p></section>`};
 function liveStatus(msg){let el=document.getElementById('liveStatus');if(el)el.textContent=msg+' · Saved this session: '+liveScanned}
 function liveStop(){mvTorchEnabled=false;mvTorchUpdateUI(false);liveActive=false;livePaused=false;if(liveLoop)clearTimeout(liveLoop);liveLoop=null;if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null}if(liveWorker){let w=liveWorker;liveWorker=null;w.terminate().catch(()=>{})}let v=document.getElementById('liveVideo');if(v){v.pause();v.srcObject=null;v.style.display='block';let frame=document.getElementById('mvLiveFrame');if(frame)frame.style.display='none'}liveStatus('Camera stopped')}
 function liveSignature(ctx,w,h){let a=ctx.getImageData(0,0,w,h).data,parts=[];for(let y=0;y<h;y+=10)for(let x=0;x<w;x+=10){let i=(y*w+x)*4;parts.push(Math.floor((a[i]+a[i+1]+a[i+2])/3/24))}return parts}
@@ -227,27 +227,33 @@ function mvHybridCandidates(raw){
  const n=mvHybridNorm(raw).replace(/\b[0-9]+$/,'').trim();
  if(n.length<3||!mvNamesReady)return[];
  if(mvHybridExact.has(n))return [{name:mvHybridExact.get(n),score:1,exact:true}];
- const tokens=n.split(' ').filter(Boolean);
- const ranked=[],seen=new Set();
- // Search buckets for the first plausible word, plus embedded title words.
+ const words=n.split(' ').filter(w=>w.length>=3), ranked=[],seen=new Set();
  const pools=[];
- for(const word of tokens){if(word.length>=3){
-   pools.push(...(mvHybridBuckets.get(word.slice(0,2))||[]))
+ for(const word of words){pools.push(...(mvHybridBuckets.get(word.slice(0,2))||[]));}
+ // Missing first letters are common when the left edge of a title is clipped.
+ // Limit suffix recovery to long words and demand nearly complete remaining text.
+ for(const word of words){if(word.length>=5){
+   for(const [key,items] of mvHybridBuckets){if(key[1]===word[0])pools.push(...items)}
  }}
- // A short title can be surrounded by OCR artifacts, e.g. 'P23 Spirit Summons HRD'.
- // For each candidate, require a complete title substring or a close edit distance.
  for(const item of pools){if(seen.has(item.name))continue;seen.add(item.name);
    const a=item.n;if(a.length<4)continue;
-   let score=1-mvHybridEdit(n,a)/Math.max(n.length,a.length);
    const whole=(' '+n+' ').includes(' '+a+' ');
-   if(whole && a.length>=5)score=1;
-   else if(a.length>=6 && n.includes(a))score=Math.max(score,.94);
-   // A single short word such as 'Jace' is too ambiguous to infer a printing.
-   if(a.length<=5 && !whole)continue;
-   if(score>=.84)ranked.push({name:item.name,score,exact:whole});
+   const distance=mvHybridEdit(n,a);
+   let score=1-distance/Math.max(n.length,a.length);
+   if(whole&&a.length>=5)score=1;
+   else if(a.length>=6&&n.includes(a))score=Math.max(score,.94);
+   else if(a.length>=8&&n.length>=a.length-2&&n.length<=a.length+5){
+     const suffix=a.slice(1);
+     if(n.startsWith(suffix)||n.includes(' '+suffix))score=Math.max(score,.91);
+   }
+   // Avoid interpreting rules text (Lifelink, Valor, etc.) as a complete title.
+   if(a.length<=5&&!whole)continue;
+   if(score>=.84)ranked.push({name:item.name,score:Math.min(score,whole?1:.97),exact:whole});
  }
  ranked.sort((a,b)=>b.score-a.score||b.name.length-a.name.length);
- return ranked.slice(0,3);
+ // When the same OCR text supports both a full title and its trailing word,
+ // retain the longer title unless the shorter title was the complete OCR line.
+ return ranked.filter(c=>!ranked.some(other=>other!==c&&other.name.length>c.name.length&&mvHybridNorm(other.name).endsWith(' '+mvHybridNorm(c.name))&&mvHybridNorm(n)!==mvHybridNorm(c.name)&&other.score>=c.score-.08)).slice(0,3);
 }
 
 async function mvHybridFetchCard(name){if(mvHybridLookupCache.has(name))return mvHybridLookupCache.get(name);try{let local=await ManaVaultCardDB.get(name);if(local){let card={...local,image_uris:local.image_url?{art_crop:local.image_url}:undefined};mvHybridLookupCache.set(name,card);return card}}catch{}let now=Date.now();if(now-mvHybridLastLookup<120)await new Promise(r=>setTimeout(r,120-(now-mvHybridLastLookup)));mvHybridLastLookup=Date.now();try{let card=await scry('/cards/named?'+(mvNamesReady?'exact=':'fuzzy=')+encodeURIComponent(name));mvHybridLookupCache.set(name,card);return card}catch(e){mvLogCamera('Card lookup: '+e.message,'info');return null}}
@@ -421,10 +427,12 @@ let tctx=title.getContext('2d',{willReadFrequently:true});let mvR=mvCropRect(c);
 // Alternate layouts: bottom-name full-art lands, poster/showcase titles and bright-frame cards.
 // Use one additional region only after repeated unsuccessful standard-title reads.
 let regionLabel='standard title';
-if(mvOcrMisses>=6 && mvOcrRegionStep%2===1)mvOcrRegionStep++;
-if(mvOcrMisses>=6 && (mvOcrRegionStep%2===0)){
+if(mvOcrMisses>=3 && mvOcrRegionStep%2===1)mvOcrRegionStep++;
+if(mvOcrMisses>=3 && (mvOcrRegionStep%2===0)){
  const regions=[
   {label:'bottom title (full-art land)',x:.07,y:.84,w:.86,h:.105},
+  {label:'upper 40% secondary title',x:.07,y:.075,w:.86,h:.085},
+  {label:'upper 40% showcase title',x:.07,y:.17,w:.86,h:.12},
   {label:'upper-center showcase title',x:.09,y:.10,w:.82,h:.23},
   {label:'very top borderless title',x:.06,y:.01,w:.88,h:.12},
   {label:'lower-middle alternate title',x:.08,y:.68,w:.84,h:.14}
@@ -434,13 +442,14 @@ if(mvOcrMisses>=6 && (mvOcrRegionStep%2===0)){
  tctx.drawImage(c,Math.round(c.width*r.x),Math.round(c.height*r.y),Math.round(c.width*r.w),Math.round(c.height*r.h),0,0,title.width,title.height);
  
 }
-let result=await liveWorker.recognize(title);
+const mvOcrStarted=performance.now();let result=await liveWorker.recognize(title);const mvOcrDuration=Math.round(performance.now()-mvOcrStarted);
 let name=(result.data.text||'').split(/\n/).map(x=>x.replace(/[^\p{L}\p{N} ,.'’:\-]/gu,'').trim().replace(/\s+/g,' ')).find(x=>x.length>=4&&x.length<=65)||'';
 let ocrEl=document.getElementById('mvOcrPreview');if(ocrEl)ocrEl.textContent='Last OCR ('+regionLabel+'): '+(name||'(no readable title)');
 if(!name){mvOcrMisses++;liveStatus('Waiting for readable card title');return}
 let candidates=mvHybridCandidates(name);
 if(!candidates.length){mvOcrMisses++;liveStatus('OCR ('+regionLabel+'): '+name+' — no likely name');return}mvOcrMisses=0;
 let best=candidates[0];
+if(best.score<1)mvLogCamera('Fuzzy candidate '+best.name+' score='+Math.round(best.score*100)+'% OCR='+name+' region='+regionLabel+' OCR time='+mvOcrDuration+'ms');
 // Preserve a promising match across OCR misses, but not across a scene change.
 // A single EXACT catalog title can enter review immediately; a fuzzy title
 // requires a second matching read. These are confidence gates, not timers.
@@ -452,7 +461,7 @@ mvFastCandidate.reads++;mvFastCandidate.score=Math.max(mvFastCandidate.score,bes
 liveStatus('Candidate: '+best.name+' · OCR '+Math.round(best.score*100)+'% · '+mvFastCandidate.reads+' reads');
 const exact=best.score===1&&mvHybridNorm(name)===mvHybridNorm(best.name);
 // An embedded title still needs two agreeing frames; no fuzzy one-shot accepts.
-const ready=exact||(best.score>=.88&&mvFastCandidate.reads>=2);
+const ready=exact||(best.score>=.90&&mvFastCandidate.reads>=2);
 if(!ready)return;
 // Clear scene-specific artwork candidate before async lookup. A later card
 // cannot inherit an artwork match from a prior card.
@@ -498,7 +507,7 @@ function mvRenderLog(){
   if(last){let e=[...mvCameraLogs].reverse().find(e=>e.level==='error');last.textContent=e?'Last error (saved): '+e.message:'No recorded errors yet.'}
 }
 const mvScannerBeforeLog=scanner;
-scanner=function(){return mvScannerBeforeLog()+`<section class="panel" id="mvDiagnosticsPanel"><h2>Camera diagnostics — v2.1</h2><p class="small muted">This log is persistent: errors remain visible after the camera stops or the app restarts. Use Copy or Download log to share the exact failure.</p><p id="mvLastCameraError" style="font-weight:bold;white-space:pre-wrap">No recorded errors yet.</p><pre id="mvCameraLog" style="white-space:pre-wrap;overflow:auto;max-height:320px;background:#111827;color:#e5e7eb;padding:12px;border-radius:8px;font-size:12px" aria-live="polite"></pre><div class="flex"><button id="mvCopyCameraLog">Copy diagnostic log</button><button id="mvDownloadCameraLog">Download log</button><button id="mvClearCameraLog">Clear log</button></div></section>`};
+scanner=function(){return mvScannerBeforeLog()+`<section class="panel" id="mvDiagnosticsPanel"><h2>Camera diagnostics — v2.1</h2><p class="small muted">This log is persistent: errors remain visible after the camera stops or the app restarts. Use Copy or Download log to share the exact failure.</p><p id="mvLastCameraError" style="font-weight:bold;white-space:pre-wrap">No recorded errors yet.</p><pre id="mvCameraLog" style="white-space:pre-wrap;overflow:auto;max-height:320px;background:#111827;color:#e5e7eb;padding:12px;border-radius:8px;font-size:12px" aria-live="polite"></pre><div class="flex"><button id="mvCopyCameraLog">Copy diagnostic log</button><button id="mvDownloadCameraLog">Share / save log</button><button id="mvClearCameraLog">Clear log</button></div></section>`};
 const mvLiveStatusBeforeLog=liveStatus;
 liveStatus=function(msg){mvLogCamera(msg,/unable|failed|unavailable|paused|error|denied/i.test(msg)?'error':'info');mvLiveStatusBeforeLog(msg)};
 const mvLiveStartBeforeLog=liveStart;
@@ -519,9 +528,15 @@ bind=function(){mvBindBeforeLog();if(tab==='Scan cards'){
   document.getElementById('mvClearCameraLog')?.addEventListener('click',()=>{mvCameraLogs=[];localStorage.removeItem(MV_CAMERA_LOG_KEY);mvRenderLog()});
 }};
 function mvDownloadCameraLog(){
-  const data=mvCameraLogs.map(e=>`${e.at} [${e.level}] ${e.message}`).join('\n');
-  let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'text/plain'}));a.download='manavault-camera-log.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)
+ const data=mvCameraLogs.map(e=>`${e.at} [${e.level}] ${e.message}`).join('\n')||'No camera events recorded yet.';
+ // Blob downloads from Android WebView appassets are often ignored by DownloadManager.
+ // Use Android's native share sheet so the log can be saved to Files or sent directly.
+ if(window.ManaVaultNative?.shareLog){window.ManaVaultNative.shareLog(data);return;}
+ if(navigator.share){navigator.share({title:'ManaVault camera log',text:data}).catch(e=>mvLogCamera('Share canceled/unavailable: '+e.message,'info'));return;}
+ let a=document.createElement('a'),url=URL.createObjectURL(new Blob([data],{type:'text/plain'}));
+ a.href=url;a.download='manavault-camera-log.txt';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);
 }
+
 // Java can append permission diagnostics even when camera JS is waiting for permission.
 window.mvNativeCameraEvent=function(message){mvLogCamera('Android WebView: '+message,/denied|rejected|error/i.test(message)?'error':'info')};
 

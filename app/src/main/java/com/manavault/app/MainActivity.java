@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.PermissionRequest;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.ConsoleMessage;
@@ -34,6 +35,21 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webView = new WebView(this);
+        webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface public void shareLog(String text) {
+                runOnUiThread(() -> {
+                    try {
+                        Intent send = new Intent(Intent.ACTION_SEND);
+                        send.setType("text/plain");
+                        send.putExtra(Intent.EXTRA_SUBJECT, "ManaVault camera diagnostic log");
+                        send.putExtra(Intent.EXTRA_TEXT, text);
+                        startActivity(Intent.createChooser(send, "Save or share ManaVault log"));
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "Unable to share log: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+        }, "ManaVaultNative");
         setContentView(webView);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
