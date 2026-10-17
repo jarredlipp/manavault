@@ -7,8 +7,8 @@ android {
         applicationId 'com.manavault.app'
         minSdk 26
         targetSdk 35
-        versionCode 59
-        versionName '5.9.0-hybrid-native-beta'
+        versionCode 60
+        versionName '5.9.1-native-entry-fix'
     }
 }
 

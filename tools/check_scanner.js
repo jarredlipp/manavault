@@ -45,3 +45,11 @@ assert.match(native,/VisualMatcher\.Match/, 'Missing artwork-first native matchi
 assert.match(native,/waitingForNext/, 'Missing card-change suppression');
 assert.match(native,/scan_results/, 'Missing batch result');
 console.log('ManaVault v5.9 checks passed: JS syntax, repository layout, recognition and queue wiring, 7 OCR name cases.');
+
+const mainActivity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
+assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android-native launch button');
+assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
+assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
+assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
+assert.match(html,/v5\.9\.1/, 'Missing visible v5.9.1 build marker');
+console.log('ManaVault v5.9.1 native entry checks passed.');

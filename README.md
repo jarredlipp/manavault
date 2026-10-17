@@ -1,3 +1,20 @@
+# ManaVault v5.9.1 — native-scanner entry fix
+
+**The visible Android toolbar is the authoritative way to open CameraX.**
+When running v5.9.1, the toolbar displays **ManaVault 5.9.1 · CameraX** and
+**Open native scanner**. The Scan Cards page repeats the button at its top and
+beside the labeled **Start legacy OCR camera** fallback.
+
+If that Android toolbar is absent, the APK running on the phone was not built
+from this v5.9.1 source. Do not diagnose performance using the legacy camera
+in that case. The build artifact in GitHub Actions is named
+`ManaVault-v5.9.1-native-debug` and includes the `ManaVault-v5.9.1-native-debug.apk`.
+
+**Data precaution:** Local collection data can be erased by uninstalling the app.
+Export a backup before changing APK signing certificates or uninstalling.
+
+---
+
 # ManaVault v5.9 — Native Continuous Scanner Beta
 
 Android Magic: The Gathering collection and deck app. Version 5.9 extends v5.8's native CameraX + OpenCV + Google ML Kit scanner with **continuous capture**, **artwork-first candidates when known reference art is available**, **OCR fallback**, **stable scene-change gating**, and **a queue for manual printing confirmation**. The WebView collection, deck functions, printing catalog, Scryfall-based prices, and legacy scanner remain.

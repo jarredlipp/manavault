@@ -17,6 +17,11 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import android.widget.Button;
+import android.widget.TextView;
+import android.widget.LinearLayout;
+import android.graphics.Color;
+import android.view.Gravity;
 import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,6 +41,20 @@ public class MainActivity extends Activity {
     private VisualMatcher artworkIndex;
     private boolean pendingNativeOpen=false;
     private String pendingScanScript;
+
+    private int dp(int dips) {
+        return (int)(dips * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private void launchNativeScanner() {
+        if (isFinishing()) return;
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            pendingNativeOpen = true;
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_REQUEST);
+            return;
+        }
+        startActivityForResult(new Intent(this, NativeScannerActivity.class), NATIVE_SCANNER_REQUEST);
+    }
 
     private void cameraEvent(String message) {
         Log.d("ManaVaultCamera", message);
@@ -64,16 +83,9 @@ public class MainActivity extends Activity {
         }, "ManaVaultNative");
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface public void open() {
-                runOnUiThread(() -> {
-                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                        pendingNativeOpen=true;
-                        requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_REQUEST);
-                        return;
-                    }
-                    Intent scan = new Intent(MainActivity.this, NativeScannerActivity.class);
-                    startActivityForResult(scan, NATIVE_SCANNER_REQUEST);
-                });
+                runOnUiThread(() -> launchNativeScanner());
             }
+            @JavascriptInterface public String version() { return "5.9.1"; }
             @JavascriptInterface public void selectImage(int index) {
                 synchronized(lastNativeBatchPhotos){
                     if(index>=0 && index<lastNativeBatchPhotos.size())lastNativeCard=lastNativeBatchPhotos.get(index);
@@ -106,7 +118,31 @@ public class MainActivity extends Activity {
                 });
             }
         }, "ManaVaultNativeScanner");
-        setContentView(webView);
+        // Persistent Android-native launch control: visible even if the WebView fails
+        // to render the late-loading scanner panel. The UI does not start the camera
+        // until the user explicitly taps the button.
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(0xFF0D111A);
+        LinearLayout nativeBar = new LinearLayout(this);
+        nativeBar.setOrientation(LinearLayout.HORIZONTAL);
+        nativeBar.setGravity(Gravity.CENTER_VERTICAL);
+        nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
+        nativeBar.setBackgroundColor(0xFF171E2B);
+        TextView versionLabel = new TextView(this);
+        versionLabel.setText("ManaVault 5.9.1 · CameraX");
+        versionLabel.setTextColor(0xFFEAF2EF);
+        versionLabel.setTextSize(12);
+        nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
+        Button nativeButton = new Button(this);
+        nativeButton.setText("Open native scanner");
+        nativeButton.setAllCaps(false);
+        nativeButton.setTextSize(12);
+        nativeButton.setOnClickListener(v -> launchNativeScanner());
+        nativeBar.addView(nativeButton, new LinearLayout.LayoutParams(-2, dp(46)));
+        root.addView(nativeBar, new LinearLayout.LayoutParams(-1, -2));
+        root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1));
+        setContentView(root);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
