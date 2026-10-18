@@ -56,6 +56,30 @@ def bulk_cards(source):
     else:
         raise ValueError('Scryfall bulk response is not JSON/JSONL (raw or gzip); verify the bulk download URL and response')
 
+def download_bulk_to_file(response, destination, *, chunk_size=262144):
+    """Spool the entire HTTP response to disk before parsing it.
+
+    requests/urllib3 may close the network response when it reaches EOF.
+    A gzip decoder still needs to inspect its trailer at that point, and
+    keeping the decoder attached to response.raw can raise
+    ``ValueError: read of closed file``.  A local file avoids that lifetime
+    coupling and lets gzip/JSON streaming finish reliably.
+
+    iter_content also handles HTTP Content-Encoding; bulk_cards independently
+    sniffs for a gzip-*file* payload, so both compression layers work.
+    """
+    path=Path(destination)
+    total=0
+    with path.open('wb') as sink:
+        for part in response.iter_content(chunk_size=chunk_size):
+            if not part:
+                continue
+            sink.write(part)
+            total+=len(part)
+    if total<2:
+        raise ValueError('Scryfall bulk download was empty or truncated')
+    return total
+
 def build(rows, output, minimum=100000, source_stamp=''):
     output=Path(output);output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output.parent) as tmp:
@@ -93,15 +117,28 @@ def build(rows, output, minimum=100000, source_stamp=''):
 def main():
     p=argparse.ArgumentParser();p.add_argument('--output',default='app/src/main/assets/printing-catalog.sqlite.gz');p.add_argument('--input');p.add_argument('--min',type=int,default=100000);args=p.parse_args()
     if args.input:
-        opener=gzip.open if args.input.endswith('.gz') else open
-        with opener(args.input,'rb') as stream:build(bulk_cards(stream),args.output,args.min)
+        # Sniff the file contents rather than trusting a .gz extension.
+        with open(args.input,'rb') as stream:
+            build(bulk_cards(stream),args.output,args.min)
     else:
-        session=requests.Session();session.headers['User-Agent']='ManaVault/5.11.7 (offline card index builder)'
-        meta=session.get('https://api.scryfall.com/bulk-data/default_cards',timeout=30);meta.raise_for_status()
-        info=meta.json();url=info.get('download_uri') or info.get('jsonl_download_uri')
-        if not url:raise RuntimeError('Missing Scryfall bulk download URI')
-        with session.get(url,stream=True,timeout=(20,120)) as resp:
-            resp.raise_for_status();resp.raw.decode_content=True
-            build(bulk_cards(resp.raw),args.output,args.min,info.get('updated_at',''))
+        with requests.Session() as session:
+            session.headers['User-Agent']='ManaVault/5.11.8 (offline card index builder)'
+            meta=session.get('https://api.scryfall.com/bulk-data/default_cards',timeout=30)
+            meta.raise_for_status()
+            info=meta.json()
+            url=info.get('download_uri') or info.get('jsonl_download_uri')
+            if not url:
+                raise RuntimeError('Missing Scryfall bulk download URI')
+            # Do not parse directly from resp.raw: urllib3 can close the
+            # network stream at EOF while gzip still reads its trailer.
+            # The temp file is deleted after generation (success or error).
+            with tempfile.TemporaryDirectory(prefix='manavault-scryfall-') as folder:
+                downloaded=Path(folder)/'downloaded-bulk.dat'
+                with session.get(url,stream=True,timeout=(20,120)) as resp:
+                    resp.raise_for_status()
+                    size=download_bulk_to_file(resp,downloaded)
+                print(f'Scryfall bulk download complete: {size / 1048576:.1f} MiB; building offline SQLite catalog...')
+                with downloaded.open('rb') as source:
+                    build(bulk_cards(source),args.output,args.min,info.get('updated_at',''))
 
 if __name__=='__main__':main()
