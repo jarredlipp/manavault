@@ -51,7 +51,7 @@ final class VisualMatcher {
         }
     }
     private static final class Entry {
-        String name,id,illustrationId; byte[] f;
+        String name,id,illustrationId; byte[] f,e;
         Entry(String name,String id,byte[] values){this(name,id,"",values);}
         Entry(String name,String id,String illustrationId,byte[] values){this.name=name;this.id=id;this.illustrationId=illustrationId;this.f=values;}
     }
@@ -94,7 +94,13 @@ final class VisualMatcher {
             String name=j.optString("name", ""),id=j.optString("id", "");
             JSONArray f=j.optJSONArray("f");if(name.isEmpty()||f==null||f.length()!=192)continue;
             byte[] b=new byte[192];for(int k=0;k<192;k++)b[k]=(byte)Math.max(0,Math.min(255,f.optInt(k)));
-            target.add(new Entry(name,id,j.optString("illustration_id",""),b));
+            Entry entry=new Entry(name,id,j.optString("illustration_id",""),b);
+            JSONArray extra=j.optJSONArray("e");
+            if(extra!=null&&extra.length()==128){
+                entry.e=new byte[128];
+                for(int k=0;k<128;k++)entry.e[k]=(byte)Math.max(0,Math.min(255,extra.optInt(k)));
+            }
+            target.add(entry);
         }
     }
     /** Rank only candidate illustrations that are actually bundled or learned.
@@ -106,8 +112,8 @@ final class VisualMatcher {
         if(candidates==null||candidates.length()==0||candidates.length()>24){out.put("error","Unsupported candidate count");return out;}
         Bitmap bitmap=BitmapFactory.decodeFile(photograph.getAbsolutePath());
         if(bitmap==null){out.put("error","Captured photograph unavailable");return out;}
-        byte[] feature;
-        try{Bitmap crop=artRegion(bitmap);try{feature=fingerprint(crop);}finally{crop.recycle();}}
+        byte[] feature,perceptual;
+        try{Bitmap crop=artRegion(bitmap);try{feature=fingerprint(crop);perceptual=perceptualDescriptor(crop);}finally{crop.recycle();}}
         finally{bitmap.recycle();}
         JSONArray scores=new JSONArray();int missing=0;
         for(int i=0;i<candidates.length();i++){
@@ -117,8 +123,7 @@ final class VisualMatcher {
             for(Entry entry:entries){
                 // Reprints with identical art can share an illustration ID.
                 if(!entry.id.equals(id) && (illustration.isEmpty()||!illustration.equals(entry.illustrationId)))continue;
-                int delta=0;for(int b=0;b<feature.length;b++)delta+=Math.abs((feature[b]&255)-(entry.f[b]&255));
-                top=Math.max(top,1f-delta/(192f*255f));
+                top=Math.max(top,imageScore(feature,perceptual,entry));
             }
             if(top<0){missing++;continue;}
             JSONObject row=new JSONObject();row.put("id",id);row.put("score",top);scores.put(row);
@@ -135,6 +140,30 @@ final class VisualMatcher {
             int c=scaled.getPixel(x,y);f[i++]=(byte)Color.red(c);f[i++]=(byte)Color.green(c);f[i++]=(byte)Color.blue(c);
         }
         if(scaled!=image)scaled.recycle();return f;
+    }
+    /** Contrast-normalized 128-dimensional image descriptor (not a neural
+     * model). Complements the legacy RGB thumbnail in lighting variation. */
+    static byte[] perceptualDescriptor(Bitmap image){
+        Bitmap scaled=Bitmap.createScaledBitmap(image,16,8,true);
+        double[] luma=new double[128];double mean=0;
+        for(int y=0;y<8;y++)for(int x=0;x<16;x++){
+            int pixel=scaled.getPixel(x,y),k=y*16+x;
+            luma[k]=(Color.red(pixel)*299+Color.green(pixel)*587+Color.blue(pixel)*114)/1000.0;
+            mean+=luma[k];
+        }
+        mean/=128;double variance=0;
+        for(double v:luma)variance+=(v-mean)*(v-mean);
+        double scale=Math.max(16,Math.sqrt(variance/128));byte[] result=new byte[128];
+        for(int k=0;k<128;k++)result[k]=(byte)Math.max(0,Math.min(255,
+            Math.round(128+(luma[k]-mean)*48/scale)));
+        if(scaled!=image)scaled.recycle();return result;
+    }
+    private static float imageScore(byte[] rgb,byte[] p,Entry entry){
+        int color=0;for(int k=0;k<192;k++)color+=Math.abs((rgb[k]&255)-(entry.f[k]&255));
+        float colorScore=1f-color/(192f*255f);
+        if(entry.e==null||p==null)return colorScore;
+        int shape=0;for(int k=0;k<128;k++)shape+=Math.abs((p[k]&255)-(entry.e[k]&255));
+        return .55f*colorScore+.45f*(1f-shape/(128f*255f));
     }
     /** Standard MTG portrait art window; title and text box are intentionally excluded. */
     static Bitmap artRegion(Bitmap card){
@@ -157,12 +186,11 @@ final class VisualMatcher {
         long key=quickHash(card);
         if(cache.containsKey(key))return cache.get(key);
         Bitmap crop=artRegion(card);
-        byte[] f=fingerprint(crop);crop.recycle();
+        byte[] f=fingerprint(crop),perceptual=perceptualDescriptor(crop);crop.recycle();
         float best=-1,second=-1;Entry winner=null;
         // Exclude nearly identical printings of the same card from margin competition.
         for(Entry entry:entries){
-            int delta=0;for(int j=0;j<192;j++)delta+=Math.abs((f[j]&255)-(entry.f[j]&255));
-            float sim=1f-delta/(192f*255f);
+            float sim=imageScore(f,perceptual,entry);
             if(sim>best){if(winner!=null&&!winner.name.equalsIgnoreCase(entry.name))second=Math.max(second,best);best=sim;winner=entry;}
             else if(winner!=null&&!winner.name.equalsIgnoreCase(entry.name))second=Math.max(second,sim);
         }

@@ -926,10 +926,11 @@ public final class NativeScannerActivity extends ComponentActivity {
                     JSONObject alert=new JSONObject();alert.put("scan_id",watchdogId);
                     alert.put("name",name);
                     alert.put("reason","Printing verification is taking too long. Correct the title, retry or skip now; the scanner will not silently save a guessed edition.");
-                    alert.put("allow_unverified",false);
+                    alert.put("allow_unverified",
+                        "ocr-exact".equals(result.optString("source")) && !name.contains(" // "));
                     showImmediateReview(alert);
                 }catch(Exception e){Log.w(TAG,"Scanner review watchdog failed",e);}
-            },5000);
+            },4200);
             runOnUiThread(()->{if(!closing){
                 status.setText(msg);keepButton.setText("Resolving");keepButton.setEnabled(false);
                 reviewButton.setText("Finish ("+(verifiedCount+unverifiedCount)+" saved)");

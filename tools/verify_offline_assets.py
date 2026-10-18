@@ -31,6 +31,8 @@ def verify(assets=ASSETS, minimum_printings=100000, minimum_references=12, minim
         for card in items:
             if not isinstance(card, dict) or not isinstance(card.get('f'), list) or len(card['f']) != 192:
                 raise ValueError('artwork fingerprint must contain 192 RGB values')
+            if 'e' in card and (not isinstance(card['e'],list) or len(card['e'])!=128):
+                raise ValueError('visual descriptor must contain 128 brightness values')
         artworks = len(items)
         if artworks < minimum_references:
             problems.append(f'artwork index contains {artworks} references (minimum {minimum_references})')
@@ -63,6 +65,12 @@ def verify(assets=ASSETS, minimum_printings=100000, minimum_references=12, minim
             con = sqlite3.connect(f'file:{target}?mode=ro', uri=True)
             try:
                 rows = con.execute('SELECT COUNT(*) FROM printings').fetchone()[0]
+                references = con.execute('SELECT COUNT(*) FROM reference_fts').fetchone()[0]
+                if references < minimum_printings:
+                    raise ValueError(f'Incomplete offline OCR reference index: {references} rows')
+                match = con.execute("SELECT COUNT(*) FROM reference_fts WHERE reference_fts MATCH 'wizard'").fetchone()[0]
+                if not isinstance(match,int):
+                    raise ValueError('Offline reference full-text search unavailable')
                 integrity = con.execute('PRAGMA quick_check').fetchone()[0]
                 if integrity != 'ok':
                     raise ValueError(f'SQLite integrity check failed: {integrity}')

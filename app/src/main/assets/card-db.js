@@ -82,8 +82,13 @@ async function fastPrintings(name,limit=2001){
   // An empty native result may be a new card or an over-large result set;
   // check the validated local store and let non-live paths query Scryfall.
  }
+ // During first-run native extraction IndexedDB is deliberately empty.
+ // Do not misrepresent the absence of a ready catalog as 'no such printing'.
+ const available=await count().catch(()=>0);
+ if(available<MIN_PRINTINGS)return {rows:[],complete:false,source:'Catalog warming (native '+
+    String(window.ManaVaultNativeScanner?.nativeCatalogStatus?.()||'unavailable')+')'};
  const rows=await printings(name,limit);
- return {rows,complete:rows.length>0&&rows.length<limit,source:'IndexedDB'};
+ return {rows,complete:rows.length<limit,source:'IndexedDB'};
 }
 
 function status(s){lastStatus=s;let el=document.getElementById('mvDbStatus');if(el)el.textContent=s;try{window.mvLogCamera?.('Card database: '+s)}catch{};if(/^(Ready:|Up to date:)/.test(s))try{window.dispatchEvent(new Event('manavault:catalog-ready'))}catch{}}
@@ -147,9 +152,24 @@ async function sync(force=false){if(running)return running;
  }catch(e){let existing=await count().catch(()=>0);status('Sync failed: '+e.message+(existing?' — '+existing.toLocaleString()+' previous printings preserved':''))}finally{if(button)button.disabled=false}})();try{return await running}finally{running=null}}
 async function init(){try{let n=await count();let nativeReady=window.ManaVaultNativeScanner?.nativeCatalogStatus?.().startsWith('Ready:');
  status(n?'Ready: '+n.toLocaleString()+' cached printings. Checking updates…':nativeReady?'Native printing catalog ready; WebView cache will update while idle.':'No printings yet; automatic download starting…');
- if(n<MIN_PRINTINGS && (nativeReady||window.ManaVaultNativeScanner?.lookupOfflinePrintings)){
-  // The native catalog is usable immediately; check for newer bulk data only
-  // after idle time, never while CameraX is holding a card for finalization.
+ if(n<MIN_PRINTINGS && window.ManaVaultNativeScanner?.lookupOfflinePrintings){
+  // APK contains its own catalog. It may still be decompressing on first use.
+  // Surface the actual state instead of reporting that a bulk download started.
+  let polls=0;
+  const awaitNative=()=>{
+   const current=window.ManaVaultNativeScanner?.nativeCatalogStatus?.()||'Native catalog unavailable';
+   if(current.startsWith('Ready:')){
+    status(current+'; ready for offline edition matching.');
+    window.dispatchEvent(new Event('manavault:catalog-ready'));
+   }else if(current.startsWith('IndexedDB fallback:')){
+    status('Native catalog failed: '+current+'; online backup required.');
+    if(!window.mvNativeScannerBusy)void sync();
+   }else if(++polls<120){
+    if(polls%5===1)status('Preparing packaged offline catalog… ('+polls+'s)');
+    setTimeout(awaitNative,1000);
+   }else status('Native catalog has not initialized; recognized names can be saved without guessed editions.');
+  };
+  awaitNative();
   setTimeout(()=>{maintenanceAllowed=true;if(!window.mvNativeScannerBusy)void sync();},120000);
  }else void sync();
  }catch(e){status('Database unavailable: '+e.message)}}

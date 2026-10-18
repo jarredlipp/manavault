@@ -18,9 +18,9 @@ from build_native_catalog import build,bulk_cards,collector,normalized,download_
 from build_symbol_index import signature
 
 cards=[
- {'id':'printing1','name':'Webstrike Elite','set':'dft','collector_number':'0345','illustration_id':'art-a','oracle_id':'oracle-a','lang':'en','image_uris':{'normal':'https://cards.scryfall.io/normal/front/0/0/a.jpg'}},
+ {'id':'printing1','name':'Webstrike Elite','set':'dft','collector_number':'0345','illustration_id':'art-a','oracle_id':'oracle-a','oracle_text':'When you cycle this card destroy target artifact or enchantment', 'type_line':'Creature — Insect Archer','lang':'en','image_uris':{'normal':'https://cards.scryfall.io/normal/front/0/0/a.jpg'}},
  {'id':'printing2','name':'Webstrike Elite','set':'dft','collector_number':'0345','illustration_id':'art-b','oracle_id':'oracle-a','lang':'en'},
- {'id':'printing3','name':'Far // Away','set':'dgm','collector_number':'125','oracle_id':'oracle-b','lang':'en'},
+ {'id':'printing3','name':'Far // Away','set':'dgm','collector_number':'125','oracle_id':'oracle-b','oracle_text':'Return target creature to its owners hand. Target player sacrifices a creature.', 'type_line':'Instant','lang':'en'},
  {'id':'printing4','name':'Jace','set':'twa','collector_number':'0005','type_line':'Token Planeswalker — Jace','lang':'en'},
 ]
 assert collector('0345')=='345' and collector('T0005')=='t5'
@@ -115,6 +115,9 @@ with tempfile.TemporaryDirectory() as temp:
  assert con.execute('SELECT COUNT(*) FROM printings WHERE nameKey=?',('far away',)).fetchone()[0]==1
  assert con.execute('SELECT COUNT(*) FROM printings WHERE illustrationId=?',('art-b',)).fetchone()[0]==1
  assert len(con.execute("PRAGMA index_list('printings')").fetchall())>=6
+ assert con.execute('SELECT COUNT(*) FROM reference_fts').fetchone()[0]==4
+ assert con.execute("SELECT COUNT(*) FROM reference_fts WHERE reference_fts MATCH 'sacrifices AND return'").fetchone()[0]==1
+ assert con.execute("SELECT COUNT(*) FROM reference_fts WHERE reference_fts MATCH 'artifact AND enchantment'").fetchone()[0]==1
  con.close()
  image=Image.new('RGB',(488,680),(240,240,240))
  for y in range(350,390):

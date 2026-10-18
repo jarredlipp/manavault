@@ -22,7 +22,7 @@ import java.util.zip.GZIPInputStream;
 final class NativePrintingIndex {
     private static final String TAG="ManaVaultPrintingDB";
     private static final String ASSET="printing-catalog.sqlite.gz";
-    private static final String FILE="printing-catalog-5115.sqlite";
+    private static final String FILE="printing-catalog-5120.sqlite";
     private static volatile SQLiteDatabase database;
     private static volatile String state="Preparing offline catalog";
     private static volatile String sourceStamp="";
@@ -62,12 +62,55 @@ final class NativePrintingIndex {
         if(!path.isFile()||path.length()<4096)return false;
         try(SQLiteDatabase d=SQLiteDatabase.openDatabase(path.getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY)){
             try(Cursor c=d.rawQuery("SELECT COUNT(*) FROM printings",null)){
-                return c.moveToFirst() && c.getInt(0)>=100000;
+                if(!c.moveToFirst()||c.getInt(0)<100000)return false;
+                try(Cursor r=d.rawQuery("SELECT COUNT(*) FROM reference_fts",null)){
+                    return r.moveToFirst() && r.getInt(0)>=100000;
+                }
             }
         }catch(Exception e){return false;}
     }
     static String status(){return state;}
     static String version(){return sourceStamp;}
+    /** Pre-indexed offline title/type/rules search, never a printing assertion.
+     * FTS is deliberately bounded and ignores operators supplied by OCR. */
+    static String searchReference(String raw, int limit){
+        JSONObject out=new JSONObject();JSONArray hits=new JSONArray();
+        try{
+            SQLiteDatabase db=database;
+            out.put("ready",db!=null);out.put("rows",hits);out.put("complete",db!=null);
+            if(db==null)return out.toString();
+            String cleaned=java.text.Normalizer.normalize(raw==null?"":raw,java.text.Normalizer.Form.NFKD)
+                .toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 ]+"," ");
+            String[] parts=cleaned.split("\\s+");
+            java.util.LinkedHashSet<String> terms=new java.util.LinkedHashSet<>();
+            java.util.Set<String> ignore=new java.util.HashSet<>(java.util.Arrays.asList(
+                "the","and","you","your","target","when","this","that","card","creature","player","with","from","into","may","one","all","then","have","are","for","its","who","can","not","until","end","turn","owner","they","their","each","control","battlefield","enters","library","graveyard","hand","cast","mana","cost"));
+            for(String part:parts){if(part.length()>=4 && part.length()<=24 && !ignore.contains(part))terms.add(part);if(terms.size()>=5)break;}
+            if(terms.size()<2){out.put("error","Not enough distinctive reference text");return out.toString();}
+            StringBuilder fts=new StringBuilder();int k=0;
+            for(String t:terms){if(k++>0)fts.append(" AND ");fts.append('"').append(t).append('"');}
+            int max=Math.max(1,Math.min(limit,25));
+            // Search by rules text and printed title/type. Dedupe repeat editions
+            // by normalized card name, but do not infer a specific printing.
+            // FTS4 works on Android API 26+, unlike FTS5 which is not
+            // universally bundled on older Android system SQLite builds.
+            String sql="SELECT p.data FROM reference_fts JOIN printings p ON " +
+                "p.id=reference_fts.printingId WHERE reference_fts MATCH ? " +
+                "GROUP BY p.nameKey LIMIT 60";
+            java.util.HashSet<String> names=new java.util.HashSet<>();
+            try(Cursor c=db.rawQuery(sql,new String[]{fts.toString()})){
+                while(c.moveToNext() && hits.length()<max){
+                    JSONObject card=new JSONObject(c.getString(0));
+                    String key=card.optString("nameKey",card.optString("name",""));
+                    if(names.add(key)){
+                        hits.put(card);
+                    }
+                }
+            }
+        }catch(Exception e){try{out.put("error",e.getMessage());}catch(Exception ignored){}Log.w(TAG,"Reference search failed",e);}
+        return out.toString();
+    }
+
     static String lookup(String criterion,String term,int max){
         SQLiteDatabase db=database;
         JSONObject out=new JSONObject();JSONArray rows=new JSONArray();

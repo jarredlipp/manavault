@@ -7,8 +7,9 @@ The build is atomic. Can also read a saved bulk JSON/JSONL with --input for test
 import argparse, gzip, json, os, sqlite3, tempfile
 from pathlib import Path
 import requests
+from reference_match import reference_fields
 
-FIELDS = ('id','name','oracle_id','illustration_id','set','set_name','collector_number','type_line','colors','color_identity','mana_cost','rarity','layout','frame','border_color','full_art','textless','promo','security_stamp','finishes','frame_effects','released_at','image_url','image_small','image_normal','scryfall_uri','lang','digital','foil','nonfoil','prices')
+FIELDS = ('id','name','oracle_id','illustration_id','set','set_name','collector_number','type_line','colors','color_identity','mana_cost','rarity','layout','frame','border_color','full_art','textless','promo','security_stamp','finishes','frame_effects','released_at','image_url','image_small','image_normal','scryfall_uri','lang','digital','foil','nonfoil','prices','oracle_text','flavor_text','artist','power','toughness','keywords')
 
 def normalized(name):
     import unicodedata, re
@@ -88,15 +89,22 @@ def build(rows, output, minimum=100000, source_stamp=''):
         con.executescript('''PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;
           CREATE TABLE printings (id TEXT PRIMARY KEY,nameKey TEXT NOT NULL,setCode TEXT NOT NULL,collectorKey TEXT NOT NULL,illustrationId TEXT,oracleId TEXT, data TEXT NOT NULL);
           CREATE TABLE info(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+          CREATE VIRTUAL TABLE reference_fts USING fts4(printingId, name, type, rules, flavor, artist, notindexed=printingId, tokenize=unicode61);
         ''')
-        count=0;batch=[]
+        count=0;batch=[];references=[]
         for obj in rows:
             if not isinstance(obj,dict) or not obj.get('id') or not obj.get('name'):continue
             card=record(obj)
             batch.append((card['id'],card['nameKey'],str(card.get('set') or '').lower(),card['collectorKey'],card.get('illustration_id') or '',card.get('oracle_id') or '',json.dumps(card,ensure_ascii=False,separators=(',',':'))))
+            references.append((card["id"],*reference_fields(obj)))
             if len(batch)==750:
-                con.executemany('INSERT OR REPLACE INTO printings VALUES(?,?,?,?,?,?,?)',batch);count+=len(batch);batch=[]
-        if batch:con.executemany('INSERT OR REPLACE INTO printings VALUES(?,?,?,?,?,?,?)',batch);count+=len(batch)
+                con.executemany('INSERT OR REPLACE INTO printings VALUES(?,?,?,?,?,?,?)',batch)
+                con.executemany('INSERT INTO reference_fts(printingId,name,type,rules,flavor,artist) VALUES(?,?,?,?,?,?)',references)
+                count+=len(batch);batch=[];references=[]
+        if batch:
+            con.executemany('INSERT OR REPLACE INTO printings VALUES(?,?,?,?,?,?,?)',batch)
+            con.executemany('INSERT INTO reference_fts(printingId,name,type,rules,flavor,artist) VALUES(?,?,?,?,?,?)',references)
+            count+=len(batch)
         count=con.execute('SELECT COUNT(*) FROM printings').fetchone()[0]
         if count<minimum:raise ValueError(f'Only {count} printing rows; need at least {minimum}; previous output retained')
         con.executescript('''CREATE INDEX idx_names ON printings(nameKey);
@@ -122,7 +130,7 @@ def main():
             build(bulk_cards(stream),args.output,args.min)
     else:
         with requests.Session() as session:
-            session.headers['User-Agent']='ManaVault/5.11.8 (offline card index builder)'
+            session.headers['User-Agent']='ManaVault/5.12.0 (offline card index builder)'
             meta=session.get('https://api.scryfall.com/bulk-data/default_cards',timeout=30)
             meta.raise_for_status()
             info=meta.json()

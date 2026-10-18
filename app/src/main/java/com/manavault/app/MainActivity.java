@@ -164,7 +164,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.11.8"; }
+            @JavascriptInterface public String version() { return "5.12.0"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
             @JavascriptInterface public void scanProgress(String payload){
                 try{NativeScannerActivity.receiveLiveProgress(new JSONObject(payload));}
@@ -231,6 +231,28 @@ public class MainActivity extends Activity {
                     runOnUiThread(()->{if(webView!=null)webView.evaluateJavascript(
                         "window.mv61OnMarksResult && window.mv61OnMarksResult("+output+")",null);});
                 });
+            }
+            /** Rules-text corroboration; never returns an edition by itself. */
+            @JavascriptInterface public void readReferenceText(String payload){
+                final JSONObject request;
+                try{request=new JSONObject(payload);}catch(Exception e){return;}
+                final File snapshot=snapshotForRequest(request);
+                artworkExecutor.execute(()->{
+                    JSONObject reply;
+                    try{
+                        if(snapshot==null||!snapshot.isFile())throw new java.io.IOException("Scan photo unavailable");
+                        reply=PrintingFingerprintVerifier.readReferenceText(snapshot,request.optString("requestId",""));
+                    }catch(Exception e){
+                        reply=new JSONObject();
+                        try{reply.put("requestId",request.optString("requestId",""));reply.put("error","Reference text unavailable");}catch(Exception ignored){}
+                    }
+                    final String result=reply.toString();
+                    runOnUiThread(()->{if(webView!=null)webView.evaluateJavascript(
+                        "window.mv120OnReferenceText && window.mv120OnReferenceText("+result+")",null);});
+                });
+            }
+            @JavascriptInterface public String searchReferenceText(String raw,int max){
+                return NativePrintingIndex.searchReference(raw,max);
             }
             /** Compare the physical expansion symbol with candidate printings.
              * Only official Scryfall full-card references are accepted. */
@@ -351,7 +373,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.11.8 · CameraX");
+        versionLabel.setText("ManaVault 5.12.0 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));

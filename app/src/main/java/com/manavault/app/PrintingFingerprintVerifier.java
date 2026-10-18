@@ -34,6 +34,33 @@ import java.util.concurrent.TimeUnit;
 final class PrintingFingerprintVerifier {
     private PrintingFingerprintVerifier() {}
 
+    /** A single bounded OCR pass over the rules text. This is invoked only
+     * when title recognition needs corroboration, not for every accepted card.
+     * It does not read a printing or use network resources. */
+    static JSONObject readReferenceText(File photo, String requestId) throws Exception {
+        JSONObject out=new JSONObject();out.put("requestId",requestId);
+        Bitmap card=BitmapFactory.decodeFile(photo.getAbsolutePath());
+        if(card==null){out.put("error","Captured card missing");return out;}
+        TextRecognizer recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        try {
+            int x=Math.round(card.getWidth()*.07f), y=Math.round(card.getHeight()*.59f);
+            int w=Math.min(card.getWidth()-x,Math.round(card.getWidth()*.86f));
+            int h=Math.min(card.getHeight()-y,Math.round(card.getHeight()*.26f));
+            Bitmap rules=Bitmap.createBitmap(card,x,y,w,h);
+            try{
+                Text result=Tasks.await(recognizer.process(InputImage.fromBitmap(rules,0)),950,TimeUnit.MILLISECONDS);
+                StringBuilder content=new StringBuilder();
+                for(Text.TextBlock block:result.getTextBlocks())for(Text.Line line:block.getLines()){
+                    if(content.length()>0)content.append(' ');
+                    content.append(line.getText());
+                }
+                out.put("referenceText",content.substring(0,Math.min(content.length(),1100)));
+            }finally{rules.recycle();}
+        }catch(Exception e){out.put("error","Rules text could not be read quickly");}
+        finally{recognizer.close();card.recycle();}
+        return out;
+    }
+
     static JSONObject readMarks(File photo, String requestId) throws Exception {
         return readMarks(photo,requestId,false,false);
     }

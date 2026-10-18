@@ -58,13 +58,18 @@ def build(catalog,output,max_refs=300,workers=8):
     def download(item):
         id,name,set_code,url,art=item
         try:
-            result=requests.get(url,timeout=(10,17),headers={'User-Agent':'ManaVault/5.11.8 artwork reference seed'})
+            result=requests.get(url,timeout=(10,17),headers={'User-Agent':'ManaVault/5.12.0 artwork reference seed'})
             result.raise_for_status()
             if len(result.content)>3_000_000:return None
             with Image.open(BytesIO(result.content)) as image:
                 bitmap=image.convert('RGB').resize((8,8),Image.Resampling.BILINEAR)
                 rgb=[v for pixel in bitmap.getdata() for v in pixel]
-            return {'id':id,'name':name,'set':set_code,'illustration_id':art,'f':rgb}
+                details=image.convert('RGB').resize((16,8),Image.Resampling.BILINEAR)
+                brightness=[(r*299+g*587+b*114)/1000 for r,g,b in details.getdata()]
+                mean=sum(brightness)/128
+                sigma=max(16,(sum((v-mean)**2 for v in brightness)/128)**.5)
+                signature=[max(0,min(255,round(128+(v-mean)*48/sigma))) for v in brightness]
+            return {'id':id,'name':name,'set':set_code,'illustration_id':art,'f':rgb,'e':signature}
         except (OSError,requests.RequestException,ValueError):return None
     cards=[]
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
