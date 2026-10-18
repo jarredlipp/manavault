@@ -26,7 +26,7 @@ public final class CheckCache {
   ReferenceFingerprintCache.configure(new Context(root));
   String url="https://cards.scryfall.io/art_crop/front/f/f/example.jpg";
   if(args.length>1 && "restart".equals(args[1])) {
-    if(ReferenceFingerprintCache.count()!=2 || ReferenceFingerprintCache.get("art",url)[0]!=.25 || ReferenceFingerprintCache.get("symbol",url)[1]!=-.33)
+    if(ReferenceFingerprintCache.count()!=3 || ReferenceFingerprintCache.get("art",url)[0]!=.25 || ReferenceFingerprintCache.get("symbol",url)[1]!=-.33 || ReferenceFingerprintCache.get("symbol-v2",url)[1727]!=.75)
       throw new Error("Fingerprints were not available after simulated app restart");
     System.out.println("Disk fingerprints survived process restart");
     return;
@@ -39,6 +39,10 @@ public final class CheckCache {
   if(ReferenceFingerprintCache.get("symbol",url)!=null)throw new Error("Art/symbol cache collision");
   ReferenceFingerprintCache.put("symbol",url,a);
   if(ReferenceFingerprintCache.count()!=2)throw new Error("Separate symbol not saved");
+  double[] newSymbol = new double[1728];newSymbol[1727]=.75;
+  ReferenceFingerprintCache.put("symbol-v2",url,newSymbol);
+  if(ReferenceFingerprintCache.count()!=3 || ReferenceFingerprintCache.get("symbol-v2",url)[1727]!=.75)
+    throw new Error("v2 expansion-symbol signatures must persist at length 1728");
   double[] invalid=a.clone();invalid[0]=Double.NaN;
   ReferenceFingerprintCache.put("art",url,invalid);
   if(ReferenceFingerprintCache.get("art",url)[0]!=.25)throw new Error("Non-finite entry accepted");

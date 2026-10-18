@@ -20,6 +20,7 @@ final class ReferenceFingerprintCache {
     private static final String TAG = "ManaVaultRefCache";
     private static final int MAGIC = 0x4d565246; // MVRF
     private static final int LENGTH = 576;
+    private static final int SYMBOL_V2_LENGTH = 1728;
     private static final int MAX_FILES = 2500;
     private static volatile File directory;
     private static int newWrites;
@@ -45,7 +46,7 @@ final class ReferenceFingerprintCache {
 
     private static File file(String kind, String url) throws Exception {
         File dir = directory;
-        if(dir == null || !("art".equals(kind) || "symbol".equals(kind))) return null;
+        if(dir == null || !("art".equals(kind) || "symbol".equals(kind) || "symbol-v2".equals(kind))) return null;
         MessageDigest hash = MessageDigest.getInstance("SHA-256");
         byte[] digest = hash.digest((kind + "\n" + url).getBytes(StandardCharsets.UTF_8));
         StringBuilder name = new StringBuilder(digest.length * 2);
@@ -56,11 +57,12 @@ final class ReferenceFingerprintCache {
     static double[] get(String kind, String url) {
         try {
             File f = file(kind,url);
-            if(f == null || !f.isFile() || f.length() != 4 + 4 + LENGTH*8) return null;
-            double[] values = new double[LENGTH];
+            int dimension="symbol-v2".equals(kind)?SYMBOL_V2_LENGTH:LENGTH;
+            if(f == null || !f.isFile() || f.length() != 4 + 4 + dimension*8) return null;
+            double[] values = new double[dimension];
             try(DataInputStream in = new DataInputStream(new FileInputStream(f))) {
-                if(in.readInt() != MAGIC || in.readInt() != LENGTH) return null;
-                for(int i=0;i<LENGTH;i++) {
+                if(in.readInt() != MAGIC || in.readInt() != dimension) return null;
+                for(int i=0;i<dimension;i++) {
                     values[i]=in.readDouble();
                     if(!Double.isFinite(values[i]) || Math.abs(values[i]) > 1.001) return null;
                 }
@@ -72,14 +74,15 @@ final class ReferenceFingerprintCache {
     }
 
     static synchronized void put(String kind, String url, double[] values) {
-        if(values==null || values.length!=LENGTH) return;
+        int dimension="symbol-v2".equals(kind)?SYMBOL_V2_LENGTH:LENGTH;
+        if(values==null || values.length!=dimension) return;
         for(double v : values) if(!Double.isFinite(v) || Math.abs(v)>1.001) return;
         File f;
         try { f=file(kind,url); }catch(Exception e){Log.w(TAG,"Cache key failed",e);return;}
         if(f == null) return;
         File tmp = new File(f.getParentFile(), f.getName()+".tmp");
         try(DataOutputStream out = new DataOutputStream(new FileOutputStream(tmp))) {
-            out.writeInt(MAGIC);out.writeInt(LENGTH);
+            out.writeInt(MAGIC);out.writeInt(dimension);
             for(double v : values) out.writeDouble(v);
         }catch(Exception e){tmp.delete();Log.w(TAG,"Cache write failed",e);return;}
         if(!tmp.renameTo(f)){

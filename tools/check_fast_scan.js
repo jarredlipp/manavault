@@ -1,0 +1,22 @@
+/** Fast live scanning must not block on remote artwork/network or defer save. */
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const root=__dirname+'/../';
+const html=fs.readFileSync(root+'app/src/main/assets/index.html','utf8');
+const marks=fs.readFileSync(root+'app/src/main/java/com/manavault/app/PrintingFingerprintVerifier.java','utf8');
+const native=fs.readFileSync(root+'app/src/main/java/com/manavault/app/NativeScannerActivity.java','utf8');
+const activity=fs.readFileSync(root+'app/src/main/java/com/manavault/app/MainActivity.java','utf8');
+assert.match(html,/mv60DecideCapture\(captured,index,\{liveFast:true\}\),2800/);
+assert.match(html,/if\(liveFast\)\{[\s\S]*offlineOnly:true/);
+assert.match(html,/let editions=Array\.isArray\(outcome\.printings\)\?outcome\.printings:/);
+assert.match(html,/if\(!complete && localOnly\)return/);
+assert.match(html,/mvLiveReceipt\(data,result,message\)/);
+assert.match(marks,/fast\?1950:6000/);
+assert.match(marks,/if\(fast && zone>1\)break;/);
+assert.match(native,/},5000\);/);
+assert.match(activity,/request\.optBoolean\("fast",false\)/);
+assert.match(html,/id="mvFilterCreature"/);
+assert.match(html,/id="mvCatalogCreature"/);
+assert.match(fs.readFileSync(root+'app/build.gradle','utf8'),/verifyArtworkReferences/);
+assert.match(fs.readFileSync(root+'app/src/main/java/com/manavault/app/ReferenceFingerprintCache.java','utf8'),/SYMBOL_V2_LENGTH = 1728/);
+console.log('Fast live path bounded, no remote printing-image checks before immediate review; creature search installed.');

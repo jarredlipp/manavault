@@ -19,7 +19,7 @@ import java.util.Locale;
 
 /** Independent artwork matcher over known, permission-compatible Scryfall art crops.
  * A photograph only supports a *candidate* name: it cannot prove printing, foil or condition.
- * A bundled visual-index.json (made by tools/build_visual_index.py) is optional; learned
+ * A bundled visual-index.json (made by tools/build_artwork_index.py) is optional; learned
  * references grow after the user confirms a printing, without private provider APIs.
  */
 final class VisualMatcher {
@@ -51,8 +51,9 @@ final class VisualMatcher {
         }
     }
     private static final class Entry {
-        String name,id; byte[] f;
-        Entry(String name,String id,byte[] values){this.name=name;this.id=id;this.f=values;}
+        String name,id,illustrationId; byte[] f;
+        Entry(String name,String id,byte[] values){this(name,id,"",values);}
+        Entry(String name,String id,String illustrationId,byte[] values){this.name=name;this.id=id;this.illustrationId=illustrationId;this.f=values;}
     }
     VisualMatcher(Context context){
         learnedFile=new File(context.getFilesDir(),"learned-artwork-v59.json");
@@ -93,9 +94,40 @@ final class VisualMatcher {
             String name=j.optString("name", ""),id=j.optString("id", "");
             JSONArray f=j.optJSONArray("f");if(name.isEmpty()||f==null||f.length()!=192)continue;
             byte[] b=new byte[192];for(int k=0;k<192;k++)b[k]=(byte)Math.max(0,Math.min(255,f.optInt(k)));
-            target.add(new Entry(name,id,b));
+            target.add(new Entry(name,id,j.optString("illustration_id",""),b));
         }
     }
+    /** Rank only candidate illustrations that are actually bundled or learned.
+     * Missing candidates invalidate the comparison; we never treat a partial
+     * starter library as proof of a printing. */
+    synchronized JSONObject rankBundled(File photograph,JSONObject request) throws Exception {
+        JSONObject out=new JSONObject();out.put("requestId",request.optString("requestId",""));
+        JSONArray candidates=request.optJSONArray("choices");
+        if(candidates==null||candidates.length()==0||candidates.length()>24){out.put("error","Unsupported candidate count");return out;}
+        Bitmap bitmap=BitmapFactory.decodeFile(photograph.getAbsolutePath());
+        if(bitmap==null){out.put("error","Captured photograph unavailable");return out;}
+        byte[] feature;
+        try{Bitmap crop=artRegion(bitmap);try{feature=fingerprint(crop);}finally{crop.recycle();}}
+        finally{bitmap.recycle();}
+        JSONArray scores=new JSONArray();int missing=0;
+        for(int i=0;i<candidates.length();i++){
+            JSONObject choice=candidates.optJSONObject(i);if(choice==null){missing++;continue;}
+            String id=choice.optString("id",""),illustration=choice.optString("illustration_id","");
+            float top=-1;
+            for(Entry entry:entries){
+                // Reprints with identical art can share an illustration ID.
+                if(!entry.id.equals(id) && (illustration.isEmpty()||!illustration.equals(entry.illustrationId)))continue;
+                int delta=0;for(int b=0;b<feature.length;b++)delta+=Math.abs((feature[b]&255)-(entry.f[b]&255));
+                top=Math.max(top,1f-delta/(192f*255f));
+            }
+            if(top<0){missing++;continue;}
+            JSONObject row=new JSONObject();row.put("id",id);row.put("score",top);scores.put(row);
+        }
+        out.put("matches",scores);out.put("failed",missing);out.put("attempted",candidates.length());
+        if(missing>0)out.put("error","Bundled artwork has incomplete candidate coverage");
+        return out;
+    }
+
     static byte[] fingerprint(Bitmap image){
         Bitmap scaled=Bitmap.createScaledBitmap(image,8,8,true);
         byte[] f=new byte[192];int i=0;

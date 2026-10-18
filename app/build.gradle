@@ -7,8 +7,8 @@ android {
         applicationId 'com.manavault.app'
         minSdk 26
         targetSdk 35
-        versionCode 76
-        versionName '5.11.2-finalize-review-sound-search'
+        versionCode 79
+        versionName '5.11.5-offline-printing-engine'
     }
 }
 
@@ -22,3 +22,25 @@ dependencies {
     implementation 'com.google.mlkit:text-recognition:16.0.1'
     implementation 'org.opencv:opencv:4.10.0'
 }
+
+// Prevent alternate/local build paths from shipping an APK with 0 artwork
+// references. GitHub generates the seed catalog before running assembleDebug.
+tasks.register('verifyArtworkReferences') {
+    doLast {
+        def file = file('src/main/assets/visual-index.json')
+        if (!file.isFile()) throw new GradleException('Missing visual-index.json. Run the GitHub build workflow to generate the printing and fingerprint catalogs.')
+        def payload = new groovy.json.JsonSlurper().parse(file)
+        if (!(payload.cards instanceof List) || payload.cards.size() < 12) {
+            throw new GradleException('Artwork index has fewer than 12 references; run the offline build workflow.')
+        }
+        def symbolFile=file('src/main/assets/symbol-index.json')
+        if (!symbolFile.isFile()) throw new GradleException('Missing bundled expansion-symbol index')
+        def symbols=new groovy.json.JsonSlurper().parse(symbolFile)
+        if (symbols.format != 'manavault-symbol-v1' || !(symbols.sets instanceof List) || symbols.sets.size() < 12)
+            throw new GradleException('Bundled set-symbol reference library is missing or incomplete')
+        def catalog=file('src/main/assets/printing-catalog.sqlite.gz')
+        if (!catalog.isFile() || catalog.length() < 2000000)
+            throw new GradleException('Missing complete native printing database; run tools/build_native_catalog.py first')
+    }
+}
+tasks.named('preBuild').configure { dependsOn tasks.named('verifyArtworkReferences') }

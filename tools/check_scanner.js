@@ -52,11 +52,11 @@ console.log('ManaVault v5.9 checks passed: JS syntax, repository layout, recogni
 
 const mainActivity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
 assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android-native launch button');
-assert.match(mainActivity,/ManaVault 5\.11\.2/, 'Android launcher version label out of sync');
+assert.match(mainActivity,/ManaVault 5\.11\.5/, 'Android launcher version label out of sync');
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
 assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
-assert.match(html,/ManaVault v5\.11\.2/, 'Missing visible v5.10.9 build marker');
+assert.match(html,/ManaVault v5\.11\.5/, 'Missing visible v5.10.9 build marker');
 console.log('ManaVault v5.9.2 native entry checks passed.');
 
 // A syntax-only test missed a production crash: const info was reassigned by
@@ -71,7 +71,7 @@ assert.ok(Array.isArray(visualIndex.cards));
 for (const card of visualIndex.cards){
   assert.equal(card.f.length,192,'Incorrect artwork fingerprint length');
 }
-assert.ok(fs.existsSync(path.join(root,'tools/build_seed_visual_index.py')), 'Optional artwork index generator should remain available');
+assert.ok(fs.existsSync(path.join(root,'tools/build_artwork_index.py')), 'Artwork fingerprint build utility must remain available');
 console.log('Pricing/runtime regression and artwork-index bundling checks passed ('+visualIndex.cards.length+' references).');
 
 // Also execute the complete inline application script with a minimal offline DOM.
@@ -119,8 +119,8 @@ console.log('v5.10.9 scene, OCR, printing evidence, and provisional-collection g
 // OCR can learn a name-only art fingerprint without pretending to know a set.
 const matcher=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/VisualMatcher.java'),'utf8');
 const workflow=fs.readFileSync(path.join(root,'.github/workflows/build-apk.yml'),'utf8');
-assert.match(workflow,/if n<12:/, 'Do not release an APK with zero bundled artwork references');
-assert.match(workflow,/Build blocked: fewer than 12 artwork references/, 'Missing actionable seed build failure');
+assert.match(workflow,/len\(art\['cards'\]\)>=12/, 'Do not release an APK with zero bundled artwork references');
+assert.match(workflow,/len\(sym\['sets'\]\)>=12/, 'Missing build failure for empty set-symbol references');
 assert.match(matcher,/learnObservedName\(String canonicalName, byte\[\] feature\)/, 'Missing OCR name-only artwork bootstrap');
 assert.match(matcher,/new Entry\(key,"",copy\)/, 'Observed artwork must never be stamped with a guessed printing ID');
 assert.match(native,/rotationIndex==0 && visual!=null/, 'Do not learn from rotated or missing art crops');
@@ -137,7 +137,7 @@ assert.match(marks,/ReferenceFingerprintCache\.get\("symbol-v2"/, 'Set-symbol ca
 assert.match(marks,/ReferenceFingerprintCache\.put\("symbol-v2"/, 'Set-symbol cache persistence missing');
 assert.match(activity,/ReferenceFingerprintCache\.configure\(getApplicationContext\(\)\)/);
 assert.match(cacheSource,/MAX_FILES = 2500/);
-assert.match(native,/cached edition fingerprints:/);
+assert.match(native,/cached edition signatures:/);
 console.log('v5.10.9 reference-cache wiring checks passed.');
 
 // v5.10.9: high-res CameraX analysis is user-configurable and actually
@@ -173,9 +173,9 @@ assert.match(marks,/"footer-left","footer-line"/, 'Missing specialized collector
 assert.match(html,/mv109FooterPairs\(marks\.lines,print\.printings\)/, 'Missing paired collector/set priority');
 console.log('v5.10.9 CameraX resolution, adaptive warp, and footer OCR guards passed.');
 
-// v5.11.2: never verify a capture against a later stacked card photo.
+// v5.11.4: never verify a capture against a later stacked card photo.
 assert.match(mainActivity,/snapshotForRequest\(request\)/, 'Each printing verification must resolve its own scan image');
 assert.match(mainActivity,/request\.has\("scan_index"\)/, 'Must select captured image by scan index, not latest capture');
 assert.match(html,/rankPrintings\(JSON\.stringify\(\{requestId,choices,scan_index:index\}\)\)/, 'Artwork ranking must carry scan index');
 assert.match(html,/\.\.\.body,requestId,scan_index:index/, 'Footer and symbol lookups must carry scan index');
-console.log('v5.11.2 scan-scoped image verification wiring passed.');
+console.log('v5.11.4 scan-scoped image verification wiring passed.');

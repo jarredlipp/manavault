@@ -42,6 +42,7 @@ public class MainActivity extends Activity {
     private VisualMatcher artworkIndex;
     private final ExecutorService metadataExecutor = Executors.newSingleThreadExecutor();
     private boolean pendingNativeOpen=false;
+    private boolean awaitingFirstCatalog=false;
     private String pendingScanScript;
     private boolean nativeScannerOpen=false;
     private static java.lang.ref.WeakReference<MainActivity> liveHost = new java.lang.ref.WeakReference<>(null);
@@ -101,9 +102,33 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_REQUEST);
             return;
         }
+        // The first install extracts a bundled SQLite file in the background.
+        // Pay this cost ONCE before scanning rather than while a card is locked
+        // in the resolver. Normal launches never need to wait.
+        if(NativePrintingIndex.status().startsWith("Preparing") && !awaitingFirstCatalog){
+            awaitingFirstCatalog=true;
+            Toast.makeText(this,"Preparing offline printing catalog…",Toast.LENGTH_SHORT).show();
+            metadataExecutor.execute(()->{
+                long stop=android.os.SystemClock.elapsedRealtime()+5000;
+                while(NativePrintingIndex.status().startsWith("Preparing") &&
+                      android.os.SystemClock.elapsedRealtime()<stop){
+                    try{Thread.sleep(100);}catch(InterruptedException ignored){break;}
+                }
+                runOnUiThread(()->{
+                    awaitingFirstCatalog=false;
+                    if(!isFinishing())openNativeScannerReady();
+                });
+            });
+            return;
+        }
+        if(awaitingFirstCatalog)return;
+        openNativeScannerReady();
+    }
+
+    private void openNativeScannerReady(){
         nativeScannerOpen=true;
         synchronized(lastNativeBatchPhotos){lastNativeBatchPhotos.clear();}
-        startActivityForResult(new Intent(this, NativeScannerActivity.class), NATIVE_SCANNER_REQUEST);
+        startActivityForResult(new Intent(this,NativeScannerActivity.class),NATIVE_SCANNER_REQUEST);
     }
 
     private void cameraEvent(String message) {
@@ -116,6 +141,8 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         liveHost=new java.lang.ref.WeakReference<>(this);
         ReferenceFingerprintCache.configure(getApplicationContext());
+        NativePrintingIndex.start(getApplicationContext());
+        BundledSetSymbols.initialize(getApplicationContext());
         webView = new WebView(this);
         // Index is loaded lazily after the first confirmed printing; never block app launch.
         webView.addJavascriptInterface(new Object() {
@@ -137,8 +164,12 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.11.2"; }
+            @JavascriptInterface public String version() { return "5.11.5"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
+            @JavascriptInterface public void scanProgress(String payload){
+                try{NativeScannerActivity.receiveLiveProgress(new JSONObject(payload));}
+                catch(Exception e){Log.w("ManaVaultLive","Bad scanner progress",e);}
+            }
             @JavascriptInterface public void scanResolved(String payload){
                 try{
                     org.json.JSONObject response=new org.json.JSONObject(payload);
@@ -148,6 +179,17 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void reviewNow(String payload){
                 try{NativeScannerActivity.receiveImmediateReview(new JSONObject(payload));}
                 catch(Exception e){Log.w("ManaVaultLive","Bad immediate printing review",e);}
+            }
+            /** Indexed native lookup is available without network or WebView catalog import.
+             * Replies are bounded to 2,001 records to prevent oversized bridge results. */
+            @JavascriptInterface public String lookupOfflinePrintings(String kind, String key, int max) {
+                return NativePrintingIndex.lookup(kind,key,max);
+            }
+            @JavascriptInterface public String nativeCatalogStatus() {
+                return NativePrintingIndex.status();
+            }
+            @JavascriptInterface public String nativeCatalogVersion() {
+                return NativePrintingIndex.version();
             }
             @JavascriptInterface public int cachedPrintingFingerprints() {
                 return ReferenceFingerprintCache.count();
@@ -179,7 +221,7 @@ public class MainActivity extends Activity {
                     org.json.JSONObject result;
                     try{
                         if(snapshot==null||!snapshot.isFile())throw new java.io.IOException("Captured scan not available");
-                        result=PrintingFingerprintVerifier.readMarks(snapshot,request.optString("requestId",""));
+                        result=PrintingFingerprintVerifier.readMarks(snapshot,request.optString("requestId",""),request.optBoolean("verifySplit",false),request.optBoolean("fast",false));
                     }catch(Exception e){
                         result=new org.json.JSONObject();
                         try{result.put("requestId",request.optString("requestId",""));
@@ -209,6 +251,27 @@ public class MainActivity extends Activity {
                     final String output=result.toString();
                     runOnUiThread(()->{if(webView!=null)webView.evaluateJavascript(
                         "window.mv61OnSymbolResult && window.mv61OnSymbolResult("+output+")",null);});
+                });
+            }
+            /** Offline artwork comparison against compact bundled illustrations.
+             * No network request is allowed on this path. */
+            @JavascriptInterface public void rankBundledArtwork(String payload){
+                final JSONObject request;
+                try{request=new JSONObject(payload);}catch(Exception e){return;}
+                final File photo=snapshotForRequest(request);
+                artworkExecutor.execute(()->{
+                    JSONObject result;
+                    try{
+                        if(photo==null||!photo.isFile())throw new java.io.IOException("Captured photo unavailable");
+                        if(artworkIndex==null)artworkIndex=new VisualMatcher(getApplicationContext());
+                        result=artworkIndex.rankBundled(photo,request);
+                    }catch(Exception e){
+                        result=new JSONObject();
+                        try{result.put("requestId",request.optString("requestId",""));result.put("error","Bundled artwork unavailable");}catch(Exception ignored){}
+                    }
+                    final String output=result.toString();
+                    runOnUiThread(()->{if(webView!=null)webView.evaluateJavascript(
+                        "window.mv60OnRankResult && window.mv60OnRankResult("+output+")",null);});
                 });
             }
             @JavascriptInterface public void rankPrintings(String payload) {
@@ -288,7 +351,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.11.2 · CameraX");
+        versionLabel.setText("ManaVault 5.11.5 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));

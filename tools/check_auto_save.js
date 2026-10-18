@@ -64,6 +64,20 @@ vm.createContext(context);vm.runInContext(code,context,{filename:'auto-save.js'}
 async function run(expr){return vm.runInContext(expr,context)}
 (async()=>{
  assert.equal(await run('mv60CanonicalMatches("Tuinvale Treefolk // Oaken Boon","Oaken Boon")'),true);
+ // A real Far // Away must not be silently mistaken for Never // Return.
+ const splitPhoto=[{zone:'split-title-left',text:'Far'},{zone:'split-title-right',text:'Away'}];
+ assert.equal(await run(`mvSplitFaceTitlesAgree('Never // Return',${JSON.stringify(splitPhoto)})`),false,
+  'Contradictory split-card titles must require immediate review');
+ assert.equal(await run(`mvSplitFaceTitlesAgree('Far // Away',${JSON.stringify(splitPhoto)})`),true,
+  'Both photographed split-card halves corroborate their proper identity');
+ const falselyRead={...printings[0],name:'Never // Return',id:'never-return'};
+ localCards=[falselyRead];printedLines=splitPhoto;
+ let mismatched=await run('mv60DecideCapture({name:"Never // Return",source:"ocr-exact",ocr_reads:2},0)');
+ assert.ok(mismatched.reason && !mismatched.printing,
+  'Wrong exact title cannot auto-save when both photographed split-card faces disagree');
+ printedLines=[];
+
+
  localCards=[printings[0]];
  let result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},0)');
  assert.equal(result.printing?.id,'a','Exactly one physical printing should auto-save');
@@ -221,6 +235,6 @@ async function run(expr){return vm.runInContext(expr,context)}
  assert.match(fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/manavault/app/NativeScannerActivity.java'),'utf8'),/MainActivity\.deliverLiveCapture\(result\)/);
  assert.match(fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/manavault/app/MainActivity.java'),'utf8'),/mvNativeScanLive/);
  assert.match(fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/manavault/app/NativeScannerActivity.java'),'utf8'),/resolvedScanIds\.size\(\)>=captured\.size\(\)/);
- console.log('v5.11.2 live-save checks passed: one-at-a-time commits, immediate review, selected edition persistence and replay protection.');
+ console.log('v5.11.3 live-save checks passed: one-at-a-time commits, immediate review, selected edition persistence and replay protection.');
  console.log('v5.10.9 auto-save checks passed: footer pair matching, copyright exclusion, conflicts, and existing scanner cases.');
 })().catch(e=>{console.error(e);process.exitCode=1});

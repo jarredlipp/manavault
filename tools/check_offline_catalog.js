@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const root=__dirname+'/../';
+const js=fs.readFileSync(root+'app/src/main/assets/index.html','utf8');
+const db=fs.readFileSync(root+'app/src/main/assets/card-db.js','utf8');
+const java=fs.readFileSync(root+'app/src/main/java/com/manavault/app/MainActivity.java','utf8');
+const index=fs.readFileSync(root+'app/src/main/java/com/manavault/app/NativePrintingIndex.java','utf8');
+const verifier=fs.readFileSync(root+'app/src/main/java/com/manavault/app/PrintingFingerprintVerifier.java','utf8');
+const visual=fs.readFileSync(root+'app/src/main/java/com/manavault/app/VisualMatcher.java','utf8');
+assert.match(db,/indexedDB.open\(DB,2\)/);
+for(const idx of ['collectorNumber','setCode','illustration','oracle'])assert.ok(db.includes(idx));
+assert.match(db,/fastPrintings\(name,limit=2001\)/);
+assert.match(db,/nativeIndex\('setcollector'/);
+assert.match(index,/case \"setcollector\"/); // native named parameter lookup
+assert.match(java,/lookupOfflinePrintings/);
+assert.match(verifier,/request.optBoolean\("offline_only",false\)/);
+assert.match(js,/offlineOnly:true/);
+assert.match(js,/mv115RankBundledArtwork/);
+assert.match(visual,/Bundled artwork has incomplete candidate coverage/);
+assert.match(js,/mvLiveReceipt\(data,result,message\)/);
+console.log('Native/offline lookup, bundled fingerprints, fallback and live commit wiring verified');

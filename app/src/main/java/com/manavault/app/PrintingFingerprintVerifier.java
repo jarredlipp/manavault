@@ -35,12 +35,36 @@ final class PrintingFingerprintVerifier {
     private PrintingFingerprintVerifier() {}
 
     static JSONObject readMarks(File photo, String requestId) throws Exception {
+        return readMarks(photo,requestId,false,false);
+    }
+    static JSONObject readMarks(File photo, String requestId, boolean verifySplit) throws Exception {
+        return readMarks(photo,requestId,verifySplit,false);
+    }
+    static JSONObject readMarks(File photo, String requestId, boolean verifySplit, boolean fast) throws Exception {
         JSONObject out=new JSONObject();out.put("requestId",requestId);
         JSONArray lines=new JSONArray();out.put("lines",lines);
         Bitmap card=BitmapFactory.decodeFile(photo.getAbsolutePath());
         if(card==null){out.put("error","Captured card image unavailable");return out;}
         TextRecognizer reader=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        final long started=android.os.SystemClock.elapsedRealtime();
         try {
+            // For a split card, first corroborate BOTH photographed title
+            // halves before spending time on the less reliable tiny footer.
+            if(verifySplit){
+                float[][] halves={{.015f,.012f,.48f,.27f},{.50f,.012f,.48f,.27f}};
+                String[] labels={"split-title-left","split-title-right"};
+                for(int i=0;i<halves.length;i++){
+                    float[] r=halves[i];
+                    int x=Math.round(card.getWidth()*r[0]),y=Math.round(card.getHeight()*r[1]);
+                    int w=Math.min(card.getWidth()-x,Math.max(1,Math.round(card.getWidth()*r[2])));
+                    int h=Math.min(card.getHeight()-y,Math.max(1,Math.round(card.getHeight()*r[3])));
+                    Bitmap half=Bitmap.createBitmap(card,x,y,w,h);
+                    Bitmap scaled=Bitmap.createScaledBitmap(half,w*2,h*2,true);
+                    half.recycle();
+                    try{readRegion(reader,scaled,labels[i],"split-check",lines,out,fast?1050:4000);}
+                    finally{scaled.recycle();}
+                }
+            }
             // Keep the artwork/title out: copyright years and game rules are NOT
             // valid collector-number evidence. Old and new frames position the
             // small collector/expansion text differently near the bottom edge.
@@ -57,6 +81,10 @@ final class PrintingFingerprintVerifier {
                 {.018f,.865f,.53f,.125f},{.48f,.87f,.50f,.12f},
                 {.035f,.585f,.93f,.095f}};
             for(int zone=0;zone<zones.length;zone++){
+                // A slow ML Kit pass must not monopolize the single snapshot
+                // worker and delay the next card. Missing evidence means review.
+                if(android.os.SystemClock.elapsedRealtime()-started>(fast?1950:6000))break;
+                if(fast && zone>1)break;
                 float[] region=regions[zone];
                 int x=Math.round(card.getWidth()*region[0]);
                 int y=Math.round(card.getHeight()*region[1]);
@@ -73,10 +101,11 @@ final class PrintingFingerprintVerifier {
                 Bitmap enlarged=scale==1?strip:Bitmap.createScaledBitmap(strip,w*scale,h*scale,true);
                 if(enlarged!=strip)strip.recycle();
                 try {
-                    readRegion(reader,enlarged,zones[zone],"color",lines,out);
-                    if(zone==0 || zone==1 || zone==2 || zone==4){
+                    readRegion(reader,enlarged,zones[zone],"color",lines,out,fast?1000:4000);
+                    if((zone==0 || zone==1 || zone==2 || zone==4) &&
+                            android.os.SystemClock.elapsedRealtime()-started<(fast?1100:5200)){
                         Bitmap enhanced=CardQuadDetector.enhanceTitle(enlarged);
-                        try{readRegion(reader,enhanced,zones[zone],"contrast",lines,out);}
+                        try{readRegion(reader,enhanced,zones[zone],"contrast",lines,out,fast?1000:4000);}
                         finally{enhanced.recycle();}
                     }
                 }finally{enlarged.recycle();}
@@ -86,9 +115,9 @@ final class PrintingFingerprintVerifier {
     }
 
     private static void readRegion(TextRecognizer reader, Bitmap image, String zone,
-            String pass, JSONArray lines, JSONObject out) throws Exception {
+            String pass, JSONArray lines, JSONObject out, int timeoutMillis) throws Exception {
         try {
-            Text words=Tasks.await(reader.process(InputImage.fromBitmap(image,0)),4,TimeUnit.SECONDS);
+            Text words=Tasks.await(reader.process(InputImage.fromBitmap(image,0)),timeoutMillis,TimeUnit.MILLISECONDS);
             for(Text.TextBlock block:words.getTextBlocks())for(Text.Line line:block.getLines()){
                 String value=line.getText().trim();
                 if(value.isEmpty())continue;
@@ -126,9 +155,17 @@ final class PrintingFingerprintVerifier {
             jobs.add(NETWORK.submit(new Callable<JSONObject>(){
                 @Override public JSONObject call() throws Exception {
                     if(item==null)return null;
-                    String reference=item.optString("image_normal","");
-                    double[] expected=referenceSymbol(reference);
-                    double score=similarity(scanned,expected);
+                    String set=item.optString("set","");
+                    List<double[]> bundled=BundledSetSymbols.forSet(set);
+                    // Never call the network from the live fast path.
+                    if(bundled==null && request.optBoolean("offline_only",false))return null;
+                    double score=0;
+                    if(bundled!=null){
+                        for(double[] expected:bundled)score=Math.max(score,similarity(scanned,expected));
+                    }else{
+                        String reference=item.optString("image_normal","");
+                        score=similarity(scanned,referenceSymbol(reference));
+                    }
                     JSONObject row=new JSONObject();row.put("set",item.optString("set",""));
                     row.put("score",Math.round(score*10000.)/10000.);
                     return row;

@@ -83,6 +83,14 @@ public final class NativeScannerActivity extends ComponentActivity {
     private ToneGenerator saveTone;
     private int saveToneVolume=-1;
     private final String sessionId=java.util.UUID.randomUUID().toString();
+    static void receiveLiveProgress(JSONObject payload){
+        NativeScannerActivity current=liveScanner.get();
+        if(current!=null)current.runOnUiThread(()->{
+            if(current.closing||!current.resolutionPending||current.reviewDialogOpen||current.captured.isEmpty())return;
+            if(!payload.optString("scan_id","").equals(current.captured.get(current.captured.size()-1).optString("scan_id")))return;
+            current.status.setText(payload.optString("message","Verifying card printing…"));
+        });
+    }
     /** Receipts are sent only after a card has been written to the collection. */
     static void receiveLiveResolution(JSONObject message){
         NativeScannerActivity current=liveScanner.get();
@@ -166,6 +174,17 @@ public final class NativeScannerActivity extends ComponentActivity {
                 new java.util.ArrayList<>(descriptions));
         list.setAdapter(adapter);
         if(!ids.isEmpty())layout.addView(list,new LinearLayout.LayoutParams(-1,dp(270)));
+        final android.app.AlertDialog[] dialogHolder=new android.app.AlertDialog[1];
+        final Button correctTitle=new Button(this);
+        correctTitle.setText("Correct title / search another card");
+        layout.addView(correctTitle);
+        correctTitle.setOnClickListener(v->{
+            String manual=search.getText().toString().trim();
+            if(manual.isEmpty()){search.setError("Enter the correct printed card name");return;}
+            sendImmediateReviewChoice(id,"correct-name","",manual);
+            reviewDialogOpen=false;
+            if(dialogHolder[0]!=null)dialogHolder[0].dismiss();
+        });
         final android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(this)
             .setTitle(ids.isEmpty()&&!allowUnverified?"Review card now":"Verify printing now: "+name)
             .setMessage(reason+"\nChoose the physical set and collector number before continuing.")
@@ -174,6 +193,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             .setNegativeButton("Retry",null)
             .setNeutralButton("Skip",null)
             .create();
+        dialogHolder[0]=dialog;
         dialog.setCancelable(false);
         dialog.setOnShowListener(v->{
             dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener(b->{
@@ -482,7 +502,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         String cardInfo=activeCropWidth>0?" · card crop "+activeCropWidth+"×"+activeCropHeight:"";
         if(standZoomApplied>1.02f)cardInfo+=" · stand zoom "+String.format(Locale.US,"%.2f",standZoomApplied)+"×";
         String detail=lastTiming.isEmpty()?"": "\n"+lastTiming;
-        if(lastArtworkRefs>=0)detail+="\nArtwork refs: "+lastArtworkRefs+" · cached edition fingerprints: "+ReferenceFingerprintCache.count();
+        if(lastArtworkRefs>=0)detail+="\nArtwork library: "+lastArtworkRefs+" bundled/learned · cached edition signatures: "+ReferenceFingerprintCache.count();
         metrics.setText(cameraInfo+cardInfo+detail);
     }
     /** Apply ONE conservative sensor zoom per scanner session, not one per card.
@@ -839,14 +859,14 @@ public final class NativeScannerActivity extends ComponentActivity {
                         final String observedName=canonical;
                         referenceExecutor.execute(()->matcher.learnObservedName(observedName,features));
                     }
-                    enqueue(canonical,"ocr-exact",1f,null,card,hash);
+                    enqueue(canonical,"ocr-exact",1f,null,card,hash,rotations[rotationIndex]);
                 }
                 // A stable but imperfect title is still a useful scan. Queue it
                 // for the catalog's fuzzy name matcher after two independent
                 // camera reads; NEVER treat it as an exact printing identity.
                 else if(previousOcrCount>=2 && normalized.length()>=5 &&
                         !normalized.matches(".*(.)\\1{4,}.*"))
-                    enqueue(name,"ocr-candidate",0,null,card,hash);
+                    enqueue(name,"ocr-candidate",0,null,card,hash,rotations[rotationIndex]);
                 recognizing.set(false);
             }else if(rotationIndex<3){
                 readTitle(card,hash,rotationIndex+1,began);
@@ -856,11 +876,19 @@ public final class NativeScannerActivity extends ComponentActivity {
     /** Called on analyzer or ML Kit callback thread. Store each capture once,
      * then wait for a stable new top card on the physical stack. */
     private synchronized void enqueue(String name,String source,float score,String imageId,Bitmap card,long hash){
+        enqueue(name,source,score,imageId,card,hash,0);
+    }
+    /** Save the card with the SAME orientation that produced the OCR title.
+     * Keep the original frame orientation for stack-change fingerprinting. */
+    private synchronized void enqueue(String name,String source,float score,String imageId,Bitmap card,long hash,int rotationDegrees){
         if(closing||finishRequested||waitingForNext||captured.size()>=150)return;
         try{
             int number=captured.size()+1;
             File photo=new File(getCacheDir(),"native-scan-"+sessionStart+"-"+number+".jpg");
-            try(FileOutputStream out=new FileOutputStream(photo)){card.compress(Bitmap.CompressFormat.JPEG,93,out);}
+            Bitmap printingPhoto=rotationDegrees==0?card:rotate(card,rotationDegrees);
+            try(FileOutputStream out=new FileOutputStream(photo)){
+                printingPhoto.compress(Bitmap.CompressFormat.JPEG,93,out);
+            }finally{if(printingPhoto!=card)printingPhoto.recycle();}
             JSONObject result=new JSONObject();
             result.put("name",name);result.put("source",source);result.put("artworkId",imageId==null?"":imageId);
             result.put("similarity",Math.round(score*1000)/1000.0);
@@ -870,6 +898,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             result.put("image_path",photo.getAbsolutePath());
             result.put("scan_id",sessionId+"-"+number);
             result.put("scan_index",number-1);
+            result.put("photo_rotation_degrees",rotationDegrees);
             result.put("edge_ms",lastEdgeMs);result.put("warp_ms",lastWarpMs);
             result.put("art_ms",lastArtMs);result.put("ocr_ms",lastOcrMs);
             captured.add(result);
@@ -889,6 +918,18 @@ public final class NativeScannerActivity extends ComponentActivity {
             missingSince=0;changedEmptyFrames=0;
             lastSeenTitle="";previousOcr="";previousOcrCount=0;
             final String msg="Captured "+name+" ("+source+") · resolving and saving before next card…";
+            final String watchdogId=result.optString("scan_id","");
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->{
+                if(closing||!resolutionPending||reviewDialogOpen||captured.isEmpty()||
+                   !watchdogId.equals(captured.get(captured.size()-1).optString("scan_id")))return;
+                try{
+                    JSONObject alert=new JSONObject();alert.put("scan_id",watchdogId);
+                    alert.put("name",name);
+                    alert.put("reason","Printing verification is taking too long. Correct the title, retry or skip now; the scanner will not silently save a guessed edition.");
+                    alert.put("allow_unverified",false);
+                    showImmediateReview(alert);
+                }catch(Exception e){Log.w(TAG,"Scanner review watchdog failed",e);}
+            },5000);
             runOnUiThread(()->{if(!closing){
                 status.setText(msg);keepButton.setText("Resolving");keepButton.setEnabled(false);
                 reviewButton.setText("Finish ("+(verifiedCount+unverifiedCount)+" saved)");
