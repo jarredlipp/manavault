@@ -133,6 +133,16 @@ async function run(expr){return vm.runInContext(expr,context)}
  await run('mv60UndoLast()');
  assert.equal(context.state.cards[0].qty,1,'Undo must remove only the last auto-added copy');
  // Ambiguous printings must be reviewed immediately while CameraX is open.
+ // Vintage / pre-collector-number cards must be able to use independent
+ // bundled set-symbol evidence to choose a unique edition. No number is read.
+ localCards=printings;printedLines=[];
+ symbolResults=[{set:'one',score:.985},{set:'two',score:.68}];
+ let noNumber=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},0,{liveFast:true})');
+ assert.equal(noNumber.printing?.id,'a','Clear offline symbol + exact title must resolve a vintage card without collector number');
+ symbolResults=[{set:'one',score:.952},{set:'two',score:.93}];
+ noNumber=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},0,{liveFast:true})');
+ assert.ok(!noNumber.printing&&noNumber.reason,'Indistinguishable set symbols must not force an edition');
+ symbolResults=[];
  // The user may explicitly choose to save an unverified name, never silently.
  localCards=printings;
  printedLines=[];imageResults=[{id:'a',score:.961},{id:'b',score:.955}];symbolResults=[];

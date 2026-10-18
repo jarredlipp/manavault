@@ -16,5 +16,5 @@ assert.match(verifier,/request.optBoolean\("offline_only",false\)/);
 assert.match(js,/offlineOnly:true/);
 assert.match(js,/mv115RankBundledArtwork/);
 assert.match(visual,/Bundled artwork has incomplete candidate coverage/);
-assert.match(js,/mvLiveReceipt\(data,result,message\)/);
+assert.match(js,/mvLiveReceipt\(receipt,result,message\)/);
 console.log('Native/offline lookup, bundled fingerprints, fallback and live commit wiring verified');

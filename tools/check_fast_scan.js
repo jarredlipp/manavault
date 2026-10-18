@@ -10,7 +10,7 @@ assert.match(html,/mv60DecideCapture\(captured,index,\{liveFast:true\}\)/);
 assert.match(html,/if\(liveFast\)\{[\s\S]*offlineOnly:true/);
 assert.match(html,/let editions=Array\.isArray\(outcome\.printings\)\?outcome\.printings:/);
 assert.match(html,/if\(!complete && localOnly\)return/);
-assert.match(html,/mvLiveReceipt\(data,result,message\)/);
+assert.match(html,/mvLiveReceipt\(receipt,result,message\)/);
 assert.match(marks,/fast\?1500:6000/);
 assert.match(marks,/if\(fast && zone>2\)break;/);
 assert.match(native,/},4200\);/);

@@ -30,6 +30,16 @@ public final class StackChangeGateTest {
             if(ready)break;
         }
         require(gate.lastEvent().contains("identical"),"Identical-copy event not recorded");
+        // Different card with a similar art texture but a different printed
+        // title should also trigger, after multiple stable readings.
+        gate.captured(0,0,0,16000);
+        for(int i=0;i<4;i++){
+            boolean ready=gate.observe(bits(11),bits(6),bits(24),17100+i*220);
+            require(ready==(i==3),"Title-assisted stack change failed: "+i);
+        }
+        // A title-only lighting flare is not an independent scene change.
+        gate.captured(0,0,0,18500);
+        for(int i=0;i<7;i++)require(!gate.observe(0,0,bits(30),19500+i*200),"Title glare falsely rearmed scanner");
         System.out.println("StackChangeGate JVM tests passed: stationary, glare, transient, changed art, repeated, occlusion, identical copy.");
     }
 }

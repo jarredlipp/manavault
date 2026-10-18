@@ -5,6 +5,7 @@ const path=require('node:path');
 const root=path.join(__dirname,'..');
 const html=fs.readFileSync(path.join(root,'app/src/main/assets/index.html'),'utf8');
 const native=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/NativeScannerActivity.java'),'utf8');
+const ui=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/ScanResultUi.java'),'utf8');
 const main=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
 const printing=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/PrintingFingerprintVerifier.java'),'utf8');
 let from=html.indexOf('function mvLiveBounded('),to=html.indexOf('const mvLiveQueue=[]',from);
@@ -19,7 +20,8 @@ const sandbox={setTimeout,clearTimeout,Promise};vm.createContext(sandbox);vm.run
  assert.match(native,/Bitmap printingPhoto=rotationDegrees==0\?card:rotate\(card,rotationDegrees\)/);
  assert.match(native,/stackGate\.captured\(hash,wholeFrameHash\(card\)/);
  assert.match(native,/showImmediateReview\(alert\)/);
- assert.match(native,/Correct title \/ search another card/);
+ assert.match(native,/ScanResultUi\.review/);
+ assert.match(ui,/Search \/ correct card name/);
  assert.match(main,/request\.optBoolean\("verifySplit",false\)/);
  assert.match(printing,/"split-title-left","split-title-right"/);
  assert.match(html,/mvImmediateEarlyChoices\.has\(id\)/);

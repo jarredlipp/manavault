@@ -95,7 +95,7 @@ assert.match(html,/mv60RankArtwork/);
 assert.match(html,/Undo last auto-saved card/);
 const detectorSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/CardQuadDetector.java'),'utf8');
 assert.match(detectorSource,/frameArea \* 0\.075/);
-assert.match(native,/stackGate\.observe\(hash,fullHash,now\)/,'Missing stable top-card change gate');
+assert.match(native,/stackGate\.observe\(hash,fullHash,VisualMatcher\.titleHash\(corrected\),now\)/,'Missing stable top-card change gate');
 assert.match(native,/stackGate\.captured\(hash,wholeFrameHash\(card\)/,'Capture must establish a new baseline');
 assert.match(native,/stackGate\.coverFrame\(/,'Occlusion evidence must be tracked for identical copies');
 assert.doesNotMatch(native,/queued · remove card/,'Old remove-card workflow should not appear');

@@ -62,12 +62,15 @@ final class PrintingFingerprintVerifier {
     }
 
     static JSONObject readMarks(File photo, String requestId) throws Exception {
-        return readMarks(photo,requestId,false,false);
+        return readMarks(photo,requestId,false,false,false);
     }
     static JSONObject readMarks(File photo, String requestId, boolean verifySplit) throws Exception {
-        return readMarks(photo,requestId,verifySplit,false);
+        return readMarks(photo,requestId,verifySplit,false,false);
     }
     static JSONObject readMarks(File photo, String requestId, boolean verifySplit, boolean fast) throws Exception {
+        return readMarks(photo,requestId,verifySplit,fast,false);
+    }
+    static JSONObject readMarks(File photo, String requestId, boolean verifySplit, boolean fast, boolean verifyToken) throws Exception {
         JSONObject out=new JSONObject();out.put("requestId",requestId);
         JSONArray lines=new JSONArray();out.put("lines",lines);
         Bitmap card=BitmapFactory.decodeFile(photo.getAbsolutePath());
@@ -75,6 +78,17 @@ final class PrintingFingerprintVerifier {
         TextRecognizer reader=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         final long started=android.os.SystemClock.elapsedRealtime();
         try {
+            // Token planeswalkers such as Jace use the same short OCR title as
+            // non-token printings. Check the type bar even in fast mode when
+            // that card's catalog has token and non-token possibilities.
+            if(verifyToken){
+                int x=Math.round(card.getWidth()*.035f),y=Math.round(card.getHeight()*.57f);
+                int w=Math.min(card.getWidth()-x,Math.round(card.getWidth()*.93f));
+                int h=Math.min(card.getHeight()-y,Math.round(card.getHeight()*.14f));
+                Bitmap bar=Bitmap.createBitmap(card,x,y,w,h);
+                try{readRegion(reader,bar,"type-bar","token-check",lines,out,fast?550:1100);}
+                finally{bar.recycle();}
+            }
             // For a split card, first corroborate BOTH photographed title
             // halves before spending time on the less reliable tiny footer.
             if(verifySplit){
@@ -187,7 +201,8 @@ final class PrintingFingerprintVerifier {
     static JSONObject rankSymbols(File photo, JSONObject request) throws Exception {
         JSONObject out=new JSONObject();out.put("requestId",request.optString("requestId",""));
         JSONArray choices=request.optJSONArray("choices");
-        if(choices==null||choices.length()<2||choices.length()>12){out.put("error","Unsupported expansion-symbol candidate count");return out;}
+        int maxSets=request.optBoolean("offline_only",false)?96:12;
+        if(choices==null||choices.length()<2||choices.length()>maxSets){out.put("error","Unsupported expansion-symbol candidate count");return out;}
         Bitmap photoCard=BitmapFactory.decodeFile(photo.getAbsolutePath());
         if(photoCard==null){out.put("error","Captured card image unavailable");return out;}
         double[] scanned;

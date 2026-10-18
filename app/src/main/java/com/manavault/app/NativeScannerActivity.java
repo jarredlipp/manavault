@@ -13,6 +13,7 @@ import android.util.Size;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.View;
 import android.view.WindowManager;
 import android.view.DisplayCutout;
 import android.os.Build;
@@ -80,6 +81,8 @@ public final class NativeScannerActivity extends ComponentActivity {
     // continue previewing the stack while recognition is locked.
     private volatile boolean resolutionPending=false;
     private volatile boolean reviewDialogOpen=false;
+    private android.app.Dialog scanReviewDialog;
+    private String scanReviewId="";
     private ToneGenerator saveTone;
     private int saveToneVolume=-1;
     private final String sessionId=java.util.UUID.randomUUID().toString();
@@ -106,7 +109,18 @@ public final class NativeScannerActivity extends ComponentActivity {
         else reviewCount++;
         resolutionPending=false;
         reviewDialogOpen=false;
-        if(saved)playSaveSound(message.optInt("volume",60));
+        if(scanReviewDialog!=null){scanReviewDialog.dismiss();scanReviewDialog=null;scanReviewId="";}
+        if(saved){
+            playSaveSound(message.optInt("volume",60));
+            if(scanSuccessPanel!=null && scanSuccessPanel.getParent()==cameraRoot)
+                cameraRoot.removeView(scanSuccessPanel);
+            String photo="";
+            for(JSONObject item:captured)if(id.equals(item.optString("scan_id"))){
+                photo=item.optString("image_path","");break;
+            }
+            int bottom=cameraActions==null?dp(72):cameraActions.getHeight();
+            scanSuccessPanel=ScanResultUi.success(this,cameraRoot,message,photo,bottom);
+        }
         if(!closing){
             reviewButton.setText(finishRequested?"Saving… ("+Math.max(0,captured.size()-resolvedScanIds.size())+" pending)":
                     "Finish ("+(verifiedCount+unverifiedCount)+" saved)");
@@ -145,93 +159,32 @@ public final class NativeScannerActivity extends ComponentActivity {
         if(current!=null)current.runOnUiThread(()->current.showImmediateReview(payload));
     }
     private void showImmediateReview(JSONObject payload){
-        if(closing||!resolutionPending||reviewDialogOpen)return;
+        if(closing||!resolutionPending)return;
         final String id=payload.optString("scan_id","");
         if(id.isEmpty()||captured.isEmpty()||
            !id.equals(captured.get(captured.size()-1).optString("scan_id")))return;
-        reviewDialogOpen=true;
-        final String name=payload.optString("name","");
-        final String reason=payload.optString("reason","Edition not identified");
-        final JSONArray choices=payload.optJSONArray("choices");
-        final boolean allowUnverified=payload.optBoolean("allow_unverified",false);
-        final java.util.ArrayList<String> descriptions=new java.util.ArrayList<>();
-        final java.util.ArrayList<String> ids=new java.util.ArrayList<>();
-        if(choices!=null)for(int i=0;i<choices.length();i++){
-            JSONObject entry=choices.optJSONObject(i);if(entry==null)continue;
-            String printing=entry.optString("id","");
-            if(printing.isEmpty())continue;
-            ids.add(printing);descriptions.add(entry.optString("label",printing));
-        }
-        LinearLayout layout=new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16),dp(6),dp(16),0);
-        final EditText search=new EditText(this);
-        search.setSingleLine(true);
-        search.setHint(ids.isEmpty()&&!allowUnverified?"Enter correct card name":"Filter by set, code, or collector #");
-        layout.addView(search);
-        final ListView list=new ListView(this);
-        final ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_list_item_1,
-                new java.util.ArrayList<>(descriptions));
-        list.setAdapter(adapter);
-        if(!ids.isEmpty())layout.addView(list,new LinearLayout.LayoutParams(-1,dp(270)));
-        final android.app.AlertDialog[] dialogHolder=new android.app.AlertDialog[1];
-        final Button correctTitle=new Button(this);
-        correctTitle.setText("Correct title / search another card");
-        layout.addView(correctTitle);
-        correctTitle.setOnClickListener(v->{
-            String manual=search.getText().toString().trim();
-            if(manual.isEmpty()){search.setError("Enter the correct printed card name");return;}
-            sendImmediateReviewChoice(id,"correct-name","",manual);
+        if(reviewDialogOpen){
+            // A timeout may have shown a generic recovery dialog. Replace it
+            // with the later, evidence-backed Scryfall candidate gallery if
+            // that arrives, rather than hiding the actual printing choices.
+            int count=(payload.optJSONArray("choices")==null?0:payload.optJSONArray("choices").length())+
+                (payload.optJSONArray("suggestions")==null?0:payload.optJSONArray("suggestions").length());
+            if(!id.equals(scanReviewId)||count==0)return;
+            if(scanReviewDialog!=null)scanReviewDialog.dismiss();
             reviewDialogOpen=false;
-            if(dialogHolder[0]!=null)dialogHolder[0].dismiss();
-        });
-        final android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(this)
-            .setTitle(ids.isEmpty()&&!allowUnverified?"Review card now":"Verify printing now: "+name)
-            .setMessage(reason+"\nChoose the physical set and collector number before continuing.")
-            .setView(layout)
-            .setPositiveButton(ids.isEmpty()&&!allowUnverified?"Look up title":"Save unverified",null)
-            .setNegativeButton("Retry",null)
-            .setNeutralButton("Skip",null)
-            .create();
-        dialogHolder[0]=dialog;
-        dialog.setCancelable(false);
-        dialog.setOnShowListener(v->{
-            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener(b->{
-                String manual=search.getText().toString().trim();
-                if(ids.isEmpty()&&!allowUnverified){
-                    if(manual.isEmpty()){search.setError("Enter a card name to search");return;}
-                    sendImmediateReviewChoice(id,"correct-name","",manual);
-                }else sendImmediateReviewChoice(id,"unverified","","");
-                reviewDialogOpen=false;dialog.dismiss();
-            });
-            dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).setOnClickListener(b->{
-                sendImmediateReviewChoice(id,"retry","","");reviewDialogOpen=false;dialog.dismiss();
-            });
-            dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener(b->{
-                sendImmediateReviewChoice(id,"skip","","");reviewDialogOpen=false;dialog.dismiss();
-            });
-        });
-        if(!ids.isEmpty()){
-            search.addTextChangedListener(new TextWatcher(){
-                public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-                public void onTextChanged(CharSequence value,int start,int before,int count){
-                    String q=value.toString().toLowerCase(java.util.Locale.ROOT);
-                    adapter.clear();
-                    for(String label:descriptions)if(label.toLowerCase(java.util.Locale.ROOT).contains(q))adapter.add(label);
-                    adapter.notifyDataSetChanged();
-                }
-                public void afterTextChanged(Editable text){}
-            });
-            list.setOnItemClickListener((parent,view,position,rowId)->{
-                String label=adapter.getItem(position);
-                int original=descriptions.indexOf(label);
-                if(original<0||original>=ids.size())return;
-                sendImmediateReviewChoice(id,"printing",ids.get(original),"");
-                reviewDialogOpen=false;dialog.dismiss();
-            });
         }
-        status.setText("Review required · scanner paused for "+(name.isEmpty()?"unknown card":name));
-        dialog.show();
+        reviewDialogOpen=true;
+        scanReviewId=id;
+        // A visual, filtered selector. The camera remains paused until the
+        // chosen printing is actually persisted and a save receipt arrives.
+        status.setText("Choose card / printing · scanner paused");
+        scanReviewDialog=ScanResultUi.review(this,payload,(action,printingId,name)->{
+            sendImmediateReviewChoice(id,action,printingId,name);
+            reviewDialogOpen=false;
+            scanReviewDialog=null;
+            scanReviewId="";
+            status.setText("Finalizing your selection…");
+        });
     }
     private void sendImmediateReviewChoice(String id,String action,String printingId,String typedName){
         try{
@@ -284,6 +237,8 @@ public final class NativeScannerActivity extends ComponentActivity {
     private long lastEdgeMs=0,lastWarpMs=0,lastArtMs=0,lastOcrMs=0;
     private int sourceWidth=1,sourceHeight=1;
     private FrameLayout cameraRoot;
+    private View scanSuccessPanel;
+    private LinearLayout cameraActions;
 
     @Override public void onCreate(Bundle savedInstanceState){
         liveScanner=new java.lang.ref.WeakReference<>(this);
@@ -308,8 +263,14 @@ public final class NativeScannerActivity extends ComponentActivity {
         preview.setImplementationMode(PreviewView.ImplementationMode.COMPATIBLE);
         overlay=new CardEdgeOverlay(this);
         FrameLayout root=new FrameLayout(this);cameraRoot=root;root.setBackgroundColor(Color.BLACK);
-        root.addView(preview,new FrameLayout.LayoutParams(-1,-1));
-        root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
+        // Keep the entire physical card visible. The controls live outside
+        // the camera surface instead of covering its lower printing marks.
+        FrameLayout cameraSurface=new FrameLayout(this);
+        cameraSurface.addView(preview,new FrameLayout.LayoutParams(-1,-1));
+        cameraSurface.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
+        FrameLayout.LayoutParams cameraArea=new FrameLayout.LayoutParams(-1,-1,Gravity.TOP);
+        cameraArea.bottomMargin=dp(82);
+        root.addView(cameraSurface,cameraArea);
         LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.VERTICAL);
         top.setPadding(dp(14),dp(12),dp(14),dp(12));top.setBackgroundColor(0xA5000000);
         LinearLayout headline=new LinearLayout(this);
@@ -335,7 +296,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         top.addView(headline);
         metrics=new TextView(this);metrics.setTextColor(0xFFBBDBCC);metrics.setTextSize(11);
         metrics.setText("Camera: awaiting negotiated resolution");top.addView(metrics);
-        root.addView(top,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));
+        cameraSurface.addView(top,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));
         LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER);
         actions.setPadding(dp(6),dp(8),dp(6),dp(16));actions.setBackgroundColor(0xD0000000);
         Button back=new Button(this);back.setText("Close");back.setAllCaps(false);back.setTextSize(12);back.setMinWidth(0);back.setMinimumWidth(0);
@@ -372,7 +333,19 @@ public final class NativeScannerActivity extends ComponentActivity {
         reviewButton=new Button(this);reviewButton.setText("Finish (0 saved)");reviewButton.setAllCaps(false);reviewButton.setTextSize(12);reviewButton.setMinWidth(0);reviewButton.setMinimumWidth(0);
         reviewButton.setOnClickListener(v->finishBatch());
         actions.addView(reviewButton,new LinearLayout.LayoutParams(0,dp(48),1));
+        cameraActions=actions;
         root.addView(actions,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
+        // Measure the real button bar (font scaling, orientation, cutouts)
+        // rather than guessing its height. Preview and overlays never extend
+        // behind the bar, so older cards' bottom printing stays visible.
+        actions.addOnLayoutChangeListener((view,left,topEdge,right,bottom,oldLeft,oldTop,oldRight,oldBottom)->{
+            int controlHeight=bottom-topEdge;
+            FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)cameraSurface.getLayoutParams();
+            if(controlHeight>0 && lp.bottomMargin!=controlHeight){
+                lp.bottomMargin=controlHeight;
+                cameraSurface.setLayoutParams(lp);
+            }
+        });
         // In immersive mode system bars are hidden. Reserve *only* camera-cutout
         // safe area, not the old status/nav bar heights (which caused the overlap
         // and reduced the useful preview area on Samsung gesture navigation).
@@ -502,7 +475,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         String cardInfo=activeCropWidth>0?" · card crop "+activeCropWidth+"×"+activeCropHeight:"";
         if(standZoomApplied>1.02f)cardInfo+=" · stand zoom "+String.format(Locale.US,"%.2f",standZoomApplied)+"×";
         String detail=lastTiming.isEmpty()?"": "\n"+lastTiming;
-        if(lastArtworkRefs>=0)detail+="\nArtwork library: "+lastArtworkRefs+" bundled/learned · cached edition signatures: "+ReferenceFingerprintCache.count();
+        if(lastArtworkRefs>=0)detail+="\nArtwork library: "+lastArtworkRefs+" bundled/learned · symbol atlas: "+BundledSetSymbols.count()+" sets · cached edition signatures: "+ReferenceFingerprintCache.count();
         metrics.setText(cameraInfo+cardInfo+detail);
     }
     /** Apply ONE conservative sensor zoom per scanner session, not one per card.
@@ -740,7 +713,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             if(waitingForNext){
                 if(resolutionPending || reviewDialogOpen){corrected.recycle();return;}
                 long fullHash=wholeFrameHash(corrected);
-                boolean newTop=stackGate.observe(hash,fullHash,now);
+                boolean newTop=stackGate.observe(hash,fullHash,VisualMatcher.titleHash(corrected),now);
                 corrected.recycle();
                 if(newTop){
                     waitingForNext=false;previousOcr="";previousOcrCount=0;
@@ -864,7 +837,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                 // A stable but imperfect title is still a useful scan. Queue it
                 // for the catalog's fuzzy name matcher after two independent
                 // camera reads; NEVER treat it as an exact printing identity.
-                else if(previousOcrCount>=2 && normalized.length()>=5 &&
+                else if(previousOcrCount>=(normalized.length()<5?3:2) && normalized.length()>=3 &&
                         !normalized.matches(".*(.)\\1{4,}.*"))
                     enqueue(name,"ocr-candidate",0,null,card,hash,rotations[rotationIndex]);
                 recognizing.set(false);
@@ -902,11 +875,16 @@ public final class NativeScannerActivity extends ComponentActivity {
             result.put("edge_ms",lastEdgeMs);result.put("warp_ms",lastWarpMs);
             result.put("art_ms",lastArtMs);result.put("ocr_ms",lastOcrMs);
             captured.add(result);
+            runOnUiThread(()->{
+                if(scanSuccessPanel!=null && scanSuccessPanel.getParent()==cameraRoot)
+                    cameraRoot.removeView(scanSuccessPanel);
+                scanSuccessPanel=null;
+            });
             // Resolve and save now, while the camera is open. This capture is
             // also included in the final handoff for retry after interruptions.
             resolutionPending=true;
             MainActivity.deliverLiveCapture(result);
-            stackGate.captured(hash,wholeFrameHash(card),SystemClock.elapsedRealtime());
+            stackGate.captured(hash,wholeFrameHash(card),VisualMatcher.titleHash(card),SystemClock.elapsedRealtime());
             waitingForNext=true;changeFrames=0;lastCapturedHash=hash;
             lastCapturedSceneHash=currentFrameSceneHash;
             if(smoothed!=null){
@@ -979,6 +957,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         closing=true;
         if(provider!=null)provider.unbindAll();
         if(recognizer!=null)recognizer.close();
+        if(scanReviewDialog!=null){scanReviewDialog.dismiss();scanReviewDialog=null;}
         if(saveTone!=null){saveTone.release();saveTone=null;}
         if(availableCard!=null&&!availableCard.isRecycled())availableCard.recycle();
         analysisExecutor.shutdownNow();

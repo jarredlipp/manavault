@@ -1,0 +1,18 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const root=path.join(__dirname,'..');
+const html=fs.readFileSync(path.join(root,'app/src/main/assets/index.html'),'utf8');
+const native=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/NativeScannerActivity.java'),'utf8');
+const ui=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/ScanResultUi.java'),'utf8');
+assert.match(html,/image_url:p\.image_small\|\|p\.image_uris\?\.small/,'Printings must include reference thumbnails');
+assert.match(html,/suggestions=choices\.length\?\[\]/,'Ambiguous identity must present closest names');
+assert.match(html,/lookupOfflinePrintings\?\.\('name'/,'Identity suggestions should use local printings for pictures');
+assert.match(html,/mvLiveReceipt\(receipt,result,message\)/,'Receipt must include resolved printing details');
+assert.match(html,/mv60StoreExactPrinting\(chosen\)/,'Chosen candidate must be stored by exact printing ID');
+assert.match(native,/if\(saved\)\{[\s\S]*playSaveSound[\s\S]*ScanResultUi\.success/,'Show a save panel only after the collection receipt');
+assert.match(native,/ScanResultUi\.review\(this,payload/,'Native review must show candidate artwork grid');
+assert.match(ui,/0xD923303C/,'Successful scans must use a translucent panel');
+assert.match(ui,/referenceImage\(a,image,c\.url\)/,'Candidate images should be fetched asynchronously');
+assert.match(ui,/IMAGES\.execute/,'Image requests must not hold up user selection');
+assert.match(ui,/callback\.choose\(c\.action,c\.id,c\.name\)/,'Selecting a candidate must return an exact ID or a corrected title');
+assert.match(ui,/dialog\.setCancelable\(false\)/,'Review must stay open until user resolves the card');
+console.log('v5.12.4 result UI checks passed: save receipts, translucent confirmation, offline suggestions, image-backed printing review.');

@@ -171,6 +171,24 @@ final class VisualMatcher {
         int w=Math.max(1,Math.round(card.getWidth()*.82f)),h=Math.max(1,Math.round(card.getHeight()*.34f));
         return Bitmap.createBitmap(card,x,y,Math.min(w,card.getWidth()-x),Math.min(h,card.getHeight()-y));
     }
+    /** A separate title-band hash helps distinguish two stacked cards with
+     * similar-colored art. A title-only change is never enough by itself. */
+    static long titleHash(Bitmap card){
+        int x=Math.max(0,Math.round(card.getWidth()*.08f));
+        int y=Math.max(0,Math.round(card.getHeight()*.035f));
+        int w=Math.min(card.getWidth()-x,Math.max(1,Math.round(card.getWidth()*.82f)));
+        int h=Math.min(card.getHeight()-y,Math.max(1,Math.round(card.getHeight()*.12f)));
+        Bitmap crop=Bitmap.createBitmap(card,x,y,w,h);
+        Bitmap scaled=Bitmap.createScaledBitmap(crop,9,8,true);
+        long hash=0;
+        for(int row=0;row<8;row++)for(int col=0;col<8;col++){
+            int a=scaled.getPixel(col,row),b=scaled.getPixel(col+1,row);
+            int la=(Color.red(a)*30+Color.green(a)*59+Color.blue(a)*11)/100;
+            int lb=(Color.red(b)*30+Color.green(b)*59+Color.blue(b)*11)/100;
+            if(la>lb)hash|=1L<<(row*8+col);
+        }
+        scaled.recycle();crop.recycle();return hash;
+    }
     static long quickHash(Bitmap card){
         Bitmap crop=artRegion(card),scaled=Bitmap.createScaledBitmap(crop,9,8,true);long hash=0L;
         for(int y=0;y<8;y++)for(int x=0;x<8;x++){
