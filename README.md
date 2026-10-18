@@ -1,6 +1,12 @@
-# ManaVault v5.11.5 — Native Offline Printing Engine
+# ManaVault v5.11.6 — Offline Asset Build Repair
 
 Android CameraX Magic: The Gathering collection scanner. The app scans the **top card of a stack**. It will not accept the next card until the current card has been verified and saved (success sound), explicitly saved unverified, or resolved/skipped in immediate review.
+
+## Build-failure repair
+
+The prior ZIP contained empty `visual-index.json` and `symbol-index.json` placeholders and no compressed SQLite database. The GitHub workflow generated those assets, but if GitHub used an **older workflow** (often because the hidden `.github` directory wasn't uploaded), Gradle failed with `Artwork index has fewer than 12 references`.
+
+**Now Gradle itself runs `tools/ensure_offline_assets.sh` before `:app:preBuild`, even if an old workflow invokes `gradle :app:assembleDebug` directly.** The script creates a private Python environment, downloads/builds the native printing database, generates artwork and set-symbol fingerprints, and validates all three before allowing an APK to build. The current GitHub workflow calls the same script explicitly. If Scryfall is unavailable, the build stops with a useful generator error rather than producing an APK with empty reference data. Generated assets are reused on later builds when valid.
 
 ## What's changed
 
@@ -13,16 +19,16 @@ Android CameraX Magic: The Gathering collection scanner. The app scans the **top
 
 ## Build in GitHub Actions
 
-Upload the **contents** of this source ZIP to GitHub and run **Build ManaVault Android APK**. The workflow installs Python dependencies and:
+Upload **all** ZIP contents (including the hidden `.github/workflows/build-apk.yml` file) to GitHub and run **Build ManaVault Android APK**. If your repository still has an older workflow that simply invokes Gradle, the new Gradle preparation task also generates required assets automatically.
 
-1. Downloads the Scryfall bulk printing catalog **during the GitHub build**, indexes it into `printing-catalog.sqlite.gz`, and validates at least 100,000 printings.
-2. Downloads a bounded set of official reference images and generates `visual-index.json` and `symbol-index.json` with compact fingerprints.
-3. Rejects missing/incomplete reference libraries and runs regression tests.
-4. Runs Gradle and uploads the resulting APK.
+1. The first network-enabled build downloads Scryfall's current `default_cards` bulk catalog and produces `printing-catalog.sqlite.gz` (100,000+ indexed printings).
+2. It generates a bounded artwork index and set-symbol library from reference images.
+3. `verify_offline_assets.py` verifies the SQLite contents/indexes, validates fingerprint shapes, and rejects incomplete results.
+4. Gradle assembles the APK and the workflow uploads it.
 
-**Important:** This clean source archive intentionally does not include the large generated SQLite file or downloaded reference fingerprints. A direct local Gradle build will fail its validation until those assets are generated. Native Android compilation and real-device recognition have not been tested in this environment.
+**These large generated files are intentionally omitted from the clean source ZIP.** The first build therefore needs internet access to Scryfall and can take several minutes, not just 9 seconds. No collection data is uploaded. Android compilation and device scanning remain unverified here.
 
-Build dependencies for these generators are `requests`, `Pillow`, and `ijson` (installed by the workflow). Because the artwork and symbol references are built from public Scryfall images, building requires network access and may take several minutes. No user collection is uploaded by these build scripts.
+If your GitHub job still fails, inspect the **Prepare and verify offline printing + visual reference assets** step (or the new `:app:prepareOfflineAssets` Gradle task) for the specific error, rather than bypassing the asset check.
 
 ## Local tests
 

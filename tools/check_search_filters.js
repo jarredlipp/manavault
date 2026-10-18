@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
 const html=fs.readFileSync(path.join(__dirname,'../app/src/main/assets/index.html'),'utf8');
-const begin=html.indexOf('// v5.11.5: Combined, offline collection-search filters.');
+const begin=html.lastIndexOf('//',html.indexOf('Combined, offline collection-search filters.'));
 const end=html.indexOf('</script>',begin);
 assert.ok(begin>0&&end>begin);
 const ctx={

@@ -52,11 +52,13 @@ console.log('ManaVault v5.9 checks passed: JS syntax, repository layout, recogni
 
 const mainActivity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
 assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android-native launch button');
-assert.match(mainActivity,/ManaVault 5\.11\.5/, 'Android launcher version label out of sync');
+const versionName=(fs.readFileSync(path.join(root,'app/build.gradle'),'utf8').match(/versionName\s+'(\d+\.\d+\.\d+)/)||[])[1];
+assert.ok(versionName,'Gradle versionName missing');
+assert.ok(mainActivity.includes('ManaVault '+versionName), 'Android launcher version label out of sync');
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
 assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
-assert.match(html,/ManaVault v5\.11\.5/, 'Missing visible v5.10.9 build marker');
+assert.ok(html.includes('ManaVault v'+versionName), 'App footer version label out of sync');
 console.log('ManaVault v5.9.2 native entry checks passed.');
 
 // A syntax-only test missed a production crash: const info was reassigned by
@@ -119,8 +121,10 @@ console.log('v5.10.9 scene, OCR, printing evidence, and provisional-collection g
 // OCR can learn a name-only art fingerprint without pretending to know a set.
 const matcher=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/VisualMatcher.java'),'utf8');
 const workflow=fs.readFileSync(path.join(root,'.github/workflows/build-apk.yml'),'utf8');
-assert.match(workflow,/len\(art\['cards'\]\)>=12/, 'Do not release an APK with zero bundled artwork references');
-assert.match(workflow,/len\(sym\['sets'\]\)>=12/, 'Missing build failure for empty set-symbol references');
+assert.match(workflow,/tools\/ensure_offline_assets\.sh/, 'Workflow must generate validated offline assets');
+assert.match(fs.readFileSync(path.join(root,'app/build.gradle'),'utf8'),/dependsOn tasks\.named\('prepareOfflineAssets'\)/, 'Gradle must prepare references before verification');
+assert.match(fs.readFileSync(path.join(root,'tools/verify_offline_assets.py'),'utf8'),/artworks < minimum_references/, 'Do not release an APK with zero bundled artwork references');
+assert.match(fs.readFileSync(path.join(root,'tools/verify_offline_assets.py'),'utf8'),/symbols < minimum_references/, 'Missing build failure for empty set-symbol references');
 assert.match(matcher,/learnObservedName\(String canonicalName, byte\[\] feature\)/, 'Missing OCR name-only artwork bootstrap');
 assert.match(matcher,/new Entry\(key,"",copy\)/, 'Observed artwork must never be stamped with a guessed printing ID');
 assert.match(native,/rotationIndex==0 && visual!=null/, 'Do not learn from rotated or missing art crops');
