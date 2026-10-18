@@ -23,6 +23,13 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.EditText;
+import android.widget.ListView;
+import android.widget.ArrayAdapter;
+import android.text.TextWatcher;
+import android.text.Editable;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import androidx.activity.ComponentActivity;
 import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
@@ -61,12 +68,20 @@ public final class NativeScannerActivity extends ComponentActivity {
     private final ExecutorService analysisExecutor=Executors.newSingleThreadExecutor();
     private final ExecutorService referenceExecutor=Executors.newSingleThreadExecutor();
     private final CardQuadDetector detector=new CardQuadDetector();
+    private final StackChangeGate stackGate=new StackChangeGate();
     private final AtomicBoolean recognizing=new AtomicBoolean(false);
     private final ArrayList<JSONObject> captured=new ArrayList<>();
     private static volatile java.lang.ref.WeakReference<NativeScannerActivity> liveScanner = new java.lang.ref.WeakReference<>(null);
     private final java.util.HashSet<String> resolvedScanIds=new java.util.HashSet<>();
     private int verifiedCount=0,unverifiedCount=0,reviewCount=0;
     private boolean finishRequested=false,forceFinishEnabled=false;
+    // The top card cannot be rearmed until the WebView has persisted or the
+    // user has resolved the current capture. CameraX is otherwise free to
+    // continue previewing the stack while recognition is locked.
+    private volatile boolean resolutionPending=false;
+    private volatile boolean reviewDialogOpen=false;
+    private ToneGenerator saveTone;
+    private int saveToneVolume=-1;
     private final String sessionId=java.util.UUID.randomUUID().toString();
     /** Receipts are sent only after a card has been written to the collection. */
     static void receiveLiveResolution(JSONObject message){
@@ -77,17 +92,134 @@ public final class NativeScannerActivity extends ComponentActivity {
         String id=message.optString("scan_id","");
         if(id.isEmpty()||!id.startsWith(sessionId+"-")||!resolvedScanIds.add(id))return;
         String result=message.optString("status","review");
+        boolean saved="verified".equals(result)||"unverified".equals(result);
         if("verified".equals(result))verifiedCount++;
         else if("unverified".equals(result))unverifiedCount++;
         else reviewCount++;
+        resolutionPending=false;
+        reviewDialogOpen=false;
+        if(saved)playSaveSound(message.optInt("volume",60));
         if(!closing){
             reviewButton.setText(finishRequested?"Saving… ("+Math.max(0,captured.size()-resolvedScanIds.size())+" pending)":
                     "Finish ("+(verifiedCount+unverifiedCount)+" saved)");
             if(waitingForNext && captured.size()>0 && id.equals(captured.get(captured.size()-1).optString("scan_id")))
-                status.setText(("verified".equals(result)?"Saved printing": "unverified".equals(result)?"Saved name · edition pending":"Needs review")+
-                    ": "+message.optString("name","")+" · remove card");
+                status.setText(("verified".equals(result)?"Saved printing": "unverified".equals(result)?"Saved as unverified":
+                    "retry".equals(result)?"Retrying card": "Skipped card")+
+                    ": "+message.optString("name","")+
+                    ("retry".equals(result)?" · hold card steady":" · stack next card"));
+            if("retry".equals(result)){
+                waitingForNext=false;stackGate.clear();goodFrames=0;
+                previousOcr="";previousOcrCount=0;
+                sceneStartedAt=SystemClock.elapsedRealtime();
+                keepButton.setText("Keep title");keepButton.setEnabled(false);
+            }else if(waitingForNext){
+                keepButton.setText("Same copy");keepButton.setEnabled(true);
+            }
             if(finishRequested && resolvedScanIds.size()>=captured.size())completeBatch();
         }
+    }
+    private void playSaveSound(int requestedVolume){
+        // Audible confirmation ONLY after the collection write receipt, never
+        // when OCR merely identifies a candidate or a review is displayed.
+        try{
+            int level=Math.max(0,Math.min(100,requestedVolume));
+            if(level==0)return; // Respect the existing Scan sounds volume slider.
+            if(saveTone==null || saveToneVolume!=level){
+                if(saveTone!=null)saveTone.release();
+                saveTone=new ToneGenerator(AudioManager.STREAM_MUSIC,level);
+                saveToneVolume=level;
+            }
+            saveTone.startTone(ToneGenerator.TONE_PROP_ACK,170);
+        }catch(Exception e){Log.w(TAG,"Save confirmation tone unavailable",e);}
+    }
+    static void receiveImmediateReview(JSONObject payload){
+        NativeScannerActivity current=liveScanner.get();
+        if(current!=null)current.runOnUiThread(()->current.showImmediateReview(payload));
+    }
+    private void showImmediateReview(JSONObject payload){
+        if(closing||!resolutionPending||reviewDialogOpen)return;
+        final String id=payload.optString("scan_id","");
+        if(id.isEmpty()||captured.isEmpty()||
+           !id.equals(captured.get(captured.size()-1).optString("scan_id")))return;
+        reviewDialogOpen=true;
+        final String name=payload.optString("name","");
+        final String reason=payload.optString("reason","Edition not identified");
+        final JSONArray choices=payload.optJSONArray("choices");
+        final boolean allowUnverified=payload.optBoolean("allow_unverified",false);
+        final java.util.ArrayList<String> descriptions=new java.util.ArrayList<>();
+        final java.util.ArrayList<String> ids=new java.util.ArrayList<>();
+        if(choices!=null)for(int i=0;i<choices.length();i++){
+            JSONObject entry=choices.optJSONObject(i);if(entry==null)continue;
+            String printing=entry.optString("id","");
+            if(printing.isEmpty())continue;
+            ids.add(printing);descriptions.add(entry.optString("label",printing));
+        }
+        LinearLayout layout=new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(16),dp(6),dp(16),0);
+        final EditText search=new EditText(this);
+        search.setSingleLine(true);
+        search.setHint(ids.isEmpty()&&!allowUnverified?"Enter correct card name":"Filter by set, code, or collector #");
+        layout.addView(search);
+        final ListView list=new ListView(this);
+        final ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_list_item_1,
+                new java.util.ArrayList<>(descriptions));
+        list.setAdapter(adapter);
+        if(!ids.isEmpty())layout.addView(list,new LinearLayout.LayoutParams(-1,dp(270)));
+        final android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(this)
+            .setTitle(ids.isEmpty()&&!allowUnverified?"Review card now":"Verify printing now: "+name)
+            .setMessage(reason+"\nChoose the physical set and collector number before continuing.")
+            .setView(layout)
+            .setPositiveButton(ids.isEmpty()&&!allowUnverified?"Look up title":"Save unverified",null)
+            .setNegativeButton("Retry",null)
+            .setNeutralButton("Skip",null)
+            .create();
+        dialog.setCancelable(false);
+        dialog.setOnShowListener(v->{
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener(b->{
+                String manual=search.getText().toString().trim();
+                if(ids.isEmpty()&&!allowUnverified){
+                    if(manual.isEmpty()){search.setError("Enter a card name to search");return;}
+                    sendImmediateReviewChoice(id,"correct-name","",manual);
+                }else sendImmediateReviewChoice(id,"unverified","","");
+                reviewDialogOpen=false;dialog.dismiss();
+            });
+            dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).setOnClickListener(b->{
+                sendImmediateReviewChoice(id,"retry","","");reviewDialogOpen=false;dialog.dismiss();
+            });
+            dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener(b->{
+                sendImmediateReviewChoice(id,"skip","","");reviewDialogOpen=false;dialog.dismiss();
+            });
+        });
+        if(!ids.isEmpty()){
+            search.addTextChangedListener(new TextWatcher(){
+                public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+                public void onTextChanged(CharSequence value,int start,int before,int count){
+                    String q=value.toString().toLowerCase(java.util.Locale.ROOT);
+                    adapter.clear();
+                    for(String label:descriptions)if(label.toLowerCase(java.util.Locale.ROOT).contains(q))adapter.add(label);
+                    adapter.notifyDataSetChanged();
+                }
+                public void afterTextChanged(Editable text){}
+            });
+            list.setOnItemClickListener((parent,view,position,rowId)->{
+                String label=adapter.getItem(position);
+                int original=descriptions.indexOf(label);
+                if(original<0||original>=ids.size())return;
+                sendImmediateReviewChoice(id,"printing",ids.get(original),"");
+                reviewDialogOpen=false;dialog.dismiss();
+            });
+        }
+        status.setText("Review required · scanner paused for "+(name.isEmpty()?"unknown card":name));
+        dialog.show();
+    }
+    private void sendImmediateReviewChoice(String id,String action,String printingId,String typedName){
+        try{
+            JSONObject response=new JSONObject();response.put("scan_id",id);
+            response.put("action",action);response.put("printing_id",printingId);
+            response.put("name",typedName);
+            MainActivity.deliverImmediateReviewChoice(response);
+        }catch(Exception e){Log.e(TAG,"Could not send review selection",e);}
     }
     private PreviewView preview;
     private CardEdgeOverlay overlay;
@@ -196,10 +328,23 @@ public final class NativeScannerActivity extends ComponentActivity {
         keepButton.setOnClickListener(v->{
             Bitmap card=availableCard;
             if(waitingForNext){
-                waitingForNext=false;sceneStartedAt=SystemClock.elapsedRealtime();
-                previousOcr="";previousOcrCount=0;goodFrames=0;
-                status.setText("Next card manually enabled · show a different card");
-                keepButton.setText("Keep title");keepButton.setEnabled(false);
+                if(resolutionPending || reviewDialogOpen){status.setText("Finish the current save/review before stacking another card");return;}
+                // The manual bypass is ONLY for an actual newly stacked copy
+                // that appears identical. Require deliberate confirmation to
+                // avoid counting the same stationary card a second time.
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Scan an identical copy?")
+                    .setMessage("Only continue if you have placed another physical card on top of the stack. The camera cannot prove two identical-looking cards are separate.")
+                    .setNegativeButton("Cancel",(dialog,which)->{})
+                    .setPositiveButton("Scan next copy",(dialog,which)->{
+                        if(!waitingForNext||closing)return;
+                        waitingForNext=false;sceneStartedAt=SystemClock.elapsedRealtime();
+                        previousOcr="";previousOcrCount=0;goodFrames=0;
+                        stackGate.clear();
+                        lastRecognitionAt=SystemClock.elapsedRealtime();
+                        status.setText("Manual same-copy override · identifying next card…");
+                        keepButton.setText("Keep title");keepButton.setEnabled(false);
+                    }).show();
             }else if(card!=null&&!card.isRecycled()&&!lastSeenTitle.isEmpty())
                 enqueue(lastSeenTitle,"manual-title",0,null,card,previewHash);
         });
@@ -514,7 +659,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                 // temporarily defeats contour finding. Only report removal after
                 // a sustained loss AND a materially different whole-camera view.
                 // Never use the artwork-only hash to compare with an empty scene.
-                if(waitingForNext){
+                if(waitingForNext && !resolutionPending && !reviewDialogOpen){
                     double brightness=regionBrightness(frame,lastCapturedCorners);
                     double stand=surroundingBrightness(frame,lastCapturedCorners);
                     boolean exposedStand=brightness>=0&&stand>=0&&
@@ -525,12 +670,18 @@ public final class NativeScannerActivity extends ComponentActivity {
                     if(exposedStand&&Long.bitCount(wholeHash^lastCapturedSceneHash)>=10)
                         changedEmptyFrames++;
                     else changedEmptyFrames=0;
+                    // Empty-stand removal is still accepted, but stacking does
+                    // not need an empty view. A strong cover/reveal is also
+                    // recorded to permit an identical physical copy on top.
+                    stackGate.coverFrame(missingFrames>=4 &&
+                            Long.bitCount(wholeHash^lastCapturedSceneHash)>=13);
                     if(missingFrames>=10&&changedEmptyFrames>=8&&
                             SystemClock.elapsedRealtime()-missingSince>=1400){
-                        waitingForNext=false;changeFrames=0;previousOcr="";previousOcrCount=0;
+                        waitingForNext=false;stackGate.clear();changeFrames=0;
+                        previousOcr="";previousOcrCount=0;
                         runOnUiThread(()->{keepButton.setText("Keep title");keepButton.setEnabled(false);});
                         sceneStartedAt=0;missingSince=0;
-                        runOnUiThread(()->{if(!closing)status.setText("Scene changed · ready for next card");});
+                        runOnUiThread(()->{if(!closing)status.setText("Card removed · ready for next card or stack");});
                     }
                 }
             }
@@ -542,7 +693,11 @@ public final class NativeScannerActivity extends ComponentActivity {
             boolean stable=good&&goodFrames>=2&&smoothed!=null;
             CardQuadDetector.Detection overlayDetection=smoothed;
             runOnUiThread(()->{if(!closing)overlay.update(overlayDetection,w,h,stable);});
-            if(!stable||recognizing.get()||closing)return;
+            if(!stable){
+                if(waitingForNext)stackGate.unstable();
+                return;
+            }
+            if(recognizing.get()||closing)return;
             // Wait for at least four stable frames before the FIRST recognition
             // in high-quality mode; otherwise OCR may capture the small card
             // before the fixed-stand zoom ever has a chance to engage.
@@ -558,10 +713,26 @@ public final class NativeScannerActivity extends ComponentActivity {
                 runOnUiThread(()->{if(!closing)showMetrics();});
             }
             long hash=VisualMatcher.quickHash(corrected);
-            // A changed artwork hash, glare, or exposure is NEVER proof that
-            // the previous physical card was removed. Re-arm only after the
-            // confirmed empty-stand event above (or explicit Next card tap).
-            if(waitingForNext){corrected.recycle();return;}
+            // v5.11.1: the user places new cards ON TOP of the stack. Compare
+            // persistent artwork AND whole-card features; require a stable
+            // change, not a fleeting reflection, before automatic rearming.
+            // Identical-looking copies require a genuine cover/reveal event.
+            if(waitingForNext){
+                if(resolutionPending || reviewDialogOpen){corrected.recycle();return;}
+                long fullHash=wholeFrameHash(corrected);
+                boolean newTop=stackGate.observe(hash,fullHash,now);
+                corrected.recycle();
+                if(newTop){
+                    waitingForNext=false;previousOcr="";previousOcrCount=0;
+                    sceneStartedAt=now;lastRecognitionAt=now-220;
+                    final String reason=stackGate.lastEvent();
+                    runOnUiThread(()->{if(!closing){
+                        keepButton.setText("Keep title");keepButton.setEnabled(false);
+                        status.setText("New top card detected ("+reason+") · identifying…");
+                    }});
+                }
+                return;
+            }
             if(!recognizing.compareAndSet(false,true)){corrected.recycle();return;}
             previewHash=hash;
             Bitmap old=availableCard;availableCard=corrected;
@@ -682,8 +853,8 @@ public final class NativeScannerActivity extends ComponentActivity {
             }else{recognizing.set(false);}
         });
     }
-    /** Called on analyzer or ML Kit callback thread. Store each capture once, then wait
-     * for real removal/replacement before allowing another result. */
+    /** Called on analyzer or ML Kit callback thread. Store each capture once,
+     * then wait for a stable new top card on the physical stack. */
     private synchronized void enqueue(String name,String source,float score,String imageId,Bitmap card,long hash){
         if(closing||finishRequested||waitingForNext||captured.size()>=150)return;
         try{
@@ -704,7 +875,9 @@ public final class NativeScannerActivity extends ComponentActivity {
             captured.add(result);
             // Resolve and save now, while the camera is open. This capture is
             // also included in the final handoff for retry after interruptions.
+            resolutionPending=true;
             MainActivity.deliverLiveCapture(result);
+            stackGate.captured(hash,wholeFrameHash(card),SystemClock.elapsedRealtime());
             waitingForNext=true;changeFrames=0;lastCapturedHash=hash;
             lastCapturedSceneHash=currentFrameSceneHash;
             if(smoothed!=null){
@@ -715,9 +888,9 @@ public final class NativeScannerActivity extends ComponentActivity {
             lastCapturedBrightness=currentCardBrightness;
             missingSince=0;changedEmptyFrames=0;
             lastSeenTitle="";previousOcr="";previousOcrCount=0;
-            final String msg="Captured "+name+" ("+source+") · "+captured.size()+" queued · remove card";
+            final String msg="Captured "+name+" ("+source+") · resolving and saving before next card…";
             runOnUiThread(()->{if(!closing){
-                status.setText(msg);keepButton.setText("Next card");keepButton.setEnabled(true);
+                status.setText(msg);keepButton.setText("Resolving");keepButton.setEnabled(false);
                 reviewButton.setText("Finish ("+(verifiedCount+unverifiedCount)+" saved)");
                 lastTiming="Edge "+lastEdgeMs+" ms · warp "+lastWarpMs+" ms · art "+lastArtMs+" ms · OCR "+lastOcrMs+" ms · references "+(visual==null?0:visual.count());showMetrics();
             }});
@@ -764,6 +937,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         closing=true;
         if(provider!=null)provider.unbindAll();
         if(recognizer!=null)recognizer.close();
+        if(saveTone!=null){saveTone.release();saveTone=null;}
         if(availableCard!=null&&!availableCard.isRecycled())availableCard.recycle();
         analysisExecutor.shutdownNow();
         referenceExecutor.shutdownNow();

@@ -52,11 +52,11 @@ console.log('ManaVault v5.9 checks passed: JS syntax, repository layout, recogni
 
 const mainActivity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
 assert.match(mainActivity,/Open native scanner/, 'Missing always-visible Android-native launch button');
-assert.match(mainActivity,/ManaVault 5\.11\.0/, 'Android launcher version label out of sync');
+assert.match(mainActivity,/ManaVault 5\.11\.2/, 'Android launcher version label out of sync');
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
 assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
-assert.match(html,/ManaVault v5\.11\.0/, 'Missing visible v5.10.9 build marker');
+assert.match(html,/ManaVault v5\.11\.2/, 'Missing visible v5.10.9 build marker');
 console.log('ManaVault v5.9.2 native entry checks passed.');
 
 // A syntax-only test missed a production crash: const info was reassigned by
@@ -93,7 +93,11 @@ assert.match(html,/mv60RankArtwork/);
 assert.match(html,/Undo last auto-saved card/);
 const detectorSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/CardQuadDetector.java'),'utf8');
 assert.match(detectorSource,/frameArea \* 0\.075/);
-assert.match(native,/if\(waitingForNext\)\{corrected\.recycle\(\);return;\}/,'Must require real removal before rescan');
+assert.match(native,/stackGate\.observe\(hash,fullHash,now\)/,'Missing stable top-card change gate');
+assert.match(native,/stackGate\.captured\(hash,wholeFrameHash\(card\)/,'Capture must establish a new baseline');
+assert.match(native,/stackGate\.coverFrame\(/,'Occlusion evidence must be tracked for identical copies');
+assert.doesNotMatch(native,/queued · remove card/,'Old remove-card workflow should not appear');
+assert.ok(fs.existsSync(path.join(root,'tools/check_stack_gate.sh')),'Missing JVM stack transition tests');
 assert.match(native,/ocr-candidate/, 'Stable fuzzy OCR must enter the safe catalog matching path');
 const marks=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/PrintingFingerprintVerifier.java'),'utf8');
 const activity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/MainActivity.java'),'utf8');
@@ -168,3 +172,10 @@ assert.match(native,/stand zoom /, 'Scanner must report sensor zoom in diagnosti
 assert.match(marks,/"footer-left","footer-line"/, 'Missing specialized collector/set OCR crops');
 assert.match(html,/mv109FooterPairs\(marks\.lines,print\.printings\)/, 'Missing paired collector/set priority');
 console.log('v5.10.9 CameraX resolution, adaptive warp, and footer OCR guards passed.');
+
+// v5.11.2: never verify a capture against a later stacked card photo.
+assert.match(mainActivity,/snapshotForRequest\(request\)/, 'Each printing verification must resolve its own scan image');
+assert.match(mainActivity,/request\.has\("scan_index"\)/, 'Must select captured image by scan index, not latest capture');
+assert.match(html,/rankPrintings\(JSON\.stringify\(\{requestId,choices,scan_index:index\}\)\)/, 'Artwork ranking must carry scan index');
+assert.match(html,/\.\.\.body,requestId,scan_index:index/, 'Footer and symbol lookups must carry scan index');
+console.log('v5.11.2 scan-scoped image verification wiring passed.');

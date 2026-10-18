@@ -7,8 +7,8 @@ android {
         applicationId 'com.manavault.app'
         minSdk 26
         targetSdk 35
-        versionCode 74
-        versionName '5.11.0-live-persistence'
+        versionCode 76
+        versionName '5.11.2-finalize-review-sound-search'
     }
 }
 

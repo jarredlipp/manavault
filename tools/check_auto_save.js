@@ -14,6 +14,7 @@ let imageResults=[];
 let printedLines=[];
 let printedToken=false;
 let symbolResults=[];
+const reviewCalls=[];let reviewChoice={action:"skip"};
 const printings=[
  {id:'a',name:'Test Card',lang:'en',digital:false,nonfoil:true,foil:false,set:'one',set_name:'One Set',collector_number:'12',image_small:'https://cards.scryfall.io/small/front/a/b/a.jpg',image_url:'https://cards.scryfall.io/art1.jpg',illustration_id:'art-1'},
  {id:'b',name:'Test Card',lang:'en',digital:false,nonfoil:true,foil:false,set:'two',set_name:'Two Set',collector_number:'49',image_small:'https://cards.scryfall.io/small/front/c/d/b.jpg',image_url:'https://cards.scryfall.io/art2.jpg',illustration_id:'art-2'}
@@ -44,6 +45,7 @@ const context={
 context.window.ManaVaultCardDB=context.ManaVaultCardDB;
 context.window.ManaVaultNativeScanner={
  selectImage:()=>{},
+ reviewNow:payload=>{const request=JSON.parse(payload);reviewCalls.push(request);if(reviewChoice)context.window.mvNativeImmediateReviewChoice({scan_id:request.scan_id,...reviewChoice});},
  readPrintingMarks:request=>{
   const payload=JSON.parse(request);
   context.window.mv61OnMarksResult({requestId:payload.requestId,lines:printedLines,token:printedToken});
@@ -116,22 +118,25 @@ async function run(expr){return vm.runInContext(expr,context)}
  assert.equal(context.state.cards[0].qty,2,'Repeated physical scans must increment quantity');
  await run('mv60UndoLast()');
  assert.equal(context.state.cards[0].qty,1,'Undo must remove only the last auto-added copy');
- // Ambiguous edition with a strong exact name is collected without assigning
- // an arbitrary Scryfall ID, and never given an edition price.
+ // Ambiguous printings must be reviewed immediately while CameraX is open.
+ // The user may explicitly choose to save an unverified name, never silently.
  localCards=printings;
  printedLines=[];imageResults=[{id:'a',score:.961},{id:'b',score:.955}];symbolResults=[];
- await run('window.mvNativeScanBatch([{name:"Test Card",source:"ocr-exact",ocr_reads:1}])');
+ reviewChoice={action:'unverified'};
+ await run('window.mvNativeScanBatch([{scan_id:"ambiguous-1",scan_index:0,name:"Test Card",source:"ocr-exact",ocr_reads:1}])');
+ assert.equal(reviewCalls.at(-1)?.allow_unverified,true,'Name-known ambiguity should allow explicit unverified choice');
+ assert.equal(reviewCalls.at(-1)?.choices.length,2,'Review should offer candidate printings right now');
  const provisional=context.state.cards.find(c=>c.unverifiedPrinting);
- assert.ok(provisional,'Ambiguous printing must be stored as name-only instead of demanding immediate confirmation');
+ assert.ok(provisional,'An explicitly approved unverified scan should be stored without guessing its printing');
  assert.equal(provisional.id,'unverified:test card');
  assert.equal(provisional.set,'');
  assert.equal(provisional.price,null);
  await run('mv60UndoLast()');
  assert.ok(!context.state.cards.some(c=>c.unverifiedPrinting),'Undo must remove a provisional scan');
  // A clearly detected token may not be saved as a normal planeswalker.
- printedToken=true;
- await run('window.mvNativeScanBatch([{name:"Test Card",source:"ocr-exact",ocr_reads:1}])');
- assert.ok(!context.state.cards.some(c=>c.unverifiedPrinting),'Token/type conflict must remain review-only');
+ printedToken=true;reviewChoice={action:'skip'};
+ await run('window.mvNativeScanBatch([{scan_id:"token-test-1",scan_index:0,name:"Test Card",source:"ocr-exact",ocr_reads:1}])');
+ assert.ok(!context.state.cards.some(c=>c.unverifiedPrinting),'Token/type conflict must be reviewed and explicitly skipped');
  printedToken=false;
  assert.equal(await run('mv60CanSaveNameOnly({name:"Test Card",source:"ocr-candidate",ocr_reads:1})'),null,
   'One fuzzy OCR reading cannot create a provisional card');
@@ -183,6 +188,23 @@ async function run(expr){return vm.runInContext(expr,context)}
  assert.equal(pair,null,'Set+collector must come from footer, never rules text');
  pair=await run(`mv109FooterPairs([{zone:'footer-left',text:'R 0345 DFT EN'},{zone:'footer-left',text:'R 0345 ABC EN'}],${JSON.stringify([printed,other])})`);
  assert.equal(pair,null,'Conflicting trusted footer lines must not silently pick a printing');
+ // When the printing cannot be verified, there MUST be no collection
+ // mutation or saved receipt until the native foreground review is answered.
+ localCards=printings;printedLines=[];
+ imageResults=[{id:'a',score:.981},{id:'b',score:.979}];symbolResults=[];
+ reviewChoice=null;
+ const beforeReviewA=context.state.cards.find(c=>c.id==='a')?.qty||0;
+ const beforeReviewB=context.state.cards.find(c=>c.id==='b')?.qty||0;
+ const reviewBefore=reviewCalls.length;
+ await run('window.mvNativeScanLive({scan_id:"await-review-1",scan_index:0,name:"Test Card",source:"ocr-exact",ocr_reads:2})');
+ for(let cycle=0;cycle<20 && reviewCalls.length===reviewBefore;cycle++)await new Promise(r=>setImmediate(r));
+ assert.equal(reviewCalls.length,reviewBefore+1,'Ambiguous card must open review DURING scan');
+ assert.equal(context.state.cards.find(c=>c.id==='a')?.qty||0,beforeReviewA,'Collection must wait for an immediate printing selection');
+ assert.equal(context.state.cards.find(c=>c.id==='b')?.qty||0,beforeReviewB,'No edition may be silently assigned before review');
+ context.window.mvNativeImmediateReviewChoice({scan_id:'await-review-1',action:'printing',printing_id:'b'});
+ await run('mvLiveRunning');
+ assert.equal(context.state.cards.find(c=>c.id==='b')?.qty||0,beforeReviewB+1,'Selected edition must save before next scan');
+ reviewChoice={action:'skip'};
  // v5.11.0: a capture is persisted as soon as CameraX emits it;
  // pressing Finish must NOT be required to trigger printing resolution.
  localCards=[printings[0]];printedLines=[];imageResults=[];symbolResults=[];
@@ -199,6 +221,6 @@ async function run(expr){return vm.runInContext(expr,context)}
  assert.match(fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/manavault/app/NativeScannerActivity.java'),'utf8'),/MainActivity\.deliverLiveCapture\(result\)/);
  assert.match(fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/manavault/app/MainActivity.java'),'utf8'),/mvNativeScanLive/);
  assert.match(fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/manavault/app/NativeScannerActivity.java'),'utf8'),/resolvedScanIds\.size\(\)>=captured\.size\(\)/);
- console.log('v5.11.0 live-save checks passed: persisted before Finish, receipt delivered, no duplicate on Finish.');
+ console.log('v5.11.2 live-save checks passed: one-at-a-time commits, immediate review, selected edition persistence and replay protection.');
  console.log('v5.10.9 auto-save checks passed: footer pair matching, copyright exclusion, conflicts, and existing scanner cases.');
 })().catch(e=>{console.error(e);process.exitCode=1});

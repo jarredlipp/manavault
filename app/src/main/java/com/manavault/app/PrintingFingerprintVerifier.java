@@ -159,7 +159,7 @@ final class PrintingFingerprintVerifier {
         HttpURLConnection connection=(HttpURLConnection)new URL(address).openConnection();
         connection.setConnectTimeout(1800);connection.setReadTimeout(2300);
         connection.setInstanceFollowRedirects(false);
-        connection.setRequestProperty("User-Agent","ManaVault/5.11.0 (printing evidence)");
+        connection.setRequestProperty("User-Agent","ManaVault/5.11.1 (printing evidence)");
         Bitmap reference=null;
         try{
             if(connection.getResponseCode()!=200||connection.getContentLengthLong()>4_000_000)

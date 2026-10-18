@@ -51,6 +51,16 @@ public class MainActivity extends Activity {
         MainActivity host=liveHost.get();
         if(host!=null)host.runOnUiThread(()->host.receiveLiveCapture(scan));
     }
+    /** Return an immediate native printing-review selection to its pending
+     * WebView resolver. The camera must remain blocked until its save receipt. */
+    static void deliverImmediateReviewChoice(JSONObject choice){
+        MainActivity host=liveHost.get();
+        if(host!=null)host.runOnUiThread(()->{
+            if(host.webView!=null)host.webView.evaluateJavascript(
+                "window.mvNativeImmediateReviewChoice && window.mvNativeImmediateReviewChoice("+
+                 choice.toString()+")",null);
+        });
+    }
     private void receiveLiveCapture(org.json.JSONObject scan) {
         if(webView==null)return;
         String path=scan.optString("image_path","");
@@ -66,6 +76,19 @@ public class MainActivity extends Activity {
         webView.evaluateJavascript("window.mvNativeScanLive && window.mvNativeScanLive("+scan.toString()+")",null);
     }
 
+
+    /** Bind printing verification to the exact captured card, not whichever
+     * image happened to arrive most recently while CameraX kept scanning. */
+    private File snapshotForRequest(org.json.JSONObject request) {
+        if(request.has("scan_index")){
+            int index=request.optInt("scan_index",-1);
+            synchronized(lastNativeBatchPhotos){
+                return index>=0 && index<lastNativeBatchPhotos.size()
+                        ? lastNativeBatchPhotos.get(index) : null;
+            }
+        }
+        return lastNativeCard; // legacy/manual review compatibility
+    }
 
     private int dp(int dips) {
         return (int)(dips * getResources().getDisplayMetrics().density + 0.5f);
@@ -114,13 +137,17 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.11.0"; }
+            @JavascriptInterface public String version() { return "5.11.2"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
             @JavascriptInterface public void scanResolved(String payload){
                 try{
                     org.json.JSONObject response=new org.json.JSONObject(payload);
                     NativeScannerActivity.receiveLiveResolution(response);
                 }catch(Exception e){Log.w("ManaVaultLive","Bad scan receipt",e);}
+            }
+            @JavascriptInterface public void reviewNow(String payload){
+                try{NativeScannerActivity.receiveImmediateReview(new JSONObject(payload));}
+                catch(Exception e){Log.w("ManaVaultLive","Bad immediate printing review",e);}
             }
             @JavascriptInterface public int cachedPrintingFingerprints() {
                 return ReferenceFingerprintCache.count();
@@ -147,7 +174,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void readPrintingMarks(String payload) {
                 org.json.JSONObject request;
                 try{request=new org.json.JSONObject(payload);}catch(Exception e){return;}
-                final File snapshot=lastNativeCard;
+                final File snapshot=snapshotForRequest(request);
                 artworkExecutor.execute(()->{
                     org.json.JSONObject result;
                     try{
@@ -168,7 +195,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void rankSetSymbols(String payload) {
                 org.json.JSONObject request;
                 try{request=new org.json.JSONObject(payload);}catch(Exception e){return;}
-                final File snapshot=lastNativeCard;
+                final File snapshot=snapshotForRequest(request);
                 artworkExecutor.execute(()->{
                     org.json.JSONObject result;
                     try{
@@ -187,7 +214,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void rankPrintings(String payload) {
                 final org.json.JSONObject request;
                 try{request=new org.json.JSONObject(payload);}catch(Exception e){return;}
-                final File snapshot=lastNativeCard;
+                final File snapshot=snapshotForRequest(request);
                 if(snapshot==null||!snapshot.isFile()){
                     try{
                         org.json.JSONObject response=new org.json.JSONObject();
@@ -261,7 +288,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.11.0 · CameraX");
+        versionLabel.setText("ManaVault 5.11.2 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
