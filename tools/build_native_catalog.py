@@ -123,7 +123,7 @@ def build(rows, output, minimum=100000, source_stamp=''):
         return count
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--output',default='app/src/main/assets/printing-catalog.sqlite.gz');p.add_argument('--input');p.add_argument('--min',type=int,default=100000);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--output',default='app/src/main/assets/printing-catalog.dat');p.add_argument('--input');p.add_argument('--min',type=int,default=100000);args=p.parse_args()
     if args.input:
         # Sniff the file contents rather than trusting a .gz extension.
         with open(args.input,'rb') as stream:

@@ -68,22 +68,16 @@ function nativeIndex(kind,key,max=2001){
  }catch{return null;}
 }
 async function fastPrintings(name,limit=2001){
- // A manual Scryfall refresh can be newer than the APK's bundled catalog.
- // In that case respect the newer, validated IndexedDB store automatically.
- let preferWeb=false;
- try{
-  const local=Date.parse(await meta('source'));
-  const bundled=Date.parse(window.ManaVaultNativeScanner?.nativeCatalogVersion?.());
-  if(Number.isFinite(local)&&Number.isFinite(bundled)&&local>bundled&&await count()>=MIN_PRINTINGS)preferWeb=true;
- }catch{}
- if(!preferWeb){
-  const native=nativeIndex('name',norm(name),limit);
-  if(native?.length)return {rows:native,complete:true,source:'native SQLite'};
-  // An empty native result may be a new card or an over-large result set;
-  // check the validated local store and let non-live paths query Scryfall.
+ // Never wait for WebView IndexedDB metadata while the native read-only
+ // catalog is available. During an IndexedDB bulk import, even metadata
+ // transactions can stall live verification for many seconds.
+ const native=nativeIndex('name',norm(name),limit);
+ if(native){
+  return {rows:native,complete:true,source:'native SQLite'};
  }
- // During first-run native extraction IndexedDB is deliberately empty.
- // Do not misrepresent the absence of a ready catalog as 'no such printing'.
+ // The native bundle may be unavailable on older APKs. Use the last
+ // *committed* IndexedDB catalog as fallback; an in-progress import is never
+ // treated as a complete source of editions.
  const available=await count().catch(()=>0);
  if(available<MIN_PRINTINGS)return {rows:[],complete:false,source:'Catalog warming (native '+
     String(window.ManaVaultNativeScanner?.nativeCatalogStatus?.()||'unavailable')+')'};

@@ -20,7 +20,7 @@ fi
 "$VENV/bin/python" -m pip install --disable-pip-version-check --quiet requests pillow ijson
 
 # A missing catalog must be built first; the visual generators read it.
-if [ ! -s app/src/main/assets/printing-catalog.sqlite.gz ]; then
+if [ ! -s app/src/main/assets/printing-catalog.dat ]; then
   echo 'ManaVault: downloading/building Scryfall SQLite catalog...'
   timeout 900 "$VENV/bin/python" tools/build_native_catalog.py
 fi
@@ -29,7 +29,7 @@ fi
 if ! "$VENV/bin/python" - <<'PY'
 import gzip,sqlite3,tempfile
 from pathlib import Path
-p=Path('app/src/main/assets/printing-catalog.sqlite.gz')
+p=Path('app/src/main/assets/printing-catalog.dat')
 try:
  with tempfile.TemporaryDirectory() as folder:
   target=Path(folder)/'catalog.sqlite'

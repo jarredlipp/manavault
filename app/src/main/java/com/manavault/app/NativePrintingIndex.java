@@ -21,8 +21,8 @@ import java.util.zip.GZIPInputStream;
  */
 final class NativePrintingIndex {
     private static final String TAG="ManaVaultPrintingDB";
-    private static final String ASSET="printing-catalog.sqlite.gz";
-    private static final String FILE="printing-catalog-5120.sqlite";
+    private static final String ASSET="printing-catalog.dat";
+    private static final String FILE="printing-catalog-5122.sqlite";
     private static volatile SQLiteDatabase database;
     private static volatile String state="Preparing offline catalog";
     private static volatile String sourceStamp="";
@@ -30,6 +30,7 @@ final class NativePrintingIndex {
     private NativePrintingIndex(){}
 
     static void start(Context context){
+        state="Preparing offline catalog";
         IO.execute(()->install(context.getApplicationContext()));
     }
     private static void install(Context context){
@@ -56,7 +57,15 @@ final class NativePrintingIndex {
             database=opened;
             state="Ready: "+count+" offline native printings";
             Log.i(TAG,state);
-        }catch(Exception e){state="IndexedDB fallback: "+e.getMessage();Log.w(TAG,state,e);}
+        }catch(Exception e){
+            String diagnostic=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
+            try{
+                String[] files=context.getAssets().list("");
+                diagnostic+="; packaged catalog="+java.util.Arrays.asList(files==null?new String[0]:files).contains(ASSET);
+            }catch(Exception ignored){}
+            state="IndexedDB fallback: "+diagnostic;
+            Log.e(TAG,state,e);
+        }
     }
     private static boolean valid(File path){
         if(!path.isFile()||path.length()<4096)return false;

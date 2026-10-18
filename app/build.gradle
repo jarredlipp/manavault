@@ -7,8 +7,8 @@ android {
         applicationId 'com.manavault.app'
         minSdk 26
         targetSdk 35
-        versionCode 85
-        versionName '5.12.1-footer-identification'
+        versionCode 86
+        versionName '5.12.2-footer-match-fix'
     }
 }
 

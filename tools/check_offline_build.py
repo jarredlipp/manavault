@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory() as d:
     assets=Path(d)
     missing,_=verify(assets,12,12,0)
     assert len(missing)==3,missing
-    build(iter(sample),assets/'printing-catalog.sqlite.gz',minimum=12)
+    build(iter(sample),assets/'printing-catalog.dat',minimum=12)
     (assets/'visual-index.json').write_text(json.dumps({'format':'manavault-visual-v1','cards':[
         {'id':f'p{i}','name':f'Test {i}','f':[0]*192} for i in range(12)
     ]}))

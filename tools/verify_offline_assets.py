@@ -20,7 +20,7 @@ def verify(assets=ASSETS, minimum_printings=100000, minimum_references=12, minim
     assets = Path(assets)
     art_file = assets / 'visual-index.json'
     symbol_file = assets / 'symbol-index.json'
-    db_file = assets / 'printing-catalog.sqlite.gz'
+    db_file = assets / 'printing-catalog.dat'
     problems = []
     artworks = symbols = rows = 0
     try:

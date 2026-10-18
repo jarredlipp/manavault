@@ -84,5 +84,5 @@ def build(catalog,output,max_refs=300,workers=8):
     return len(cards)
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--catalog',default='app/src/main/assets/printing-catalog.sqlite.gz');p.add_argument('--output',default='app/src/main/assets/visual-index.json');p.add_argument('--max',type=int,default=300);p.add_argument('--workers',type=int,default=8);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--catalog',default='app/src/main/assets/printing-catalog.dat');p.add_argument('--output',default='app/src/main/assets/visual-index.json');p.add_argument('--max',type=int,default=300);p.add_argument('--workers',type=int,default=8);a=p.parse_args()
     build(a.catalog,a.output,a.max,a.workers)
