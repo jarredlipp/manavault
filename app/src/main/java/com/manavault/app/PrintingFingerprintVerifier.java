@@ -101,44 +101,60 @@ final class PrintingFingerprintVerifier {
             // token planeswalker with a normal planeswalker of the same name.
             // The two first crops isolate the collector/set row, not copyright
             // notices or power/toughness. They receive both color and enhanced OCR.
-            String[] zones={"footer-left","footer-line","bottom-left","bottom-band",
+            // v5.12.1: the previous fast mode only read two very thin strips
+            // (y=.925-.985). It frequently omitted the actual printed marks
+            // on old frames and lowered-title/full-art treatments. Keep the
+            // first two reads narrow and fast, then use one taller bottom-left
+            // rescue crop if they produced no plausible collector number.
+            String[] zones={"footer-left","footer-line","footer-deep","bottom-band",
                 "bottom-left","bottom-right","type-bar"};
-            float[][] regions={{.020f,.928f,.46f,.058f},{.018f,.925f,.75f,.060f},
-                {.018f,.905f,.48f,.087f},{.018f,.920f,.96f,.073f},
+            float[][] regions={{.025f,.875f,.68f,.115f},{.018f,.930f,.88f,.065f},
+                {.018f,.830f,.72f,.162f},{.018f,.910f,.96f,.085f},
                 {.018f,.865f,.53f,.125f},{.48f,.87f,.50f,.12f},
                 {.035f,.585f,.93f,.095f}};
             for(int zone=0;zone<zones.length;zone++){
-                // A slow ML Kit pass must not monopolize the single snapshot
-                // worker and delay the next card. Missing evidence means review.
-                if(android.os.SystemClock.elapsedRealtime()-started>(fast?1950:6000))break;
-                if(fast && zone>1)break;
+                if(android.os.SystemClock.elapsedRealtime()-started>(fast?1500:6000))break;
+                // The third crop is a fast rescue for older/shifted print
+                // lines. Do not spend six OCR passes on every common card.
+                if(fast && zone>2)break;
+                if(fast && zone==2 && hasFooterIdentifier(lines))break;
                 float[] region=regions[zone];
                 int x=Math.round(card.getWidth()*region[0]);
                 int y=Math.round(card.getHeight()*region[1]);
                 int w=Math.max(1,Math.min(Math.round(card.getWidth()*region[2]),card.getWidth()-x));
                 int h=Math.max(1,Math.min(Math.round(card.getHeight()*region[3]),card.getHeight()-y));
                 Bitmap strip=Bitmap.createBitmap(card,x,y,w,h);
-                // Tiny bottom-border type frequently disappears against dark foil
-                // frames. OCR both the color image and a contrast-equalized copy
-                // on the two footer crops most likely to contain set + number.
-                // Higher-resolution native warps already contain more text pixels.
-                // Enlarge only as much as necessary for ML Kit while avoiding
-                // huge 4x bitmaps and allocations at 1920x1440 capture.
-                int scale=Math.max(1,Math.min(4,Math.min(240/Math.max(1,h),2200/Math.max(1,w))));
+                int scale=Math.max(1,Math.min(4,Math.min(260/Math.max(1,h),2200/Math.max(1,w))));
                 Bitmap enlarged=scale==1?strip:Bitmap.createScaledBitmap(strip,w*scale,h*scale,true);
                 if(enlarged!=strip)strip.recycle();
                 try {
-                    readRegion(reader,enlarged,zones[zone],"color",lines,out,fast?1000:4000);
-                    if((zone==0 || zone==1 || zone==2 || zone==4) &&
-                            android.os.SystemClock.elapsedRealtime()-started<(fast?1100:5200)){
+                    readRegion(reader,enlarged,zones[zone],"color",lines,out,fast?850:4000);
+                    // Contrast rescue only when plain OCR does not find a
+                    // plausible footer mark. No network or reference-image I/O.
+                    if(!hasFooterIdentifier(lines) &&
+                            android.os.SystemClock.elapsedRealtime()-started<(fast?1050:5200)){
                         Bitmap enhanced=CardQuadDetector.enhanceTitle(enlarged);
-                        try{readRegion(reader,enhanced,zones[zone],"contrast",lines,out,fast?1000:4000);}
+                        try{readRegion(reader,enhanced,zones[zone],"contrast",lines,out,fast?850:4000);}
                         finally{enhanced.recycle();}
                     }
                 }finally{enlarged.recycle();}
             }
         }finally{reader.close();card.recycle();}
         return out;
+    }
+
+    /** Avoid extra full-footer OCR when a plausible printing mark is already
+     * visible. This only controls how many regions to read, NOT verification. */
+    private static boolean hasFooterIdentifier(JSONArray lines){
+        for(int i=0;i<lines.length();i++){
+            JSONObject row=lines.optJSONObject(i);
+            if(row==null)continue;
+            String raw=row.optString("text","").toUpperCase(Locale.ROOT);
+            // R 0345 DFT, 143/199 HOU, or C13 046; skip copyright years.
+            if(raw.matches(".*(?:^|[^A-Z0-9])(?:[CMRUT]\\s*)?[0-9]{2,4}(?:\\s*[/]\\s*[0-9]{2,4})?(?:$|[^A-Z0-9]).*")
+                    && !raw.matches(".*\\b(?:19|20)[0-9]{2}\\s+WIZARDS.*"))return true;
+        }
+        return false;
     }
 
     private static void readRegion(TextRecognizer reader, Bitmap image, String zone,

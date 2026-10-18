@@ -1,29 +1,28 @@
-# ManaVault v5.12.0 — Offline reference-matching update
+# ManaVault v5.12.1 — Collector-first printing identification
 
-## What is implemented
+## Changes
 
-- Retains CameraX fixed-stand stack scanning, one-card-at-a-time save receipts, immediate uncertain-printing review, sound after successful saving, and collection/search filters (including creature types).
-- Generates a **native SQLite FTS4 reference-text index** alongside the offline Scryfall printing catalog. It indexes known names, types, rules text, flavor text, and artists for offline candidate lookup. It does **not** transcribe every individual printing image or determine printings by text alone.
-- On uncertain title OCR, makes **one bounded rules-text OCR pass** and compares candidates against that index. A sufficiently corroborated name can proceed to normal collector/set/symbol verification. Contradictory identities remain subject to immediate review.
-- Adds a **128-value contrast-normalized perceptual artwork descriptor** alongside the older RGB thumbnail in newly built Scryfall visual references. It is not a trained neural model. Artwork remains advisory; it cannot distinguish printing variants that share art without additional evidence.
-- Stores each successful scan ID in the **same collection-state write** as the card being saved, reducing replay duplicates after interruption.
-- Uses a new installed-catalog filename to guarantee the richer reference schema is extracted on upgrade. Build verification rejects an old catalog missing the full-text index.
+- Preserve CameraX's fast title recognition and one-card-at-a-time stack workflow.
+- Extend fast printing OCR to the actual lower card border, including older and shifted printing layouts. The first crop now covers 87.5%–99% of card height; a second thin strip and a bottom-left rescue crop cover additional variants.
+- Avoid repeated high-contrast OCR passes when the plain crop already contains plausible footer marks. No additional network requests are introduced.
+- Resolve a printing by a **unique collector number within the independently recognized card's known editions**, only when two separate OCR regions/passes agree and observed set codes do not contradict the printing. Shared numbers, copyright years, and inconsistent evidence remain unverified.
+- Retain fast exact set-code + collector-number verification, immediate review where unavoidable, collection saving before stacking the next card, and the successful-save sound.
+- Expand diagnostics to include footer-deep OCR evidence.
+- Preserve the offline native/IndexedDB catalog fallback and artwork reference cache. This release does **not** claim to repair the separate `IndexedDB fallback: printing-catalog.sqlite.gz` initialization issue seen in the phone logs; the native APK asset needs inspection if it persists.
 
-## Build and test
+## Build
 
-Upload all project files, **including the hidden `.github/workflows/` directory**, into the repository and run **Build ManaVault Android APK**. GitHub downloads Scryfall bulk data and generates the offline database and visual seed. The source ZIP intentionally omits these large generated assets. The new FTS4 catalog may be larger than v5.11.9.
+Upload the entire source tree including the hidden `.github` folder and run the existing GitHub Actions build workflow. The workflow downloads Scryfall data and generates offline catalog and artwork assets. Back up the existing card collection before installing.
 
-Local fixture/runtime tests:
+## Validation
 
-```sh
-python3 tools/check_offline_catalog.py
-node tools/check_reference_match_5120.js
-node tools/check_runtime.js
-node tools/check_catalog_recovery.js
+```bash
+node tools/check_collector_first_5121.js
+node tools/check_scanner.js
 node tools/check_auto_save.js
 node tools/check_fast_scan.js
+node tools/check_catalog_recovery.js
 bash tools/check_stack_gate.sh
-bash tools/check_reference_cache.sh
 ```
 
-**Validation limits:** Source and fixture tests cannot establish Android APK compilation, physical camera recognition rate, phone latency, or trained-model performance. This release does not bundle a third-party app's proprietary classifier or replace the current pipeline with a trained neural embedding network. Do not assume every reprint can be uniquely verified without readable physical evidence. Export your collection backup before installing.
+Local source/fixture tests do not establish Android APK compilation or on-phone OCR accuracy. For a physical check, use a card with a clearly printed collector number plus a previously ambiguous older-frame card. The expected behavior is a unique printing verified without manual review when the physical evidence is sufficient.
