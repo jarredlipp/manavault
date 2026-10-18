@@ -37,6 +37,10 @@ import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
+import androidx.camera.core.FocusMeteringAction;
+import androidx.camera.core.MeteringPoint;
+import androidx.camera.core.ExposureState;
+import android.util.Range;
 import androidx.camera.core.resolutionselector.AspectRatioStrategy;
 import androidx.camera.core.resolutionselector.ResolutionSelector;
 import androidx.camera.core.resolutionselector.ResolutionStrategy;
@@ -58,6 +62,7 @@ import java.util.ArrayList;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** v5.9: native live-edge tracking, artwork-first candidates, OCR fallback, continuous
@@ -197,7 +202,13 @@ public final class NativeScannerActivity extends ComponentActivity {
     private PreviewView preview;
     private CardEdgeOverlay overlay;
     private TextView status,metrics;
-    private Button resolutionButton;
+    private Button resolutionButton,lowLightButton;
+    private static final String LOW_LIGHT_PREF="native_low_light_auto";
+    private boolean autoLowLight=true;
+    private int exposureStep=0;
+    private long exposureChangedAt=0;
+    private int lowLightSamples=0,brightSamples=0;
+    private boolean focusMetered=false;
     private static final String CAMERA_QUALITY_PREF="native_camera_quality";
     private static final int QUALITY_HIGH=0,QUALITY_BALANCED=1,QUALITY_AUTO=2;
     private int cameraQuality=QUALITY_HIGH;
@@ -252,6 +263,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         sessionStart=SystemClock.elapsedRealtime();
         cameraQuality=Math.max(QUALITY_HIGH,Math.min(QUALITY_AUTO,getPreferences(MODE_PRIVATE).getInt(CAMERA_QUALITY_PREF,QUALITY_HIGH)));
+        autoLowLight=getPreferences(MODE_PRIVATE).getBoolean(LOW_LIGHT_PREF,true);
         analysisExecutor.execute(()->{
             try{
                 File[] photos=getCacheDir().listFiles((dir,name)->name.startsWith("native-scan-")&&name.endsWith(".jpg"));
@@ -296,6 +308,26 @@ public final class NativeScannerActivity extends ComponentActivity {
         top.addView(headline);
         metrics=new TextView(this);metrics.setTextColor(0xFFBBDBCC);metrics.setTextSize(11);
         metrics.setText("Camera: awaiting negotiated resolution");top.addView(metrics);
+        // Camera2 auto exposure alone underexposes small dark cards against a
+        // white fixed stand. The optional compensation uses only camera metering,
+        // NOT software gain applied to the saved/visual-matching photograph.
+        lowLightButton=new Button(this);lowLightButton.setAllCaps(false);
+        lowLightButton.setTextSize(10);lowLightButton.setMinWidth(0);lowLightButton.setMinimumWidth(0);
+        lowLightButton.setText(autoLowLight?"Low light: Auto":"Low light: Off");
+        lowLightButton.setOnClickListener(v->{
+            autoLowLight=!autoLowLight;
+            getPreferences(MODE_PRIVATE).edit().putBoolean(LOW_LIGHT_PREF,autoLowLight).apply();
+            lowLightSamples=brightSamples=0;
+            lowLightButton.setText(autoLowLight?"Low light: Auto":"Low light: Off");
+            if(!autoLowLight)applyExposure(0,SystemClock.elapsedRealtime());
+            showMetrics();
+        });
+        LinearLayout options=new LinearLayout(this);options.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
+        options.addView(lowLightButton,new LinearLayout.LayoutParams(dp(124),dp(34)));
+        TextView hint=new TextView(this);hint.setText("Auto exposure · keep card steady");
+        hint.setTextColor(0xFFBBCBBC);hint.setTextSize(10);
+        options.addView(hint,new LinearLayout.LayoutParams(-2,-2));
+        top.addView(options);
         cameraSurface.addView(top,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));
         LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER);
         actions.setPadding(dp(6),dp(8),dp(6),dp(16));actions.setBackgroundColor(0xD0000000);
@@ -432,6 +464,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         activeCropWidth=activeCropHeight=0;
         previous=null;smoothed=null;goodFrames=0;missingFrames=0;
         standZoomEvaluated=false;standZoomApplied=1f;
+        exposureStep=0;exposureChangedAt=0;lowLightSamples=brightSamples=0;focusMetered=false;
         ImageAnalysis analysis=new ImageAnalysis.Builder()
             .setResolutionSelector(selectResolution(quality))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -442,6 +475,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         p.setSurfaceProvider(preview.getSurfaceProvider());
         analysis.setAnalyzer(analysisExecutor,this::analyzeFrame);
         camera=provider.bindToLifecycle(this,CameraSelector.DEFAULT_BACK_CAMERA,p,analysis);
+        exposureStep=camera.getCameraInfo().getExposureState().getExposureCompensationIndex();
     }
     private void startCamera(){
         ListenableFuture<ProcessCameraProvider> future=ProcessCameraProvider.getInstance(this);
@@ -473,6 +507,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             " · upright "+activeUprightWidth+"×"+activeUprightHeight:
             "Camera negotiating ("+qualityLabel()+")";
         String cardInfo=activeCropWidth>0?" · card crop "+activeCropWidth+"×"+activeCropHeight:"";
+        cardInfo+=" · low light "+(autoLowLight?(exposureStep>0?"auto +"+exposureStep:"auto"):"off");
         if(standZoomApplied>1.02f)cardInfo+=" · stand zoom "+String.format(Locale.US,"%.2f",standZoomApplied)+"×";
         String detail=lastTiming.isEmpty()?"": "\n"+lastTiming;
         if(lastArtworkRefs>=0)detail+="\nArtwork library: "+lastArtworkRefs+" bundled/learned · symbol atlas: "+BundledSetSymbols.count()+" sets · cached edition signatures: "+ReferenceFingerprintCache.count();
@@ -507,6 +542,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         standZoomEvaluated=true;
         if(ratio<1.12f)return false;
         standZoomApplied=ratio;
+        focusMetered=false;
         camera.getCameraControl().setZoomRatio(ratio);
         previous=null;smoothed=null;goodFrames=0;missingFrames=0;
         lastRecognitionAt=SystemClock.elapsedRealtime()+450;
@@ -519,7 +555,55 @@ public final class NativeScannerActivity extends ComponentActivity {
             status.setText("Camera flash control unavailable");return;
         }
         torch=!torch;camera.getCameraControl().enableTorch(torch);
+        // Prevent exposure hunting or excessive highlights with the LED on.
+        lowLightSamples=brightSamples=0;
+        if(torch)applyExposure(0,SystemClock.elapsedRealtime());
         torchButton.setText(torch?"Light on":"Light off");
+    }
+    /** AE compensation is a small, bounded camera adjustment, never a filter on
+     * reference artwork. Do not wait on CameraControl's asynchronous future. */
+    private void applyExposure(int requested,long now){
+        Camera active=camera;if(active==null)return;
+        ExposureState state=active.getCameraInfo().getExposureState();
+        if(!state.isExposureCompensationSupported())return;
+        Range<Integer> range=state.getExposureCompensationRange();
+        int next=Math.max(range.getLower(),Math.min(range.getUpper(),requested));
+        if(next==exposureStep)return;
+        exposureStep=next;exposureChangedAt=now;
+        active.getCameraControl().setExposureCompensationIndex(next);
+        // A metering change must not masquerade as a stack transition.
+        lastRecognitionAt=Math.max(lastRecognitionAt,now+350);
+        runOnUiThread(()->{if(!closing)showMetrics();});
+        Log.i(TAG,"Low-light exposure compensation: "+next);
+    }
+    /** A single center-weighted autofocus/metering pass on the fixed stand.
+     * AF still operates normally afterward. Never block image analysis on AF. */
+    private void meterFixedStandOnce(){
+        if(focusMetered||camera==null)return;
+        focusMetered=true;
+        try{
+            MeteringPoint point=preview.getMeteringPointFactory().createPoint(.5f,.54f);
+            FocusMeteringAction action=new FocusMeteringAction.Builder(point,
+                    FocusMeteringAction.FLAG_AF|FocusMeteringAction.FLAG_AE)
+                .setAutoCancelDuration(5,TimeUnit.SECONDS).build();
+            camera.getCameraControl().startFocusAndMetering(action);
+        }catch(Exception e){Log.w(TAG,"Focus/metering request not supported",e);}
+    }
+    /** Evaluate only on a stable detected card. Every exposure change requires
+     * multiple agreeing frames and a cooldown so dark art/glare cannot oscillate
+     * camera exposure and cause accidental duplicate stack scans. */
+    private void adjustLowLight(Bitmap frame,CardQuadDetector.Detection card,long now){
+        if(!autoLowLight||torch||resolutionPending||reviewDialogOpen||waitingForNext||
+           recognizing.get()||camera==null||card==null||goodFrames<2)return;
+        if(now-exposureChangedAt<2400)return;
+        double luminance=regionBrightness(frame,card.corners);
+        if(luminance<0)return;
+        int decision=LowLightPolicy.next(exposureStep,luminance);
+        if(decision>exposureStep){lowLightSamples++;brightSamples=0;
+            if(lowLightSamples>=3){lowLightSamples=0;applyExposure(decision,now);}}
+        else if(decision<exposureStep){brightSamples++;lowLightSamples=0;
+            if(brightSamples>=5){brightSamples=0;applyExposure(decision,now);}}
+        else {lowLightSamples=0;brightSamples=0;}
     }
     private static Bitmap uprightFrame(ImageProxy image){
         java.nio.ByteBuffer buffer=image.getPlanes()[0].getBuffer();buffer.rewind();
@@ -610,7 +694,10 @@ public final class NativeScannerActivity extends ComponentActivity {
         Bitmap frame=null;
         try{
             long now=SystemClock.elapsedRealtime();
-            if(closing||now-lastProcessAt<75)return;
+            // Preview stays live, but do not burn CPU doing full-size edge finding
+            // every 75ms while the resolver or visual picker has the scan lock.
+            int frameInterval=(resolutionPending||reviewDialogOpen)?240:waitingForNext?105:75;
+            if(closing||now-lastProcessAt<frameInterval)return;
             lastProcessAt=now;
             int sensorW=proxy.getWidth(),sensorH=proxy.getHeight();
             if(sensorW!=activeSensorWidth||sensorH!=activeSensorHeight){
@@ -683,6 +770,9 @@ public final class NativeScannerActivity extends ComponentActivity {
                 currentCardBrightness=regionBrightness(frame,smoothed.corners);
             }
             if(good&&smoothed!=null&&adjustFixedStandZoom(smoothed,w,h))return;
+            if(good&&smoothed!=null&&goodFrames>=4&&!focusMetered)
+                runOnUiThread(()->{if(!closing)meterFixedStandOnce();});
+            if(good&&smoothed!=null)adjustLowLight(frame,smoothed,SystemClock.elapsedRealtime());
             boolean stable=good&&goodFrames>=2&&smoothed!=null;
             CardQuadDetector.Detection overlayDetection=smoothed;
             runOnUiThread(()->{if(!closing)overlay.update(overlayDetection,w,h,stable);});

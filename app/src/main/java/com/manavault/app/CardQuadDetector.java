@@ -82,7 +82,10 @@ final class CardQuadDetector {
             Imgproc.resize(rgba, small, new Size(), scale, scale, Imgproc.INTER_AREA);
             Imgproc.cvtColor(small, gray, Imgproc.COLOR_RGBA2GRAY);
             Imgproc.GaussianBlur(gray, blurred, new Size(5, 5), 0);
-            Imgproc.Canny(blurred, edges, 45, 130);
+            // Dark cards against a dark stand need a lower Canny threshold.
+            // Uses the existing 380px image (no extra full-resolution pass).
+            double mean=Core.mean(gray).val[0];
+            Imgproc.Canny(blurred,edges,mean<82?28:45,mean<82?88:130);
             Mat kernel=Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(3,3));
             Imgproc.dilate(edges,edges,kernel);kernel.release();
             Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
@@ -190,7 +193,12 @@ final class CardQuadDetector {
         try {
             Utils.bitmapToMat(title,rgba);
             Imgproc.cvtColor(rgba,gray,Imgproc.COLOR_RGBA2GRAY);
-            org.opencv.imgproc.CLAHE clahe=Imgproc.createCLAHE(2.2,new Size(8,4));
+            // Only the small OCR strip is enhanced, never full-card art or
+            // collector reference photographs. Dark images tend to amplify
+            // sensor noise with standard CLAHE; lightly denoise first.
+            double luma=Core.mean(gray).val[0];
+            if(luma<82)Imgproc.GaussianBlur(gray,gray,new Size(3,3),.65);
+            org.opencv.imgproc.CLAHE clahe=Imgproc.createCLAHE(luma<82?2.7:2.2,new Size(8,4));
             clahe.apply(gray,enhanced);
             clahe.collectGarbage();
             Bitmap output=Bitmap.createBitmap(title.getWidth(),title.getHeight(),Bitmap.Config.ARGB_8888);

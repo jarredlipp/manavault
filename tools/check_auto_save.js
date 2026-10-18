@@ -100,6 +100,23 @@ async function run(expr){return vm.runInContext(expr,context)}
  imageResults=[{id:'a',score:.98},{id:'b',score:.97}];
  result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},1)');
  assert.equal(result.printing?.id,'b','Matching collector number plus printed set code identifies the exact printing');
+ // v5.12.6: exercise the *live resolver*, not just the standalone parser.
+ // Even if artwork would prefer an unrelated printing, structured footer
+ // evidence settles the set, numerator, and denominator first.
+ localCards=[
+  {...printings[0],id:'mh1-86',set:'mh1',collector_number:'86',rarity:'common'},
+  {...printings[0],id:'mh1-191',set:'mh1',collector_number:'191',rarity:'common'},
+  {...printings[1],id:'mh2-254',set:'mh2',collector_number:'254',rarity:'common'}
+ ];
+ printedLines=[{zone:'footer-left',text:'086/254 C',pass:'color'},
+  {zone:'footer-line',text:'MH1 EN',pass:'color'}];
+ imageResults=[{id:'mh2-254',score:.99}];
+ result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:2},1,{liveFast:true})');
+ assert.equal(result.printing?.id,'mh1-86','Live scanner must trust structured MH1 086/254 before artwork');
+ assert.equal(result.method,'structured set + collector numerator');
+ printedLines.push({zone:'footer-deep',text:'MH2 EN',pass:'color'});
+ result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:2},1,{liveFast:true})');
+ assert.ok(!result.printing&&result.reason,'Conflicting printed sets must never auto-verify');
  // Artwork reprints with shared illustration: number + expansion symbol.
  localCards=[printings[0],{...printings[1],illustration_id:'art-1'}];
  printedLines=[{zone:'bottom-left',text:'49',confidence:.9}];
