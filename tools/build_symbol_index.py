@@ -55,7 +55,7 @@ def choose(path,max_sets):
 
 def build(catalog,output,max_sets=240,workers=8):
     selected=choose(catalog,max_sets)
-    session=requests.Session();session.headers['User-Agent']='ManaVault/5.11.5 offline set-symbol reference builder'
+    session=requests.Session();session.headers['User-Agent']='ManaVault/5.11.7 offline set-symbol reference builder'
     def task(item):
         set_code,urls=item;found=[]
         for url in urls:

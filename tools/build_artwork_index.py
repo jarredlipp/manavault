@@ -58,7 +58,7 @@ def build(catalog,output,max_refs=300,workers=8):
     def download(item):
         id,name,set_code,url,art=item
         try:
-            result=requests.get(url,timeout=(10,17),headers={'User-Agent':'ManaVault/5.11.5 artwork reference seed'})
+            result=requests.get(url,timeout=(10,17),headers={'User-Agent':'ManaVault/5.11.7 artwork reference seed'})
             result.raise_for_status()
             if len(result.content)>3_000_000:return None
             with Image.open(BytesIO(result.content)) as image:

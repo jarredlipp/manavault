@@ -1,6 +1,13 @@
-# ManaVault v5.11.6 — Offline Asset Build Repair
+# ManaVault v5.11.7 — Scryfall Bulk-Data Decompression Fix
 
 Android CameraX Magic: The Gathering collection scanner. The app scans the **top card of a stack**. It will not accept the next card until the current card has been verified and saved (success sound), explicitly saved unverified, or resolved/skipped in immediate review.
+
+
+## v5.11.7: Fix for UnicodeDecodeError during asset preparation
+
+The previous GitHub build failed in `tools/build_native_catalog.py` with `UnicodeDecodeError: ... invalid start byte 0x8b`. This happens when the bulk file is gzip-compressed but the JSON parser treats the compressed bytes as UTF-8. The streaming catalog parser now examines the actual first bytes of the downloaded data and transparently decompresses gzip if needed. It supports plain/gzip JSON arrays and plain/gzip JSONL, and explicitly rejects unexpected HTML/error payloads. Downloading, decompression, and catalog creation remain streamed/atomic, so failed builds do not replace valid assets.
+
+The build still creates the SQLite catalog, artwork seed, and symbol library, verifies each, and only then compiles the APK; it does **not** bypass the strict asset check. Unit/regression tests use synthetic payloads and do not replace a real Scryfall download or Android compilation.
 
 ## Build-failure repair
 

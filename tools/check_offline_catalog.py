@@ -2,10 +2,19 @@
 """No-network test of SQLite atomic catalog generation and symbol encoding."""
 import gzip, sqlite3, tempfile, sys, base64
 from pathlib import Path
+# The CI/build installs the real ijson streaming parser. For no-network
+# developer checks, permit a tiny fixture-only stand-in if ijson is absent.
+# Production bulk data still requires ijson and never uses json.load().
+try:
+ import ijson
+except ImportError:
+ import json as _json
+ import types as _types
+ sys.modules['ijson']=_types.SimpleNamespace(items=lambda file,prefix: iter(_json.load(file)))
 from io import BytesIO
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).parent))
-from build_native_catalog import build,collector,normalized
+from build_native_catalog import build,bulk_cards,collector,normalized
 from build_symbol_index import signature
 
 cards=[
@@ -16,6 +25,24 @@ cards=[
 ]
 assert collector('0345')=='345' and collector('T0005')=='t5'
 assert normalized('Far // Away')=='far away'
+# Scryfall delivers a large JSON array, sometimes gzip-wrapped by the CDN.
+# Confirm the builder accepts either form, plus an optional JSONL feed.
+import json
+plain_array=json.dumps(cards).encode('utf8')
+plain_lines=b'\n'.join(json.dumps(card).encode('utf8') for card in cards)+b'\n'
+for label,payload in [
+ ('json-array',plain_array),
+ ('gzip-json-array',gzip.compress(plain_array)),
+ ('jsonl',plain_lines),
+ ('gzip-jsonl',gzip.compress(plain_lines)),
+]:
+ decoded=list(bulk_cards(BytesIO(payload)))
+ assert decoded==cards,f'bulk parsing failed for {label}'
+try:
+ list(bulk_cards(BytesIO(b'<!DOCTYPE html><html>error</html>')))
+ raise AssertionError('Non-JSON bulk response was accepted')
+except ValueError as exc:
+ assert 'not JSON/JSONL' in str(exc)
 with tempfile.TemporaryDirectory() as temp:
  path=Path(temp)/'catalog.sqlite.gz'
  assert build(iter(cards),path,minimum=4)==4
@@ -32,4 +59,4 @@ with tempfile.TemporaryDirectory() as temp:
   for x in range(420,445):image.putpixel((x,y),(5,5,5))
  bio=BytesIO();image.save(bio,format='JPEG')
  encoded=signature(bio.getvalue());assert len(base64.b64decode(encoded))==1728
-print('Offline catalog: atomic build, duplicate printing preservation, indexes and symbol descriptor passed')
+print('Offline catalog: plain/gzip JSON+JSONL streaming, invalid payload rejection, atomic build, duplicate printing preservation, indexes and symbol descriptor passed')

@@ -29,19 +29,32 @@ def record(c):
     return data
 
 def bulk_cards(source):
+    """Stream Scryfall JSON arrays or JSONL, whether raw or gzip-wrapped.
+
+    Scryfall's bulk download may be delivered as a gzip file *in addition to*
+    HTTP Content-Encoding. requests/urllib3 only removes HTTP encoding; its
+    decompressor does not necessarily unwrap a compressed file payload. Sniff
+    the actual bytes instead of relying on the URL suffix or HTTP headers.
+    """
     try:
         import ijson
     except ImportError as e:
         raise SystemExit('Install ijson for streaming the Scryfall bulk file: python -m pip install ijson') from e
-    # Accept both the official JSON array bulk and newline-delimited test input.
     import io
-    if not isinstance(source,io.BufferedReader): source=io.BufferedReader(source,buffer_size=262144)
-    data=source.peek(1024)[:1024]
-    if data.lstrip().startswith(b'['):
-        yield from ijson.items(source,'item')
-    else:
+    if not isinstance(source, io.BufferedReader):
+        source = io.BufferedReader(source, buffer_size=262144)
+    if source.peek(2)[:2] == b'\x1f\x8b':
+        # Keep decompression streaming; never buffer the whole bulk catalog.
+        source = io.BufferedReader(gzip.GzipFile(fileobj=source, mode='rb'), buffer_size=262144)
+    head = source.peek(1024)[:1024].lstrip()
+    if head.startswith(b'['):
+        yield from ijson.items(source, 'item')
+    elif head.startswith(b'{'):
         for line in source:
-            if line.strip():yield json.loads(line)
+            if line.strip():
+                yield json.loads(line)
+    else:
+        raise ValueError('Scryfall bulk response is not JSON/JSONL (raw or gzip); verify the bulk download URL and response')
 
 def build(rows, output, minimum=100000, source_stamp=''):
     output=Path(output);output.parent.mkdir(parents=True, exist_ok=True)
@@ -83,7 +96,7 @@ def main():
         opener=gzip.open if args.input.endswith('.gz') else open
         with opener(args.input,'rb') as stream:build(bulk_cards(stream),args.output,args.min)
     else:
-        session=requests.Session();session.headers['User-Agent']='ManaVault/5.11.5 (offline card index builder)'
+        session=requests.Session();session.headers['User-Agent']='ManaVault/5.11.7 (offline card index builder)'
         meta=session.get('https://api.scryfall.com/bulk-data/default_cards',timeout=30);meta.raise_for_status()
         info=meta.json();url=info.get('download_uri') or info.get('jsonl_download_uri')
         if not url:raise RuntimeError('Missing Scryfall bulk download URI')
