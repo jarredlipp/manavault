@@ -12,18 +12,11 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 /** Auxiliary PRINTING evidence, not a substitute for an identified card title.
@@ -194,131 +187,82 @@ final class PrintingFingerprintVerifier {
         }catch(Exception ignored){/* OCR uncertainty is not a printing identity. */}
     }
 
-    private static final ExecutorService NETWORK=Executors.newFixedThreadPool(4);
-    private static final Map<String,double[]> CACHE=new LinkedHashMap<String,double[]>(64,.75f,true){
-        @Override protected boolean removeEldestEntry(Map.Entry<String,double[]> entry){return size()>64;}
-    };
-    /** Compare only the printed expansion-symbol region, never the card artwork.
-     * A similarity is an uncalibrated score, NOT an identity probability.
-     * Callers must require a unique set and an independently established name.
+    /** Compare the dedicated Scryfall set-icon silhouettes against multiple
+     * locations on the physical type bar. Never wait on an image download from
+     * this scan path; a symbol is supporting evidence and does not replace the
+     * printed collector/set marks or card identity.
      */
     static JSONObject rankSymbols(File photo, JSONObject request) throws Exception {
         JSONObject out=new JSONObject();out.put("requestId",request.optString("requestId",""));
         JSONArray choices=request.optJSONArray("choices");
-        int maxSets=request.optBoolean("offline_only",false)?96:12;
-        if(choices==null||choices.length()<2||choices.length()>maxSets){out.put("error","Unsupported expansion-symbol candidate count");return out;}
-        Bitmap photoCard=BitmapFactory.decodeFile(photo.getAbsolutePath());
-        if(photoCard==null){out.put("error","Captured card image unavailable");return out;}
-        // The printed symbol moves horizontally in older, showcase and token
-        // frames. Compare three bounded X positions against each known set
-        // reference; never compare against card artwork elsewhere.
-        double[][] scanned=new double[3][];
-        try {
-            scanned[0]=symbolSignature(photoCard,.78f);
-            scanned[1]=symbolSignature(photoCard,.82f);
-            scanned[2]=symbolSignature(photoCard,.86f);
-        }finally{photoCard.recycle();}
-        List<Future<JSONObject>> jobs=new ArrayList<>();
-        for(int i=0;i<choices.length();i++){
-            final JSONObject item=choices.optJSONObject(i);
-            jobs.add(NETWORK.submit(new Callable<JSONObject>(){
-                @Override public JSONObject call() throws Exception {
-                    if(item==null)return null;
-                    String set=item.optString("set","");
-                    List<double[]> bundled=BundledSetSymbols.forSet(set);
-                    // Never call the network from the live fast path.
-                    if(bundled==null && request.optBoolean("offline_only",false))return null;
-                    double score=0;
-                    if(bundled!=null){
-                        for(double[] expected:bundled)
-                            for(double[] variant:scanned)score=Math.max(score,similarity(variant,expected));
-                    }else{
-                        String reference=item.optString("image_normal","");
-                        double[] expected=referenceSymbol(reference);
-                        for(double[] variant:scanned)score=Math.max(score,similarity(variant,expected));
-                    }
-                    JSONObject row=new JSONObject();row.put("set",item.optString("set",""));
-                    row.put("score",Math.round(score*10000.)/10000.);
-                    return row;
-                }
-            }));
+        if(choices==null||choices.length()<2||choices.length()>96){
+            out.put("error","Unsupported expansion-symbol candidate count");return out;
         }
-        List<JSONObject> matches=new ArrayList<>();int failed=0;
-        for(Future<JSONObject> job:jobs)try{
-            JSONObject row=job.get(9,TimeUnit.SECONDS);
-            if(row==null)failed++;else matches.add(row);
-        }catch(Exception ex){failed++;job.cancel(true);}
-        matches.sort((a,b)->Double.compare(b.optDouble("score",0),a.optDouble("score",0)));
-        JSONArray ranked=new JSONArray();for(JSONObject match:matches)ranked.put(match);
-        out.put("matches",ranked);out.put("failed",failed);out.put("attempted",choices.length());
+        Bitmap card=BitmapFactory.decodeFile(photo.getAbsolutePath());
+        if(card==null){out.put("error","Captured card image unavailable");return out;}
+        List<byte[]> observed=new ArrayList<>();
+        try {
+            // The printed symbol normally sits toward the right end of the
+            // type line. Search a small bounded neighborhood for frames where
+            // its placement shifts, rather than sampling the entire artwork.
+            float[] xs={.82f,.86f,.90f};
+            float[] ys={.545f,.575f,.605f};
+            float[][] sizes={{.071f,.058f},{.086f,.068f}};
+            for(float x:xs)for(float y:ys)for(float[] size:sizes){
+                byte[] mask=readSymbolMask(card,x,y,size[0],size[1]);
+                if(mask!=null)observed.add(mask);
+            }
+        }finally{card.recycle();}
+        JSONArray ranked=new JSONArray();
+        if(observed.isEmpty()){
+            out.put("matches",ranked);out.put("failed",choices.length());
+            out.put("attempted",choices.length());out.put("error","Set icon not distinguishable in captured type bar");
+            return out;
+        }
+        Map<String,Double> scored=new LinkedHashMap<>();int unavailable=0;
+        for(int i=0;i<choices.length();i++){
+            JSONObject item=choices.optJSONObject(i);
+            if(item==null){unavailable++;continue;}
+            String set=item.optString("set","").toLowerCase(Locale.ROOT);
+            if(scored.containsKey(set))continue;
+            byte[] icon=BundledSetSymbols.icon(set);
+            if(icon==null){unavailable++;continue;}
+            double best=0;
+            for(byte[] mask:observed)best=Math.max(best,SymbolShapeMatcher.score(icon,mask));
+            scored.put(set,best);
+        }
+        List<Map.Entry<String,Double>> sorted=new ArrayList<>(scored.entrySet());
+        sorted.sort((a,b)->Double.compare(b.getValue(),a.getValue()));
+        for(Map.Entry<String,Double> item:sorted){
+            JSONObject row=new JSONObject();row.put("set",item.getKey());
+            row.put("score",Math.round(item.getValue()*10000.)/10000.);ranked.put(row);
+        }
+        out.put("matches",ranked);out.put("failed",unavailable);
+        out.put("attempted",scored.size());out.put("reference","scryfall-svg-icon-v3");
+        out.put("atlasSets",BundledSetSymbols.count());
         return out;
     }
-    private static boolean safe(String path){
-        try {URL url=new URL(path);
-            return url.getProtocol().equals("https")&&url.getHost().equalsIgnoreCase("cards.scryfall.io")&&
-                url.getPath().contains("/normal/");
-        }catch(Exception e){return false;}
-    }
-    private static double[] referenceSymbol(String address) throws Exception {
-        if(!safe(address))throw new SecurityException("Expected an official Scryfall normal card image");
-        synchronized(CACHE){double[] cached=CACHE.get(address);if(cached!=null)return cached;}
-        double[] saved=ReferenceFingerprintCache.get("symbol-v2",address);
-        if(saved!=null){synchronized(CACHE){CACHE.put(address,saved);}return saved;}
-        HttpURLConnection connection=(HttpURLConnection)new URL(address).openConnection();
-        connection.setConnectTimeout(1800);connection.setReadTimeout(2300);
-        connection.setInstanceFollowRedirects(false);
-        connection.setRequestProperty("User-Agent","ManaVault/5.11.1 (printing evidence)");
-        Bitmap reference=null;
+
+    /** A small centered symbol window. Photo grayscale is classified into ink
+     * relative to the type-bar background, so rarity-colored icons remain usable.
+     */
+    private static byte[] readSymbolMask(Bitmap card,float centerX,float centerY,float width,float height){
+        int w=Math.max(1,Math.round(card.getWidth()*width));
+        int h=Math.max(1,Math.round(card.getHeight()*height));
+        int x=Math.max(0,Math.min(card.getWidth()-w,Math.round(card.getWidth()*centerX-w/2f)));
+        int y=Math.max(0,Math.min(card.getHeight()-h,Math.round(card.getHeight()*centerY-h/2f)));
+        Bitmap part=null,scaled=null;
         try{
-            if(connection.getResponseCode()!=200||connection.getContentLengthLong()>4_000_000)
-                throw new java.io.IOException("Expansion symbol reference unavailable");
-            reference=BitmapFactory.decodeStream(connection.getInputStream());
-            if(reference==null)throw new java.io.IOException("Unreadable printing reference");
-            double[] signature=symbolSignature(reference,.82f);
-            synchronized(CACHE){CACHE.put(address,signature);}
-            ReferenceFingerprintCache.put("symbol-v2",address,signature);
-            return signature;
-        }finally{if(reference!=null)reference.recycle();connection.disconnect();}
-    }
-    /** Sample several type-bar placements. The preceding single y=.53 crop
-     * missed modern/token/showcase symbols whenever the type bar shifted.
-     * Only compare the SAME placement against the reference to avoid picking
-     * up an unrelated artwork detail in a different location. */
-    private static double[] symbolSignature(Bitmap card,float xPosition){
-        float[] positions={.515f,.548f,.580f};
-        double[] signatures=new double[positions.length*576];
-        for(int zone=0;zone<positions.length;zone++){
-            int x=Math.round(card.getWidth()*xPosition),y=Math.round(card.getHeight()*positions[zone]);
-            int w=Math.max(1,Math.min(Math.round(card.getWidth()*.16f),card.getWidth()-x));
-            int h=Math.max(1,Math.min(Math.round(card.getHeight()*.075f),card.getHeight()-y));
-            Bitmap roi=Bitmap.createBitmap(card,x,y,w,h);
-            Bitmap scaled=Bitmap.createScaledBitmap(roi,24,24,true);
-            roi.recycle();double average=0;
-            for(int j=0;j<576;j++){
-                int rgb=scaled.getPixel(j%24,j/24);
-                double lum=.299*Color.red(rgb)+.587*Color.green(rgb)+.114*Color.blue(rgb);
-                signatures[zone*576+j]=lum;average+=lum;
+            part=Bitmap.createBitmap(card,x,y,w,h);
+            scaled=Bitmap.createScaledBitmap(part,24,24,true);
+            int[] gray=new int[576];
+            for(int i=0;i<576;i++){
+                int pixel=scaled.getPixel(i%24,i/24);
+                gray[i]=(Color.red(pixel)*299+Color.green(pixel)*587+Color.blue(pixel)*114)/1000;
             }
-            scaled.recycle();average/=576;
-            double sum=0;
-            for(int j=0;j<576;j++){
-                int k=zone*576+j;
-                signatures[k]-=average;sum+=signatures[k]*signatures[k];
-            }
-            double rms=Math.sqrt(sum);
-            if(rms>1e-6)for(int j=0;j<576;j++)signatures[zone*576+j]/=rms;
-        }
-        return signatures;
-    }
-    private static double similarity(double[] a,double[] b){
-        if(a==null||b==null||a.length!=1728||b.length!=1728)return 0;
-        double best=0;
-        for(int region=0;region<3;region++){
-            double dot=0;
-            for(int i=0;i<576;i++)dot+=a[region*576+i]*b[region*576+i];
-            best=Math.max(best,Math.max(0,Math.min(1,(dot+1)/2)));
-        }
-        return best;
+            return SymbolShapeMatcher.extractInk(gray);
+        }catch(Exception ignored){return null;}
+        finally{if(scaled!=null)scaled.recycle();if(part!=null)part.recycle();}
     }
 
 }

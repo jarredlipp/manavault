@@ -106,7 +106,7 @@ const activity=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/a
 assert.match(activity,/readPrintingMarks\(/);
 assert.match(activity,/rankSetSymbols\(/);
 assert.match(marks,/bottom-left/);
-assert.match(marks,/symbolSignature/);
+assert.match(marks,/SymbolShapeMatcher\.score/);
 assert.match(marks,/CardQuadDetector\.enhanceTitle\(enlarged\)/,'Must run contrast-enhanced footer OCR on difficult frames');
 assert.match(html,/mv67ResolveFromPrintedMarks/,'Offline set plus collector fallback missing');
 assert.match(html,/mv67TitleAgrees/,'Independent OCR title corroboration missing');
@@ -137,8 +137,8 @@ const artSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/
 const cacheSource=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/ReferenceFingerprintCache.java'),'utf8');
 assert.match(artSource,/ReferenceFingerprintCache\.get\("art"/, 'Candidate-art cache lookup missing');
 assert.match(artSource,/ReferenceFingerprintCache\.put\("art"/, 'Candidate-art cache persistence missing');
-assert.match(marks,/ReferenceFingerprintCache\.get\("symbol-v2"/, 'Set-symbol cache lookup missing');
-assert.match(marks,/ReferenceFingerprintCache\.put\("symbol-v2"/, 'Set-symbol cache persistence missing');
+assert.match(marks,/BundledSetSymbols\.icon\(set\)/, 'Scryfall set-icon index lookup missing');
+assert.match(marks,/SymbolShapeMatcher\.score/, 'Native offline icon-shape ranker missing');
 assert.match(activity,/ReferenceFingerprintCache\.configure\(getApplicationContext\(\)\)/);
 assert.match(cacheSource,/MAX_FILES = 2500/);
 assert.match(native,/cached edition signatures:/);

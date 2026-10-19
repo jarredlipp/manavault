@@ -12,7 +12,8 @@ assert.match(db,/fastPrintings\(name,limit=2001\)/);
 assert.match(db,/nativeIndex\('setcollector'/);
 assert.match(index,/case \"setcollector\"/); // native named parameter lookup
 assert.match(java,/lookupOfflinePrintings/);
-assert.match(verifier,/request.optBoolean\("offline_only",false\)/);
+assert.match(verifier,/BundledSetSymbols\.icon\(set\)/);
+assert.doesNotMatch(verifier,/new URL\(/, "Live scanner must not fetch symbol references during verification");
 assert.match(js,/offlineOnly:true/);
 assert.match(js,/mv115RankBundledArtwork/);
 assert.match(visual,/Bundled artwork has incomplete candidate coverage/);

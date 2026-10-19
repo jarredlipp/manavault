@@ -18,6 +18,7 @@ final class NativeNameIndex {
     private final Map<String,String> names=new HashMap<>();
     static String norm(String value){
         return Normalizer.normalize(value==null?"":value,Normalizer.Form.NFKD)
+            .replace("Æ","Ae").replace("æ","ae").replace("Œ","Oe").replace("œ","oe")
             .replaceAll("\\p{M}+","").toLowerCase(Locale.ROOT)
             .replaceAll("[^a-z0-9]+"," ").replaceAll("\\s+"," ").trim();
     }
@@ -43,6 +44,16 @@ final class NativeNameIndex {
         final String key=norm(text);
         String known=names.get(key);
         if(known!=null)return known;
+        // Common ML Kit glyph confusions in the PRINTED TITLE only. The
+        // replacement must be an exact indexed name; never fuzzy-accept it.
+        if(key.startsWith("ether ")){
+            known=names.get("a"+key);
+            if(known!=null)return known;
+        }
+        if(key.startsWith("oinvasion ") && key.length()>12){
+            known=names.get(key.substring(1));
+            if(known!=null)return known;
+        }
         // Scryfall's generic catalog/card-names list can omit named tokens.
         // Check the bundled full printing database before treating a clearly
         // read short token title (e.g. Jace) as unknown. This is a name lookup,

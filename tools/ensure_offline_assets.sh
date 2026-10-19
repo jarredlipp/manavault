@@ -17,7 +17,7 @@ VENV="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/manavault-assets-venv"
 if [ ! -x "$VENV/bin/python" ]; then
   python3 -m venv "$VENV"
 fi
-"$VENV/bin/python" -m pip install --disable-pip-version-check --quiet requests pillow ijson
+"$VENV/bin/python" -m pip install --disable-pip-version-check --quiet requests pillow ijson cairosvg
 
 # A missing catalog must be built first; the visual generators read it.
 if [ ! -s app/src/main/assets/printing-catalog.dat ]; then
@@ -56,7 +56,7 @@ except (OSError,ValueError,KeyError,AssertionError):raise SystemExit(1)
 PY
 then
   echo 'ManaVault: generating offline artwork fingerprints...'
-  timeout 600 "$VENV/bin/python" tools/build_artwork_index.py --max 300
+  timeout 600 "$VENV/bin/python" tools/build_artwork_index.py --max 450
 fi
 
 if ! "$VENV/bin/python" - <<'PY'
@@ -64,12 +64,13 @@ import json
 from pathlib import Path
 try:
  p=json.loads(Path('app/src/main/assets/symbol-index.json').read_text())
- assert p['format']=='manavault-symbol-v1' and len(p['sets'])>=12
+ assert p['format']=='manavault-symbol-v3' and len(p['sets'])>=12
+ assert len(p['sets']) >= p['coverage']['icon_eligible']*.85
 except (OSError,ValueError,KeyError,AssertionError):raise SystemExit(1)
 PY
 then
-  echo 'ManaVault: generating offline expansion-symbol fingerprints...'
-  timeout 600 "$VENV/bin/python" tools/build_symbol_index.py --max-sets 240
+  echo 'ManaVault: generating complete Scryfall set-icon silhouettes (SVG)...'
+  timeout 600 "$VENV/bin/python" tools/build_symbol_index.py
 fi
 
 "$VENV/bin/python" tools/verify_offline_assets.py

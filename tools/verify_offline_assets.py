@@ -41,14 +41,23 @@ def verify(assets=ASSETS, minimum_printings=100000, minimum_references=12, minim
     try:
         sym = json.loads(symbol_file.read_text(encoding='utf8'))
         items = sym.get('sets', [])
-        if sym.get('format') != 'manavault-symbol-v1' or not isinstance(items, list):
-            raise ValueError('invalid set-symbol index format')
+        if sym.get('format') != 'manavault-symbol-v3' or not isinstance(items, list):
+            raise ValueError('invalid dedicated Scryfall set-icon index version')
+        coverage = sym.get('coverage') or {}
+        eligible = coverage.get('icon_eligible', 0)
+        if not isinstance(eligible, int) or eligible < minimum_references:
+            raise ValueError('missing physical-set coverage inventory')
+        if len(items) / eligible < .85:
+            raise ValueError(f'only {len(items)} of {eligible} available Scryfall set icons were generated')
+        seen = set()
         for item in items:
-            if not isinstance(item, dict) or not item.get('set') or not isinstance(item.get('f'), list) or not item['f']:
-                raise ValueError('missing expansion symbol group')
-            for sig in item['f']:
-                if len(base64.b64decode(sig, validate=True)) != 1728:
-                    raise ValueError('symbol fingerprint must contain 1728 bytes')
+            if not isinstance(item, dict) or not isinstance(item.get('set'), str) or not isinstance(item.get('shape'), str):
+                raise ValueError('missing Scryfall expansion icon reference')
+            if item['set'] in seen:
+                raise ValueError('duplicate expansion icon entry')
+            seen.add(item['set'])
+            if len(base64.b64decode(item['shape'], validate=True)) != 576:
+                raise ValueError('SVG-derived set-icon mask must contain 576 bytes')
         symbols = len(items)
         if symbols < minimum_references:
             problems.append(f'symbol index contains {symbols} sets (minimum {minimum_references})')

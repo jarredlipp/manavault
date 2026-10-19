@@ -15,7 +15,7 @@ from io import BytesIO
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).parent))
 from build_native_catalog import build,bulk_cards,collector,normalized,download_bulk_to_file
-from build_symbol_index import signature
+from build_symbol_index import icon_mask
 
 cards=[
  {'id':'printing1','name':'Webstrike Elite','set':'dft','collector_number':'0345','illustration_id':'art-a','oracle_id':'oracle-a','oracle_text':'When you cycle this card destroy target artifact or enchantment', 'type_line':'Creature — Insect Archer','lang':'en','image_uris':{'normal':'https://cards.scryfall.io/normal/front/0/0/a.jpg'}},
@@ -119,9 +119,6 @@ with tempfile.TemporaryDirectory() as temp:
  assert con.execute("SELECT COUNT(*) FROM reference_fts WHERE reference_fts MATCH 'sacrifices AND return'").fetchone()[0]==1
  assert con.execute("SELECT COUNT(*) FROM reference_fts WHERE reference_fts MATCH 'artifact AND enchantment'").fetchone()[0]==1
  con.close()
- image=Image.new('RGB',(488,680),(240,240,240))
- for y in range(350,390):
-  for x in range(420,445):image.putpixel((x,y),(5,5,5))
- bio=BytesIO();image.save(bio,format='JPEG')
- encoded=signature(bio.getvalue());assert len(base64.b64decode(encoded))==1728
+ shape=b'<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><path d="M10 10 L90 50 L10 90 Z" fill="black" /></svg>'
+ encoded=icon_mask(shape);assert len(base64.b64decode(encoded))==576
 print('Offline catalog: network-response-safe spooling, plain/gzip JSON+JSONL streaming, invalid payload rejection, atomic build, duplicate printing preservation, indexes and symbol descriptor passed')

@@ -62,7 +62,7 @@ def crop_reference_art(image):
     return full.crop((round(width*.09),round(height*.15),
                       round(width*.91),round(height*.49)))
 
-def build(catalog,output,max_refs=300,workers=8):
+def build(catalog,output,max_refs=450,workers=8):
     chosen=names(catalog_cards(catalog),max_refs)
     def download(item):
         id,name,set_code,url,art=item
@@ -97,5 +97,5 @@ def build(catalog,output,max_refs=300,workers=8):
     return len(cards)
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--catalog',default='app/src/main/assets/printing-catalog.dat');p.add_argument('--output',default='app/src/main/assets/visual-index.json');p.add_argument('--max',type=int,default=300);p.add_argument('--workers',type=int,default=8);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--catalog',default='app/src/main/assets/printing-catalog.dat');p.add_argument('--output',default='app/src/main/assets/visual-index.json');p.add_argument('--max',type=int,default=450);p.add_argument('--workers',type=int,default=8);a=p.parse_args()
     build(a.catalog,a.output,a.max,a.workers)

@@ -1,6 +1,15 @@
-# ManaVault v5.12.10
+# ManaVault v5.12.12
 
 Android source for a local Magic: The Gathering collection manager, CameraX fixed-stand stack scanner, and Commander deck studio.
+
+## v5.12.12 dedicated Scryfall set-symbol atlas
+
+- **Complete eligible set coverage, not a 280-set cap.** At APK build time, `tools/build_symbol_index.py` obtains set metadata and `icon_svg_uri` from the official **Scryfall Sets API** for every set occurring in the bundled native printing catalog. The icon SVGs are rendered to compact 24×24 silhouette masks (576 bytes per set) and stored in `symbol-index.json`. A minimum of 85% of eligible SVG icons must be generated or the build fails explicitly. Asset verification also rejects partial catalogs and superseded v2 indexes.
+- **Offline symbol-first fallback.** The native scanner searches a small bounded set-symbol area on the type line, comparing color-independent silhouettes of physically observed icons with the candidate-set library. It does not download reference images during the scan. Symbols rank candidate sets but cannot by themselves distinguish visually identical symbols or printings. Strong, uniquely ranked symbol evidence must still satisfy the existing independent card-identity and printing safeguards.
+- **Coverage auditing against Draftsim:** The [Draftsim set-symbol page](https://draftsim.com/mtg-set-symbols/) is a *human audit reference*, not an image source. Generated `symbol-index.json` includes `coverage.missing_set_codes` and `coverage.failed_icons` for manual cross-checking against Draftsim; no Draftsim page images are embedded or redistributed.
+- The camera diagnostics now distinguish `Scryfall symbol icons: loaded/eligible physical sets` from the separate artwork-index count. Real-device symbol accuracy and full GitHub/Scryfall asset download are still unverified. Older core sets without a distinctive icon or number must remain eligible for manual confirmation rather than a guessed printing.
+
+**Build:** The GitHub workflow and Gradle pre-build both generate and verify the Scryfall catalog, dedicated icon atlas, and artwork seed. SVG rendering requires `cairosvg` (installed in the build virtual environment). A missing or incomplete download fails the build rather than shipping a fake or tiny atlas. Run `python3 tools/check_symbol_atlas_51212.py`, `python3 tools/check_symbol_shape_java_51212.py`, and `python3 tools/check_symbol_focus_51211.py` for no-network fixture regression checks.
 
 ## Commander deck studio
 
@@ -13,6 +22,14 @@ Android source for a local Magic: The Gathering collection manager, CameraX fixe
 Saved decks can be edited as text, added to through **Search any legal card**, exported as a decklist, and compared against owned quantities. **Building a deck never adds cards to the physical collection.** A catalog-powered build requires an internet connection at creation time; saved lists remain editable offline. Every generated deck is a *suggested starting point*: verify Commander legality, land balance, and power level before playing.
 
 Suggested additions for existing decks explain *why* they match the commander's abilities. Card color identity, banned printings, off-color lands with basic land types, tokens, and singleton rules are considered. Cards with printed multiple-copy exemptions can still be used in owned-card starters.
+
+## v5.12.11 orientation, title and offline visual improvements
+
+- Landscape-oriented stacked battle cards are checked at 90°/270° before scanning their sideways rules text.
+- Wider 21.3%-height, 95.6%-width title OCR captures two-line showcase names such as Webstrike Elite.
+- Title-only exact alias recovery for Æther/Aether/Ether and isolated leading OCR glyphs on Invasion; no fuzzy auto-identification.
+- Fully offline set-symbol ranking uses narrower, better aligned type-bar templates from up to 280 sets in the superseded v5.12.11 format. The generated atlas is v2 and the build automatically replaces older references.
+- Artwork seed expanded from 300 to 450 candidate illustrations; with all competing references present, a highly distinctive bundled illustration can support unique printing selection even when footer OCR fails; indistinguishable reprints still require review.
 
 ## v5.12.10 scanner identification and review reduction
 

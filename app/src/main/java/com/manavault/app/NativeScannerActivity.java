@@ -510,7 +510,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         cardInfo+=" · low light "+(autoLowLight?(exposureStep>0?"auto +"+exposureStep:"auto"):"off");
         if(standZoomApplied>1.02f)cardInfo+=" · stand zoom "+String.format(Locale.US,"%.2f",standZoomApplied)+"×";
         String detail=lastTiming.isEmpty()?"": "\n"+lastTiming;
-        if(lastArtworkRefs>=0)detail+="\nArtwork library: "+lastArtworkRefs+" bundled/learned · symbol atlas: "+BundledSetSymbols.count()+" sets · cached edition signatures: "+ReferenceFingerprintCache.count();
+        if(lastArtworkRefs>=0)detail+="\nArtwork library: "+lastArtworkRefs+" bundled/learned · Scryfall symbol icons: "+BundledSetSymbols.count()+"/"+BundledSetSymbols.eligibleCount()+" physical sets · cached edition signatures: "+ReferenceFingerprintCache.count();
         metrics.setText(cameraInfo+cardInfo+detail);
     }
     /** Apply ONE conservative sensor zoom per scanner session, not one per card.
@@ -822,7 +822,15 @@ public final class NativeScannerActivity extends ComponentActivity {
             if(old!=null&&old!=corrected&&!old.isRecycled())old.recycle();
             begin=SystemClock.elapsedRealtime();
             VisualMatcher v=visual;
-            VisualMatcher.Match candidate=v==null?null:v.match(corrected);
+            // The perspective rectifier ALWAYS outputs portrait dimensions,
+            // even when the physical card was sideways. Check the detected
+            // outer border BEFORE rectification to avoid comparing a sideways
+            // battle/split card to a portrait artwork template.
+            android.graphics.PointF[] corners=smoothed.corners;
+            double topEdge=Math.hypot(corners[1].x-corners[0].x,corners[1].y-corners[0].y);
+            double sideEdge=Math.hypot(corners[3].x-corners[0].x,corners[3].y-corners[0].y);
+            boolean wasSideways=topEdge>sideEdge*1.12;
+            VisualMatcher.Match candidate=v==null||wasSideways?null:v.match(corrected);
             lastArtMs=SystemClock.elapsedRealtime()-begin;
             if(candidate!=null&&candidate.usable()){
                 enqueue(candidate.name,"artwork",candidate.similarity,candidate.id,corrected,hash);
@@ -839,15 +847,27 @@ public final class NativeScannerActivity extends ComponentActivity {
         return Bitmap.createBitmap(source,0,0,source.getWidth(),source.getHeight(),m,true);
     }
     private static Bitmap titleImage(Bitmap card){
-        int x=Math.round(card.getWidth()*.055f),y=Math.round(card.getHeight()*.022f);
-        int w=Math.round(card.getWidth()*.88f),h=Math.round(card.getHeight()*.155f);
+        // Include the entire two-line display-name area of alternate frames
+        // (e.g. WEBSTRIKE / ELITE). Cropping 88% x 15.5% clipped the second
+        // line and sometimes the first letter of edge-aligned titles.
+        int x=Math.round(card.getWidth()*.022f),y=Math.round(card.getHeight()*.012f);
+        int w=Math.round(card.getWidth()*.956f),h=Math.round(card.getHeight()*.213f);
         Bitmap strip=Bitmap.createBitmap(card,x,y,Math.min(w,card.getWidth()-x),Math.min(h,card.getHeight()-y));
         Bitmap enhanced=CardQuadDetector.enhanceTitle(strip);strip.recycle();
         Bitmap upscaled=Bitmap.createScaledBitmap(enhanced,enhanced.getWidth()*2,enhanced.getHeight()*2,true);
         enhanced.recycle();return upscaled;
     }
+    private static int stripHeight(Text text){
+        int bottom=1;
+        for(Text.TextBlock block:text.getTextBlocks())for(Text.Line line:block.getLines()){
+            android.graphics.Rect rect=line.getBoundingBox();
+            if(rect!=null)bottom=Math.max(bottom,rect.bottom);
+        }
+        return bottom;
+    }
     private static String selectTitle(Text text){
         String best="";float top=-999;
+        final int normalizedHeight=stripHeight(text);
         for(Text.TextBlock block:text.getTextBlocks())for(Text.Line line:block.getLines()){
             String value=line.getText().trim().replaceAll("\\s+"," ");
             String letters=value.replaceAll("[^\\p{L}]","");
@@ -856,6 +876,13 @@ public final class NativeScannerActivity extends ComponentActivity {
             if(value.matches("(?i)^(enchantment|creature|artifact|land|instant|sorcery|aura|legendary)(\\s+(aura|creature|artifact|land))?$"))continue;
             if(letters.matches("(?i).*(.)\\1{4,}.*"))continue;
             float score=letters.length()-Math.max(0,value.length()-letters.length())*1.3f;
+            // A longer piece of rules or artwork text in the expanded crop
+            // must not outscore a short actual title at the top.
+            android.graphics.Rect bounds=line.getBoundingBox();
+            if(bounds!=null){
+                float position=bounds.centerY()/(float)Math.max(1,normalizedHeight);
+                score+=Math.max(-14f,9f-32f*position);
+            }
             if(line.getConfidence()>0)score+=line.getConfidence()*4;
             if(score>top){top=score;best=value;}
         }
@@ -878,6 +905,9 @@ public final class NativeScannerActivity extends ComponentActivity {
         }
         return null;
     }
+    static int[] titleRotationOrder(int width,int height){
+        return width>height*1.12f ? new int[]{90,270,0,180} : new int[]{0,180,90,270};
+    }
     /** Search all four orientations BEFORE committing an unknown OCR title.
      * A battle or split card turned sideways can have readable rules text in
      * the title strip while its actual title is in a later rotation. */
@@ -887,7 +917,10 @@ public final class NativeScannerActivity extends ComponentActivity {
     private void readTitle(Bitmap card,long hash,int rotationIndex,long began,
             String tentative,int tentativeRotation){
         if(closing){recognizing.set(false);return;}
-        int[] rotations={0,180,90,270};
+        // The rectifier already returns a portrait-shaped image, including
+        // sideways battles. Try upright and upside-down title strips before
+        // the final perpendicular rescue orientations.
+        int[] rotations=titleRotationOrder(card.getWidth(),card.getHeight());
         Bitmap rotated=rotate(card,rotations[rotationIndex]);
         Bitmap strip=titleImage(rotated);
         recognizer.process(InputImage.fromBitmap(strip,0)).addOnCompleteListener(task->{

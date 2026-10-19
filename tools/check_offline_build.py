@@ -27,9 +27,9 @@ with tempfile.TemporaryDirectory() as d:
     (assets/'visual-index.json').write_text(json.dumps({'format':'manavault-visual-v2','cards':[
         {'id':f'p{i}','name':f'Test {i}','f':[0]*192} for i in range(12)
     ]}))
-    sig=base64.b64encode(bytes([1]*1728)).decode('ascii')
-    (assets/'symbol-index.json').write_text(json.dumps({'format':'manavault-symbol-v1','sets':[
-        {'set':f's{i}','f':[sig]} for i in range(12)
+    sig=base64.b64encode(bytes([255]*576)).decode('ascii')
+    (assets/'symbol-index.json').write_text(json.dumps({'format':'manavault-symbol-v3','coverage':{'icon_eligible':12},'sets':[
+        {'set':f's{i}','shape':sig} for i in range(12)
     ]}))
     errors,data=verify(assets,12,12,0)
     assert not errors,errors
@@ -40,11 +40,11 @@ with tempfile.TemporaryDirectory() as d:
     (assets/'visual-index.json').write_text(json.dumps({'format':'manavault-visual-v2','cards':[
         {'id':f'p{i}','name':f'Test {i}','f':[0]*192} for i in range(12)
     ]}))
-    (assets/'symbol-index.json').write_text(json.dumps({'format':'manavault-symbol-v1','sets':[
-        {'set':f's{i}','f':['AA==']} for i in range(12)
+    (assets/'symbol-index.json').write_text(json.dumps({'format':'manavault-symbol-v3','coverage':{'icon_eligible':12},'sets':[
+        {'set':f's{i}','shape':'AA=='} for i in range(12)
     ]}))
     errors,_=verify(assets,12,12,0)
-    assert any('1728 bytes' in x for x in errors),errors
+    assert any('576 bytes' in x for x in errors),errors
 
 project=Path(__file__).resolve().parent.parent
 buildgradle=(project/'app/build.gradle').read_text()
