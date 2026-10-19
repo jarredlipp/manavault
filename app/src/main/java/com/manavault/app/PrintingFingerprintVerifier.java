@@ -205,8 +205,15 @@ final class PrintingFingerprintVerifier {
         if(choices==null||choices.length()<2||choices.length()>maxSets){out.put("error","Unsupported expansion-symbol candidate count");return out;}
         Bitmap photoCard=BitmapFactory.decodeFile(photo.getAbsolutePath());
         if(photoCard==null){out.put("error","Captured card image unavailable");return out;}
-        double[] scanned;
-        try {scanned=symbolSignature(photoCard);}finally{photoCard.recycle();}
+        // The printed symbol moves horizontally in older, showcase and token
+        // frames. Compare three bounded X positions against each known set
+        // reference; never compare against card artwork elsewhere.
+        double[][] scanned=new double[3][];
+        try {
+            scanned[0]=symbolSignature(photoCard,.78f);
+            scanned[1]=symbolSignature(photoCard,.82f);
+            scanned[2]=symbolSignature(photoCard,.86f);
+        }finally{photoCard.recycle();}
         List<Future<JSONObject>> jobs=new ArrayList<>();
         for(int i=0;i<choices.length();i++){
             final JSONObject item=choices.optJSONObject(i);
@@ -219,10 +226,12 @@ final class PrintingFingerprintVerifier {
                     if(bundled==null && request.optBoolean("offline_only",false))return null;
                     double score=0;
                     if(bundled!=null){
-                        for(double[] expected:bundled)score=Math.max(score,similarity(scanned,expected));
+                        for(double[] expected:bundled)
+                            for(double[] variant:scanned)score=Math.max(score,similarity(variant,expected));
                     }else{
                         String reference=item.optString("image_normal","");
-                        score=similarity(scanned,referenceSymbol(reference));
+                        double[] expected=referenceSymbol(reference);
+                        for(double[] variant:scanned)score=Math.max(score,similarity(variant,expected));
                     }
                     JSONObject row=new JSONObject();row.put("set",item.optString("set",""));
                     row.put("score",Math.round(score*10000.)/10000.);
@@ -261,7 +270,7 @@ final class PrintingFingerprintVerifier {
                 throw new java.io.IOException("Expansion symbol reference unavailable");
             reference=BitmapFactory.decodeStream(connection.getInputStream());
             if(reference==null)throw new java.io.IOException("Unreadable printing reference");
-            double[] signature=symbolSignature(reference);
+            double[] signature=symbolSignature(reference,.82f);
             synchronized(CACHE){CACHE.put(address,signature);}
             ReferenceFingerprintCache.put("symbol-v2",address,signature);
             return signature;
@@ -271,11 +280,11 @@ final class PrintingFingerprintVerifier {
      * missed modern/token/showcase symbols whenever the type bar shifted.
      * Only compare the SAME placement against the reference to avoid picking
      * up an unrelated artwork detail in a different location. */
-    private static double[] symbolSignature(Bitmap card){
+    private static double[] symbolSignature(Bitmap card,float xPosition){
         float[] positions={.515f,.548f,.580f};
         double[] signatures=new double[positions.length*576];
         for(int zone=0;zone<positions.length;zone++){
-            int x=Math.round(card.getWidth()*.82f),y=Math.round(card.getHeight()*positions[zone]);
+            int x=Math.round(card.getWidth()*xPosition),y=Math.round(card.getHeight()*positions[zone]);
             int w=Math.max(1,Math.min(Math.round(card.getWidth()*.16f),card.getWidth()-x));
             int h=Math.max(1,Math.min(Math.round(card.getHeight()*.075f),card.getHeight()-y));
             Bitmap roi=Bitmap.createBitmap(card,x,y,w,h);

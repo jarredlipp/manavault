@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as d:
     missing,_=verify(assets,12,12,0)
     assert len(missing)==3,missing
     build(iter(sample),assets/'printing-catalog.dat',minimum=12)
-    (assets/'visual-index.json').write_text(json.dumps({'format':'manavault-visual-v1','cards':[
+    (assets/'visual-index.json').write_text(json.dumps({'format':'manavault-visual-v2','cards':[
         {'id':f'p{i}','name':f'Test {i}','f':[0]*192} for i in range(12)
     ]}))
     sig=base64.b64encode(bytes([1]*1728)).decode('ascii')
@@ -34,10 +34,10 @@ with tempfile.TemporaryDirectory() as d:
     errors,data=verify(assets,12,12,0)
     assert not errors,errors
     assert data=={'printings':12,'artworks':12,'sets':12},data
-    (assets/'visual-index.json').write_text('{"format":"manavault-visual-v1","cards":[]}')
+    (assets/'visual-index.json').write_text('{"format":"manavault-visual-v2","cards":[]}')
     errors,_=verify(assets,12,12,0)
     assert any('artwork index contains 0' in x for x in errors),errors
-    (assets/'visual-index.json').write_text(json.dumps({'format':'manavault-visual-v1','cards':[
+    (assets/'visual-index.json').write_text(json.dumps({'format':'manavault-visual-v2','cards':[
         {'id':f'p{i}','name':f'Test {i}','f':[0]*192} for i in range(12)
     ]}))
     (assets/'symbol-index.json').write_text(json.dumps({'format':'manavault-symbol-v1','sets':[

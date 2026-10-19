@@ -12,7 +12,7 @@ from io import BytesIO
 import requests
 from PIL import Image
 
-PRIORITY=('dft','hou','stx','war','m19','ktk','bfz','akh','dom','mom','eld','dsk','wot','fin','vow','ogw','c17','c18','tsr','ody','nem','inv','ons','mmq','ulg','7ed','8ed','9ed','10e','m10','m11','m12','m13','m14','m15')
+PRIORITY=('mh1','roe','tdm','mkm','dft','hou','stx','war','m19','ktk','bfz','akh','dom','mom','eld','dsk','wot','fin','vow','ogw','c17','c18','tsr','ody','nem','inv','ons','mmq','ulg','2ed','3ed','4ed','5ed','6ed','7ed','8ed','9ed','10e','m10','m11','m12','m13','m14','m15')
 
 def signature(data):
     img=Image.open(BytesIO(data)).convert('RGB')

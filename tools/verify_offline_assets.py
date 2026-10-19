@@ -26,7 +26,7 @@ def verify(assets=ASSETS, minimum_printings=100000, minimum_references=12, minim
     try:
         art = json.loads(art_file.read_text(encoding='utf8'))
         items = art.get('cards', [])
-        if art.get('format') != 'manavault-visual-v1' or not isinstance(items, list):
+        if art.get('format') != 'manavault-visual-v2' or not isinstance(items, list):
             raise ValueError('invalid artwork index format')
         for card in items:
             if not isinstance(card, dict) or not isinstance(card.get('f'), list) or len(card['f']) != 192:

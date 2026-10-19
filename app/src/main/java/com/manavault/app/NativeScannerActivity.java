@@ -724,7 +724,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             // When an inner artwork rectangle suddenly replaces a large established card,
             // discard that reading rather than moving the visible outline into artwork.
             if(good&&smoothed!=null&&goodFrames>=3&&
-                    detected.areaFraction<smoothed.areaFraction*.72f&&
+                    detected.areaFraction<smoothed.areaFraction*.86f&&
                     SystemClock.elapsedRealtime()-lastGoodAt<500)good=false;
             if(good){
                 missingSince=0;changedEmptyFrames=0;
@@ -878,7 +878,14 @@ public final class NativeScannerActivity extends ComponentActivity {
         }
         return null;
     }
+    /** Search all four orientations BEFORE committing an unknown OCR title.
+     * A battle or split card turned sideways can have readable rules text in
+     * the title strip while its actual title is in a later rotation. */
     private void readTitle(Bitmap card,long hash,int rotationIndex,long began){
+        readTitle(card,hash,rotationIndex,began,null,0);
+    }
+    private void readTitle(Bitmap card,long hash,int rotationIndex,long began,
+            String tentative,int tentativeRotation){
         if(closing){recognizing.set(false);return;}
         int[] rotations={0,180,90,270};
         Bitmap rotated=rotate(card,rotations[rotationIndex]);
@@ -889,51 +896,57 @@ public final class NativeScannerActivity extends ComponentActivity {
                 name=selectTitle(task.getResult());
                 String paired=indexedTwoLineTitle(task.getResult(),names);
                 if(paired!=null)name=paired;
-            }
-            else Log.w(TAG,"ML Kit title read failed",task.getException());
+            }else Log.w(TAG,"ML Kit title read failed",task.getException());
             strip.recycle();if(rotated!=card)rotated.recycle();
             if(closing){recognizing.set(false);return;}
-            if(!name.isEmpty()){
+            NativeNameIndex index=names;
+            String canonical=name.isEmpty()?null:index==null?null:index.exact(name);
+            if(canonical!=null){
                 lastOcrMs=SystemClock.elapsedRealtime()-began;
-                String normalized=name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");
+                previousOcr=canonical.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");
+                previousOcrCount=Math.max(1,previousOcrCount+1);
+                lastSeenTitle=canonical;
+                if(rotationIndex==0 && visual!=null && !waitingForNext){
+                    Bitmap art=VisualMatcher.artRegion(card);
+                    byte[] features=VisualMatcher.fingerprint(art);art.recycle();
+                    final VisualMatcher matcher=visual;
+                    referenceExecutor.execute(()->matcher.learnObservedName(canonical,features));
+                }
+                enqueue(canonical,"ocr-exact",1f,null,card,hash,rotations[rotationIndex]);
+                recognizing.set(false);return;
+            }
+            // Prefer a plausible title from the first orientation, but don't
+            // stop searching for an indexed title on a rotated card.
+            String current=name.replaceAll("\\s+"," ").trim();
+            String bestTentative=tentative;
+            int bestRotation=tentativeRotation;
+            if(!current.isEmpty() && current.length()>=3 && current.length()<=55 &&
+                    (bestTentative==null || (current.length()>bestTentative.length() &&
+                    current.replaceAll("[^\\p{L}]","").length()>=3))){
+                bestTentative=current;bestRotation=rotationIndex;
+            }
+            if(rotationIndex<3){
+                readTitle(card,hash,rotationIndex+1,began,bestTentative,bestRotation);
+                return;
+            }
+            lastOcrMs=SystemClock.elapsedRealtime()-began;
+            if(bestTentative!=null){
+                String normalized=bestTentative.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");
                 if(normalized.equals(previousOcr))previousOcrCount++;
                 else{previousOcr=normalized;previousOcrCount=1;}
-                NativeNameIndex index=names;
-                String canonical=index==null?null:index.exact(name);
-                lastSeenTitle=canonical!=null?canonical:name;
-                final String current=lastSeenTitle;
-                runOnUiThread(()->{
-                    if(!closing){
-                        status.setText("OCR candidate: "+current+" · "+previousOcrCount+" read(s) · "+captured.size()+" queued");
-                        keepButton.setEnabled(true);
-                        lastTiming="Edge "+lastEdgeMs+" ms · warp "+lastWarpMs+" ms · art "+lastArtMs+" ms · OCR "+lastOcrMs+" ms";showMetrics();
-                    }
-                });
-                // Exact canonical names bypass the repeated OCR wait. For an
-                // unknown or incomplete catalog, retain two-read protection.
-                if(canonical!=null){
-                    // Learn only safely oriented, exact catalog-title scans. A name
-                    // fingerprint is NOT a verified printing (the ID stays empty).
-                    if(rotationIndex==0 && visual!=null && !waitingForNext){
-                        Bitmap art=VisualMatcher.artRegion(card);
-                        byte[] features=VisualMatcher.fingerprint(art);
-                        art.recycle();
-                        final VisualMatcher matcher=visual;
-                        final String observedName=canonical;
-                        referenceExecutor.execute(()->matcher.learnObservedName(observedName,features));
-                    }
-                    enqueue(canonical,"ocr-exact",1f,null,card,hash,rotations[rotationIndex]);
-                }
-                // A stable but imperfect title is still a useful scan. Queue it
-                // for the catalog's fuzzy name matcher after two independent
-                // camera reads; NEVER treat it as an exact printing identity.
-                else if(previousOcrCount>=(normalized.length()<5?3:2) && normalized.length()>=3 &&
+                lastSeenTitle=bestTentative;
+                final String candidateTitle=bestTentative;
+                runOnUiThread(()->{if(!closing){
+                    status.setText("OCR candidate: "+candidateTitle+" · "+previousOcrCount+" read(s)");
+                    keepButton.setEnabled(true);showMetrics();
+                }});
+                // A short name like JACE must reach the title-correction
+                // gallery, never be discarded solely due to length.
+                if(previousOcrCount>=2 && normalized.length()>=3 &&
                         !normalized.matches(".*(.)\\1{4,}.*"))
-                    enqueue(name,"ocr-candidate",0,null,card,hash,rotations[rotationIndex]);
-                recognizing.set(false);
-            }else if(rotationIndex<3){
-                readTitle(card,hash,rotationIndex+1,began);
-            }else{recognizing.set(false);}
+                    enqueue(bestTentative,"ocr-candidate",0,null,card,hash,rotations[bestRotation]);
+            }
+            recognizing.set(false);
         });
     }
     /** Called on analyzer or ML Kit callback thread. Store each capture once,

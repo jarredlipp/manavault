@@ -57,7 +57,7 @@ final class CardQuadDetector {
                         for(int i=0;i<4;i++)corners[i]=new PointF(d.corners[i].x+x,d.corners[i].y+y);
                         float area=d.areaFraction*(r-x)*(b-y)/(float)(image.getWidth()*image.getHeight());
                         Detection candidate=new Detection(corners,d.confidence,area);
-                        if(area>hint.areaFraction*.74f&&area<hint.areaFraction*1.30f &&
+                        if(area>hint.areaFraction*.86f&&area<hint.areaFraction*1.22f &&
                             distance(candidate,hint,image.getWidth(),image.getHeight())<.075f)
                             return candidate;
                     }
@@ -88,7 +88,8 @@ final class CardQuadDetector {
             Imgproc.Canny(blurred,edges,mean<82?28:45,mean<82?88:130);
             Mat kernel=Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(3,3));
             Imgproc.dilate(edges,edges,kernel);kernel.release();
-            Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+            Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
+            byte[] edgePixels=new byte[(int)edges.total()];edges.get(0,0,edgePixels);
             double frameArea = small.rows() * small.cols();
             double bestScore = -1;
             Detection best = null;
@@ -121,6 +122,11 @@ final class CardQuadDetector {
                 double rectangularity = area / Math.max(1, ((a+c)/2)*((b+d)/2));
                 if (rectangularity < .78 || rectangularity > 1.20) continue;
                 double fraction = area/frameArea;
+                // A card often has a second rectangular frame INSIDE it: the
+                // illustration. If a bigger, parallel rectangular perimeter
+                // is visible 5-15% outside this candidate, it is not the card
+                // border. This doesn't require dark borders or extra OCR.
+                if(hasEnclosingCardEdge(edgePixels,edges.cols(),edges.rows(),ordered))continue;
                 // Prefer the outer card border; do not reward small intricate inner rectangles.
                 double score = fraction * 2.8 - Math.abs(aspect - 88.0/63.0) * .65
                         - Math.abs(1-rectangularity) * .22;
@@ -144,6 +150,38 @@ final class CardQuadDetector {
         }
     }
 
+    /** Detect a distinct larger rectangular outline enclosing an artwork box.
+     * Sample a few expansions of the proposed quadrilateral; only reject when
+     * opposite outer sides have strong Canny support. This is intentionally
+     * conservative for black cards on dark tabletops. */
+    static boolean hasEnclosingCardEdge(byte[] pixels,int width,int height, Point[] quad){
+        for(double scale:new double[]{1.07,1.12,1.17}){
+            double cx=0,cy=0;for(Point q:quad){cx+=q.x*.25;cy+=q.y*.25;}
+            Point[] outer=new Point[4];boolean onScreen=true;
+            for(int i=0;i<4;i++){
+                double x=cx+(quad[i].x-cx)*scale,y=cy+(quad[i].y-cy)*scale;
+                outer[i]=new Point(x,y);
+                if(x<3||y<3||x>=width-3||y>=height-3)onScreen=false;
+            }
+            if(!onScreen)continue;
+            int strong=0;
+            for(int side=0;side<4;side++){
+                Point a=outer[side],b=outer[(side+1)%4];int pixels=0;
+                for(int i=1;i<=24;i++){
+                    int x=(int)Math.round(a.x+(b.x-a.x)*i/25.0);
+                    int y=(int)Math.round(a.y+(b.y-a.y)*i/25.0);
+                    boolean edge=false;
+                    for(int dy=-2;dy<=2&&!edge;dy++)for(int dx=-2;dx<=2;dx++){
+                        if(pixels[(y+dy)*width+x+dx]!=0){edge=true;break;}
+                    }
+                    if(edge)pixels++;
+                }
+                if(pixels>=12)strong++;
+            }
+            if(strong>=3)return true;
+        }
+        return false;
+    }
     private static double length(Point a, Point b) {return Math.hypot(a.x-b.x,a.y-b.y);}
     private static Point[] order(Point[] points) {
         if (points.length!=4) return null;

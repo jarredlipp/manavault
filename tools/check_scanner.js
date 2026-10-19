@@ -68,7 +68,7 @@ assert.doesNotMatch(html,/\bconst info=c=>/, 'Fatal const reassignment regressio
 const indexFile=path.join(root,'app/src/main/assets/visual-index.json');
 assert.ok(fs.existsSync(indexFile),'Artwork index asset must exist (even when empty)');
 const visualIndex=JSON.parse(fs.readFileSync(indexFile,'utf8'));
-assert.equal(visualIndex.format,'manavault-visual-v1');
+assert.ok(['manavault-visual-v1','manavault-visual-v2'].includes(visualIndex.format));
 assert.ok(Array.isArray(visualIndex.cards));
 for (const card of visualIndex.cards){
   assert.equal(card.f.length,192,'Incorrect artwork fingerprint length');

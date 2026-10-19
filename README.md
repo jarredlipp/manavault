@@ -1,18 +1,25 @@
-# ManaVault v5.12.6
+# ManaVault v5.12.8
 
-Android source project for continuous, one-card-at-a-time stack scanning. Native CameraX performs detection and footer OCR; a local, evidence-aware printing resolver matches scanned marks against Scryfall printing records before a collection save. The scanner confirms saved cards with its success sound, then accepts the next card on the stack.
+Android source for a local Magic: The Gathering collection manager, CameraX fixed-stand stack scanner, and Commander deck studio.
 
-## Changes in 5.12.6
+## Commander deck studio
 
-- **Universal structured footer evidence:** parses collector number, slash-separated set total, candidate printed set code, rarity and language independently. A footer such as `086/254 C` plus `MH1 EN` means **set MH1, collector 086, set total 254, rarity common, English**; `254` is not an alternate collector number.
-- **Set-first exact-printing resolution:** narrows the already recognized card's editions to the physically observed set, then matches the collector numerator. Supports code and number across different native OCR lines/regions.
-- **No wasted artwork checks on proven printings:** a unique, noncontradictory local set/collector match is returned before expansion-symbol or artwork matching. Strong evidence of conflicting sets, incompatible rarity or multiple identical printing identifiers still requires the immediate visual review.
-- **Older cards:** the existing offline expansion-symbol and artwork fallback remains in place for cards without usable collector numbers; set-only lookup cannot guess between multiple same-set printings.
-- **Clearer diagnostics:** logs structured set, collector, denominator, rarity, language, and the reason for verification or review.
-- Existing low-light Auto/Off, high-resolution CameraX, stack-change detection, immediate on-camera review, translucent success confirmation, search filters, and transactional scan receipts are preserved.
+**Create from any Commander** searches Scryfall for an eligible commander, whether or not you own it. Choose one of three starting points:
 
-## Tests and build
+- **Generate from catalog:** looks up legal Scryfall cards, ranks them using the commander's rules text (artifacts, energy, Vehicles, spells, tokens, counters, sacrifice, graveyard, creature tribe, etc.), then suggests a Commander deck with 63 nonlands and 36 lands when sufficient matches are available.
+- **Use owned cards:** builds a starter list from unallocated physical cards in the collection and flags incomplete decks.
+- **Start blank:** creates an editable deck with the commander selected but no other cards.
 
-Run `node tools/check_structured_footer_5126.js` and `node tools/check_auto_save.js` to verify both the parser and the real live-resolution path. Additional scanner, catalog, stack-gate, offline-reference and UI regressions are in `tools/` and the GitHub Actions workflow.
+Saved decks can be edited as text, added to through **Search any legal card**, exported as a decklist, and compared against owned quantities. **Building a deck never adds cards to the physical collection.** A catalog-powered build requires an internet connection at creation time; saved lists remain editable offline. Every generated deck is a *suggested starting point*: verify Commander legality, land balance, and power level before playing.
 
-Build through `.github/workflows/build-apk.yml` (include hidden `.github`). Generated Scryfall SQLite and compact reference assets are created at build time. Android compilation, actual phone-image OCR quality, and runtime scanning speed are **not verified in this environment**. Back up your collection before installing.
+Suggested additions for existing decks explain *why* they match the commander's abilities. Card color identity, banned printings, off-color lands with basic land types, tokens, and singleton rules are considered. Cards with printed multiple-copy exemptions can still be used in owned-card starters.
+
+## Camera and printing recognition
+
+Retains v5.12.7 card-edge improvements, 1920×1440 CameraX high-resolution option, fixed-stand stack detection, live collection writes and save sounds, low-light controls, printing footer parsing, symbol/artwork references, and immediate ambiguous-printing review. The camera code is not modified by the deck studio update.
+
+## Build and tests
+
+Include hidden `.github/workflows/build-apk.yml` when uploading the source to GitHub. The workflow generates the packaged Scryfall catalog and visual reference assets before building the Android APK. Those large generated databases are not in this source ZIP.
+
+Run `node tools/check_deck_intelligence_5128.js`, `node tools/check_commander_creator_5128.js`, and the existing `node tools/check_*.js` checks. Android compilation, real-camera recognition accuracy, and the new deck interface on a device are **not yet independently verified**. Back up your collection before installing a newly built APK.

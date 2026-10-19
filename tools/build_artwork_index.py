@@ -22,6 +22,8 @@ IMPORTANT_NAMES='''Forest Plains Island Swamp Mountain'''.split() + [
 'Enigma Drake','Ultros, Obnoxious Octopus','Skymarch Bloodletter',
 'Rakdos Shred-Freak','Knightly Valor','Deep Reconnaissance','Bloodied Ghost',
 'Prismite','Aether Adept','Joyful Stormsculptor','Bloodfire Expert',
+'Jace','Invasion of Muraganda // Primordial Plasm','Hada Spy Patrol',
+'Living Lands','Stillness in Motion','Webstrike Elite','Fanatic of Xenagos',
 ]
 
 def names(records,max_refs):
@@ -53,6 +55,13 @@ def catalog_cards(path):
                 yield json.loads(raw)
             db.close()
 
+def crop_reference_art(image):
+    '''Match VisualMatcher.artRegion() coordinates on the Android card crop.'''
+    full=image.convert('RGB')
+    width,height=full.size
+    return full.crop((round(width*.09),round(height*.15),
+                      round(width*.91),round(height*.49)))
+
 def build(catalog,output,max_refs=300,workers=8):
     chosen=names(catalog_cards(catalog),max_refs)
     def download(item):
@@ -62,7 +71,11 @@ def build(catalog,output,max_refs=300,workers=8):
             result.raise_for_status()
             if len(result.content)>3_000_000:return None
             with Image.open(BytesIO(result.content)) as image:
-                bitmap=image.convert('RGB').resize((8,8),Image.Resampling.BILINEAR)
+                # image_url is a *full card*, while VisualMatcher.artRegion()
+                # fingerprints only x=9%-91%, y=15%-49%. Matching a card-art
+                # crop against a whole-card thumbnail made every score poor.
+                image=crop_reference_art(image)
+                bitmap=image.resize((8,8),Image.Resampling.BILINEAR)
                 rgb=[v for pixel in bitmap.getdata() for v in pixel]
                 details=image.convert('RGB').resize((16,8),Image.Resampling.BILINEAR)
                 brightness=[(r*299+g*587+b*114)/1000 for r,g,b in details.getdata()]
@@ -78,7 +91,7 @@ def build(catalog,output,max_refs=300,workers=8):
     if len(cards)<12:raise ValueError('Insufficient artwork references; refusing broken seed index')
     path=Path(output);path.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.NamedTemporaryFile('w',encoding='utf8',dir=path.parent,delete=False) as tmp:
-        json.dump({'format':'manavault-visual-v1','cards':cards},tmp,separators=(',',':'));stage=tmp.name
+        json.dump({'format':'manavault-visual-v2','cards':cards},tmp,separators=(',',':'));stage=tmp.name
     os.replace(stage,path)
     print('Bundled artwork fingerprints:',len(cards),'of',len(chosen),'attempted')
     return len(cards)

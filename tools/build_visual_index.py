@@ -39,8 +39,11 @@ def main():
             if not path.exists():
                 r=requests.get(url,timeout=40,headers={'User-Agent':'ManaVaultVisualIndexer/0.4 (personal MTG scanner)'})
                 r.raise_for_status();path.write_bytes(r.content)
-            im=Image.open(path).convert('RGB').resize((8,8),Image.Resampling.BILINEAR)
-            features=[value for pixel in im.getdata() for value in pixel]
+            im=Image.open(path).convert('RGB')
+            # Optional import uses the same physical artwork window as CameraX.
+            w,h=im.size
+            im=im.crop((round(w*.09),round(h*.15),round(w*.91),round(h*.49)))
+            features=[value for pixel in im.resize((8,8),Image.Resampling.BILINEAR).getdata() for value in pixel]
             return {'name':c['name'],'id':c.get('id'),'set':c.get('set'),'f':features}
         except Exception as e:
             return ('error',c.get('name'),str(e))
@@ -53,6 +56,6 @@ def main():
                 if errors<=15:print('Skipped',result[1],result[2],flush=True)
             if len(out)>0 and len(out)%1000==0:print('Indexed',len(out),'failed',errors,flush=True)
     print('Finished artwork extraction:',len(out),'failed',errors,flush=True)
-    Path(args.output).write_text(json.dumps({'format':'manavault-visual-v1','cards':out},separators=(',',':')))
+    Path(args.output).write_text(json.dumps({'format':'manavault-visual-v2','cards':out},separators=(',',':')))
     print('Saved',len(out),'references to',args.output)
 if __name__=='__main__':main()

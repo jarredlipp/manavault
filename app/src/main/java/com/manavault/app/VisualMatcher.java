@@ -56,7 +56,7 @@ final class VisualMatcher {
         Entry(String name,String id,String illustrationId,byte[] values){this.name=name;this.id=id;this.illustrationId=illustrationId;this.f=values;}
     }
     VisualMatcher(Context context){
-        learnedFile=new File(context.getFilesDir(),"learned-artwork-v59.json");
+        learnedFile=new File(context.getFilesDir(),"learned-artwork-v5127.json");
         observedFile=new File(context.getFilesDir(),"observed-artwork-v5104.json");
         try(InputStream in=context.getAssets().open("visual-index.json")){
             byte[] bytes=readLimited(in,28_000_000);
@@ -261,11 +261,22 @@ final class VisualMatcher {
                 if(conn.getResponseCode()!=200||conn.getContentLengthLong()>3_000_000)return false;
                 try(InputStream in=conn.getInputStream()) {bitmap=BitmapFactory.decodeStream(in);}
                 if(bitmap==null)return false;
-                Entry entry=new Entry(name,id,fingerprint(bitmap));entries.add(entry);learned.add(entry);cache.clear();
+                // Reference URLs contain the FULL card. A previously learned
+                // fingerprint used that full image, but scans use artRegion().
+                // Keep all learned, bundled and scanned descriptors aligned.
+                Bitmap crop=artRegion(bitmap);
+                Entry entry;
+                try{
+                    entry=new Entry(name,id,fingerprint(crop));
+                    entry.e=perceptualDescriptor(crop);
+                }finally{crop.recycle();}
+                entries.add(entry);learned.add(entry);cache.clear();
                 while(learned.size()>MAX_LEARNED){Entry removed=learned.remove(0);entries.remove(removed);}
                 JSONArray arr=new JSONArray();
                 for(Entry item:learned){JSONObject o=new JSONObject();o.put("name",item.name);o.put("id",item.id);
-                    JSONArray f=new JSONArray();for(byte b:item.f)f.put(b&255);o.put("f",f);arr.put(o);}
+                    JSONArray f=new JSONArray();for(byte b:item.f)f.put(b&255);o.put("f",f);
+                    if(item.e!=null){JSONArray e=new JSONArray();for(byte b:item.e)e.put(b&255);o.put("e",e);}
+                    arr.put(o);}
                 File temp=new File(learnedFile.getParentFile(),"learned-artwork-v59.tmp");
                 try(FileOutputStream out=new FileOutputStream(temp)){out.write(arr.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
                 if(!temp.renameTo(learnedFile))Log.w(TAG,"Unable to persist updated artwork cache");

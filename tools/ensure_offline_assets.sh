@@ -51,7 +51,7 @@ import json
 from pathlib import Path
 try:
  p=json.loads(Path('app/src/main/assets/visual-index.json').read_text())
- assert p['format']=='manavault-visual-v1' and len(p['cards'])>=12
+ assert p['format']=='manavault-visual-v2' and len(p['cards'])>=12
 except (OSError,ValueError,KeyError,AssertionError):raise SystemExit(1)
 PY
 then
