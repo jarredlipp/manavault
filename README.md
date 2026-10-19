@@ -1,4 +1,4 @@
-# ManaVault v5.12.8
+# ManaVault v5.12.9
 
 Android source for a local Magic: The Gathering collection manager, CameraX fixed-stand stack scanner, and Commander deck studio.
 
@@ -17,6 +17,19 @@ Suggested additions for existing decks explain *why* they match the commander's 
 ## Camera and printing recognition
 
 Retains v5.12.7 card-edge improvements, 1920×1440 CameraX high-resolution option, fixed-stand stack detection, live collection writes and save sounds, low-light controls, printing footer parsing, symbol/artwork references, and immediate ambiguous-printing review. The camera code is not modified by the deck studio update.
+
+## v5.12.9 Java build repair
+
+Fixes the `CardQuadDetector.java` compiler errors (`int pixels` shadowed the
+`byte[] pixels` edge image, resulting in "array required, but int found"). The
+border detector now uses `edgeHits` for its side-support counter and retains
+the pixel array for lookup. The GitHub workflow runs a fast Java source smoke
+test **before** downloading the offline card catalog, so errors in this detector
+are caught early. The smoke test uses lightweight Android/OpenCV API stubs and
+does not replace a full Android compilation.
+
+The v5.12.8 Commander Studio features and scanner behavior are otherwise
+unchanged.
 
 ## Build and tests
 

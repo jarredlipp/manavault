@@ -166,7 +166,7 @@ final class CardQuadDetector {
             if(!onScreen)continue;
             int strong=0;
             for(int side=0;side<4;side++){
-                Point a=outer[side],b=outer[(side+1)%4];int pixels=0;
+                Point a=outer[side],b=outer[(side+1)%4];int edgeHits=0;
                 for(int i=1;i<=24;i++){
                     int x=(int)Math.round(a.x+(b.x-a.x)*i/25.0);
                     int y=(int)Math.round(a.y+(b.y-a.y)*i/25.0);
@@ -174,9 +174,9 @@ final class CardQuadDetector {
                     for(int dy=-2;dy<=2&&!edge;dy++)for(int dx=-2;dx<=2;dx++){
                         if(pixels[(y+dy)*width+x+dx]!=0){edge=true;break;}
                     }
-                    if(edge)pixels++;
+                    if(edge)edgeHits++;
                 }
-                if(pixels>=12)strong++;
+                if(edgeHits>=12)strong++;
             }
             if(strong>=3)return true;
         }
