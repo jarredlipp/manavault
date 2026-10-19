@@ -32,9 +32,13 @@ public class MainActivity extends Activity {
     private static final int CAMERA_REQUEST = 40;
     private static final int FILE_REQUEST = 41;
     private static final int NATIVE_SCANNER_REQUEST = 42;
+    private static final int BACKUP_DOCUMENT_REQUEST = 43;
     private WebView webView;
     private PermissionRequest pendingCameraRequest;
     private ValueCallback<Uri[]> fileCallback;
+    private final ExecutorService backupExecutor = Executors.newSingleThreadExecutor();
+    private String pendingBackupJson;
+    private boolean backupInProgress;
     private final ExecutorService artworkExecutor = Executors.newSingleThreadExecutor();
     // Collector OCR must NEVER queue behind Scryfall artwork downloads.
     private final ExecutorService printingEvidenceExecutor = Executors.newSingleThreadExecutor();
@@ -133,6 +137,71 @@ public class MainActivity extends Activity {
         startActivityForResult(new Intent(this,NativeScannerActivity.class),NATIVE_SCANNER_REQUEST);
     }
 
+    /** Use Android's Storage Access Framework; WebView blob: downloads are not reliable.
+     * Report success only after the saved JSON can be read back byte-for-byte. */
+    private void exportBackupWithPicker(String json, String filename) {
+        if (backupInProgress) {
+            backupResult(false, "A backup is already in progress. Finish or cancel that save first.");
+            return;
+        }
+        try {
+            if (json == null || json.trim().isEmpty()) throw new IllegalArgumentException("No collection data was received.");
+            org.json.JSONObject snapshot = new org.json.JSONObject(json);
+            if (!(snapshot.opt("cards") instanceof org.json.JSONArray))
+                throw new IllegalArgumentException("Collection data is invalid; nothing was exported.");
+            NativeBackupWriter.validateSize(json);
+            String safeName = NativeBackupWriter.safeFilename(filename);
+            Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            create.addCategory(Intent.CATEGORY_OPENABLE);
+            create.setType("application/json");
+            create.putExtra(Intent.EXTRA_TITLE, safeName);
+            pendingBackupJson = json;
+            backupInProgress = true;
+            startActivityForResult(create, BACKUP_DOCUMENT_REQUEST);
+        } catch (Exception e) {
+            pendingBackupJson = null;
+            backupInProgress = false;
+            backupResult(false, "Backup could not start: " + e.getMessage());
+        }
+    }
+
+    private void backupResult(boolean success, String message) {
+        Log.i("ManaVaultBackup", (success ? "Verified backup: " : "Backup not saved: ") + message);
+        if (webView != null) webView.evaluateJavascript(
+            "window.mvBackupExportResult && window.mvBackupExportResult(" +
+            "{\"ok\":" + success + ",\"message\":" + JSONObject.quote(message) + "})", null);
+        if (!isFinishing()) Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+
+    private void finishBackup(Uri destination, String snapshot) {
+        if (destination == null || snapshot == null) {
+            backupInProgress = false;
+            backupResult(false, "No file was saved. Your collection is unchanged.");
+            return;
+        }
+        backupExecutor.execute(() -> {
+            boolean ok = false;
+            String message;
+            try {
+                final byte[] payload = snapshot.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                long written = NativeBackupWriter.writeAndVerify(payload,
+                    () -> getContentResolver().openOutputStream(destination, "wt"),
+                    () -> getContentResolver().openInputStream(destination));
+                ok = true;
+                message = "Backup saved and verified (" + (written / 1024) + " KB). Keep the JSON file safe.";
+            } catch (Exception e) {
+                Log.e("ManaVaultBackup", "Could not verify backup", e);
+                message = "Backup NOT verified: " + e.getMessage() + ". Do not delete or reinstall ManaVault.";
+            }
+            final boolean done = ok;
+            final String report = message;
+            runOnUiThread(() -> {
+                backupInProgress = false;
+                backupResult(done, report);
+            });
+        });
+    }
+
     private void cameraEvent(String message) {
         Log.d("ManaVaultCamera", message);
         if (webView != null) webView.post(() -> webView.evaluateJavascript(
@@ -148,6 +217,9 @@ public class MainActivity extends Activity {
         webView = new WebView(this);
         // Index is loaded lazily after the first confirmed printing; never block app launch.
         webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface public void exportBackup(String json, String filename) {
+                runOnUiThread(() -> exportBackupWithPicker(json, filename));
+            }
             @JavascriptInterface public void shareLog(String text) {
                 runOnUiThread(() -> {
                     try {
@@ -166,7 +238,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.12.12"; }
+            @JavascriptInterface public String version() { return "5.12.16"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
             @JavascriptInterface public void scanProgress(String payload){
                 try{NativeScannerActivity.receiveLiveProgress(new JSONObject(payload));}
@@ -375,7 +447,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.12.12 · CameraX");
+        versionLabel.setText("ManaVault 5.12.16 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
@@ -480,6 +552,17 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == BACKUP_DOCUMENT_REQUEST) {
+            final String snapshot = pendingBackupJson;
+            pendingBackupJson = null;
+            if (resultCode == RESULT_OK && data != null && data.getData() != null)
+                finishBackup(data.getData(), snapshot);
+            else {
+                backupInProgress = false;
+                backupResult(false, "Backup cancelled. No collection data was deleted.");
+            }
+            return;
+        }
         if (requestCode == NATIVE_SCANNER_REQUEST) nativeScannerOpen=false;
         if (requestCode == NATIVE_SCANNER_REQUEST && resultCode == RESULT_OK && data != null) {
             String packed = data.getStringExtra("scan_results");
@@ -530,6 +613,7 @@ public class MainActivity extends Activity {
         printingEvidenceExecutor.shutdownNow();
         metadataExecutor.shutdownNow();
         indexExecutor.shutdownNow();
+        backupExecutor.shutdownNow();
         webView.destroy();webView=null;
         super.onDestroy();
     }

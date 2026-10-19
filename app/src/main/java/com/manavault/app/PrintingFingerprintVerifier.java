@@ -205,9 +205,12 @@ final class PrintingFingerprintVerifier {
             // The printed symbol normally sits toward the right end of the
             // type line. Search a small bounded neighborhood for frames where
             // its placement shifts, rather than sampling the entire artwork.
-            float[] xs={.82f,.86f,.90f};
-            float[] ys={.545f,.575f,.605f};
-            float[][] sizes={{.071f,.058f},{.086f,.068f}};
+            // The type-line icon moves on older frames and premium card
+            // treatments. Sample nearby sizes and centers; confidence is
+            // still evaluated against every plausible competing set icon.
+            float[] xs={.80f,.84f,.88f,.92f};
+            float[] ys={.505f,.545f,.585f,.625f};
+            float[][] sizes={{.068f,.055f},{.086f,.070f}};
             for(float x:xs)for(float y:ys)for(float[] size:sizes){
                 byte[] mask=readSymbolMask(card,x,y,size[0],size[1]);
                 if(mask!=null)observed.add(mask);

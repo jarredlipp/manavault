@@ -39,7 +39,10 @@ final class CardEdgeOverlay extends View {
         float horizontal=(float)Math.hypot(q[1].x-q[0].x,q[1].y-q[0].y);
         float vertical=(float)Math.hypot(q[3].x-q[0].x,q[3].y-q[0].y);
         PointF[] upright=horizontal>vertical?new PointF[]{q[3],q[0],q[1],q[2]}:q;
-        PointF[] region={at(upright,.055f,.025f),at(upright,.84f,.025f),at(upright,.84f,.125f),at(upright,.055f,.125f)};
+        // Match the actual native title OCR region. The old guide ended at
+        // 12.5% of the card height and visibly cut across WEBSTRIKE / ELITE.
+        PointF[] region={at(upright,.022f,.012f),at(upright,.978f,.012f),
+            at(upright,.978f,.247f),at(upright,.022f,.247f)};
         Path titlePath=new Path();titlePath.moveTo(region[0].x,region[0].y);
         for(int i=1;i<4;i++)titlePath.lineTo(region[i].x,region[i].y);
         titlePath.close();canvas.drawPath(titlePath,title);

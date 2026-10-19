@@ -56,7 +56,7 @@ final class VisualMatcher {
         Entry(String name,String id,String illustrationId,byte[] values){this.name=name;this.id=id;this.illustrationId=illustrationId;this.f=values;}
     }
     VisualMatcher(Context context){
-        learnedFile=new File(context.getFilesDir(),"learned-artwork-v5127.json");
+        learnedFile=new File(context.getFilesDir(),"learned-artwork-v51214.json");
         observedFile=new File(context.getFilesDir(),"observed-artwork-v5104.json");
         try(InputStream in=context.getAssets().open("visual-index.json")){
             byte[] bytes=readLimited(in,28_000_000);
@@ -264,12 +264,16 @@ final class VisualMatcher {
                 // Reference URLs contain the FULL card. A previously learned
                 // fingerprint used that full image, but scans use artRegion().
                 // Keep all learned, bundled and scanned descriptors aligned.
-                Bitmap crop=artRegion(bitmap);
+                // Scryfall /normal/ and /large/ URLs contain an entire card,
+                // while /art_crop/ contains only the illustration. Cropping an
+                // art_crop a second time silently corrupts learned signatures.
+                boolean artOnly=uri.getPath().contains("/art_crop/");
+                Bitmap crop=artOnly?bitmap:artRegion(bitmap);
                 Entry entry;
                 try{
                     entry=new Entry(name,id,fingerprint(crop));
                     entry.e=perceptualDescriptor(crop);
-                }finally{crop.recycle();}
+                }finally{if(crop!=bitmap)crop.recycle();}
                 entries.add(entry);learned.add(entry);cache.clear();
                 while(learned.size()>MAX_LEARNED){Entry removed=learned.remove(0);entries.remove(removed);}
                 JSONArray arr=new JSONArray();

@@ -11,7 +11,7 @@ import requests
 from PIL import Image
 
 IMPORTANT_NAMES='''Forest Plains Island Swamp Mountain'''.split() + [
-'Webstrike Elite','Light of Day','River Hoopoe','Read the Bones','Professor of Zoomancy',
+'Webstrike Elite','Light of Day','River Hoopoe','Soul-Guide Lantern','Compulsion','Lone Wolf','Arbor Elf','Forest','Rakdos Shred-Freak','Read the Bones','Professor of Zoomancy',
 'Far // Away','Never // Return','Tuinvale Treefolk // Oaken Boon','Rosethorn Acolyte // Seasonal Ritual',
 'Desperate Farmer // Depraved Harvester','Fugitive Codebreaker','Jolting Merfolk',
 'Sliver Hivelord','Sliver Legion','Sliver Overlord','Sliver Gravemother',
@@ -31,7 +31,9 @@ def names(records,max_refs):
     grouped=defaultdict(dict);frequency=Counter()
     for c in records:
         name=c.get('name','');key=c.get('nameKey','');art=c.get('illustration_id') or ''
-        image=c.get('image_url') or ''
+        # Scryfall image_url is art_crop; use the full-card normal image
+        # so the reference and photographed card use identical geometry.
+        image=c.get('image_normal') or c.get('image_small') or c.get('image_url') or ''
         if not name or not key or not art or not image.startswith('https://cards.scryfall.io/'):
             continue
         if c.get('digital') or c.get('lang') not in (None,'en'):continue
@@ -62,6 +64,11 @@ def crop_reference_art(image):
     return full.crop((round(width*.09),round(height*.15),
                       round(width*.91),round(height*.49)))
 
+def reference_art_region(image,url):
+    if '/art_crop/' in url:
+        return image.convert('RGB')
+    return crop_reference_art(image)
+
 def build(catalog,output,max_refs=450,workers=8):
     chosen=names(catalog_cards(catalog),max_refs)
     def download(item):
@@ -71,10 +78,10 @@ def build(catalog,output,max_refs=450,workers=8):
             result.raise_for_status()
             if len(result.content)>3_000_000:return None
             with Image.open(BytesIO(result.content)) as image:
-                # image_url is a *full card*, while VisualMatcher.artRegion()
-                # fingerprints only x=9%-91%, y=15%-49%. Matching a card-art
-                # crop against a whole-card thumbnail made every score poor.
-                image=crop_reference_art(image)
+                # Full-card /normal/ and /small/ images must be cropped once.
+                # A fallback /art_crop/ is already cropped and must not be
+                # cropped again. The app normally supplies /normal/.
+                image=reference_art_region(image,url)
                 bitmap=image.resize((8,8),Image.Resampling.BILINEAR)
                 rgb=[v for pixel in bitmap.getdata() for v in pixel]
                 details=image.convert('RGB').resize((16,8),Image.Resampling.BILINEAR)

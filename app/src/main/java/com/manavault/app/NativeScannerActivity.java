@@ -846,16 +846,18 @@ public final class NativeScannerActivity extends ComponentActivity {
         Matrix m=new Matrix();m.postRotate(degrees);
         return Bitmap.createBitmap(source,0,0,source.getWidth(),source.getHeight(),m,true);
     }
-    private static Bitmap titleImage(Bitmap card){
+    private static Bitmap titleImage(Bitmap card,boolean enhancedPass){
         // Include the entire two-line display-name area of alternate frames
         // (e.g. WEBSTRIKE / ELITE). Cropping 88% x 15.5% clipped the second
         // line and sometimes the first letter of edge-aligned titles.
         int x=Math.round(card.getWidth()*.022f),y=Math.round(card.getHeight()*.012f);
-        int w=Math.round(card.getWidth()*.956f),h=Math.round(card.getHeight()*.213f);
+        int w=Math.round(card.getWidth()*.956f),h=Math.round(card.getHeight()*.235f);
         Bitmap strip=Bitmap.createBitmap(card,x,y,Math.min(w,card.getWidth()-x),Math.min(h,card.getHeight()-y));
-        Bitmap enhanced=CardQuadDetector.enhanceTitle(strip);strip.recycle();
-        Bitmap upscaled=Bitmap.createScaledBitmap(enhanced,enhanced.getWidth()*2,enhanced.getHeight()*2,true);
-        enhanced.recycle();return upscaled;
+        // The adaptive contrast pass can erase pale/outlined lettering on
+        // alternate frames. Keep a COLOR rescue pass for those title fonts.
+        Bitmap prepared=enhancedPass?CardQuadDetector.enhanceTitle(strip):strip;
+        Bitmap upscaled=Bitmap.createScaledBitmap(prepared,prepared.getWidth()*2,prepared.getHeight()*2,true);
+        if(prepared!=strip)prepared.recycle();strip.recycle();return upscaled;
     }
     private static int stripHeight(Text text){
         int bottom=1;
@@ -871,7 +873,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         for(Text.TextBlock block:text.getTextBlocks())for(Text.Line line:block.getLines()){
             String value=line.getText().trim().replaceAll("\\s+"," ");
             String letters=value.replaceAll("[^\\p{L}]","");
-            if(letters.length()<3||letters.length()>52||value.length()>60)continue;
+            if(letters.length()<3||letters.length()>52||value.length()>60 || TitleReadingPolicy.isFooterOrRulesNoise(value))continue;
             if(value.matches("(?i).*\\b(creature|instant|sorcery|enchantment|artifact|planeswalker|battle)\\s*[—-].*"))continue;
             if(value.matches("(?i)^(enchantment|creature|artifact|land|instant|sorcery|aura|legendary)(\\s+(aura|creature|artifact|land))?$"))continue;
             if(letters.matches("(?i).*(.)\\1{4,}.*"))continue;
@@ -900,6 +902,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             if(r==null||t==null||t.top<r.top||t.top-r.bottom>Math.max(40,r.height()*1.8))continue;
             if(Math.abs(r.left-t.left)>Math.max(65,r.width()*.5))continue;
             String combined=a.getText().trim()+" "+b.getText().trim();
+            if(TitleReadingPolicy.isFooterOrRulesNoise(combined))continue;
             String canonical=index.exact(combined);
             if(canonical!=null)return canonical;
         }
@@ -912,23 +915,24 @@ public final class NativeScannerActivity extends ComponentActivity {
      * A battle or split card turned sideways can have readable rules text in
      * the title strip while its actual title is in a later rotation. */
     private void readTitle(Bitmap card,long hash,int rotationIndex,long began){
-        readTitle(card,hash,rotationIndex,began,null,0);
+        readTitle(card,hash,rotationIndex,began,null,0,true);
     }
     private void readTitle(Bitmap card,long hash,int rotationIndex,long began,
-            String tentative,int tentativeRotation){
+            String tentative,int tentativeRotation,boolean enhancedPass){
         if(closing){recognizing.set(false);return;}
         // The rectifier already returns a portrait-shaped image, including
         // sideways battles. Try upright and upside-down title strips before
         // the final perpendicular rescue orientations.
         int[] rotations=titleRotationOrder(card.getWidth(),card.getHeight());
         Bitmap rotated=rotate(card,rotations[rotationIndex]);
-        Bitmap strip=titleImage(rotated);
+        Bitmap strip=titleImage(rotated,enhancedPass);
         recognizer.process(InputImage.fromBitmap(strip,0)).addOnCompleteListener(task->{
             String name="";
             if(task.isSuccessful()){
                 name=selectTitle(task.getResult());
                 String paired=indexedTwoLineTitle(task.getResult(),names);
                 if(paired!=null)name=paired;
+                if(TitleReadingPolicy.isFooterOrRulesNoise(name))name="";
             }else Log.w(TAG,"ML Kit title read failed",task.getException());
             strip.recycle();if(rotated!=card)rotated.recycle();
             if(closing){recognizing.set(false);return;}
@@ -951,6 +955,11 @@ public final class NativeScannerActivity extends ComponentActivity {
             // Prefer a plausible title from the first orientation, but don't
             // stop searching for an indexed title on a rotated card.
             String current=name.replaceAll("\\s+"," ").trim();
+            // A unique first word on a two-line promotional title (e.g.
+            // WEBSTRIKE / ELITE) is an OCR CANDIDATE, never an exact title.
+            // The WebView will still require independent printing evidence.
+            String partial=index==null?null:index.distinctiveTitlePrefix(current);
+            if(partial!=null)current=partial;
             String bestTentative=tentative;
             int bestRotation=tentativeRotation;
             if(!current.isEmpty() && current.length()>=3 && current.length()<=55 &&
@@ -958,8 +967,15 @@ public final class NativeScannerActivity extends ComponentActivity {
                     current.replaceAll("[^\\p{L}]","").length()>=3))){
                 bestTentative=current;bestRotation=rotationIndex;
             }
+            // If the enhanced pass did not find a title, retry the same
+            // orientation with RAW COLOR. This is a rescue, not an added
+            // cost on ordinary successful exact-title scans.
+            if(enhancedPass && (rotationIndex==0 || rotationIndex==1)){
+                readTitle(card,hash,rotationIndex,began,bestTentative,bestRotation,false);
+                return;
+            }
             if(rotationIndex<3){
-                readTitle(card,hash,rotationIndex+1,began,bestTentative,bestRotation);
+                readTitle(card,hash,rotationIndex+1,began,bestTentative,bestRotation,true);
                 return;
             }
             lastOcrMs=SystemClock.elapsedRealtime()-began;
@@ -978,6 +994,17 @@ public final class NativeScannerActivity extends ComponentActivity {
                 if(previousOcrCount>=2 && normalized.length()>=3 &&
                         !normalized.matches(".*(.)\\1{4,}.*"))
                     enqueue(bestTentative,"ocr-candidate",0,null,card,hash,rotations[bestRotation]);
+            }else{
+                // No title in any orientation, including the RAW color
+                // rescue. On a second stable attempt, capture the card for
+                // footer-based *review suggestions*. The WebView must never
+                // silently save without independent title confirmation.
+                if("__unreadable_title__".equals(previousOcr))previousOcrCount++;
+                else{previousOcr="__unreadable_title__";previousOcrCount=1;}
+                if(previousOcrCount>=2){
+                    lastSeenTitle="Unrecognized title";
+                    enqueue(lastSeenTitle,"ocr-candidate",0,null,card,hash,0);
+                }
             }
             recognizing.set(false);
         });

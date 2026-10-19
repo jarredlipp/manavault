@@ -161,7 +161,7 @@ final class ScanResultUi {
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout root=new LinearLayout(a);root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(a,16),dp(a,14),dp(a,16),dp(a,14));
-        root.setBackground(panel(0xF5FFFFFF,0xFFDBE3EB,24,a));
+        root.setBackground(panel(0xFFFFFFFF,0xFFDBE3EB,24,a));
         TextView title=text(a,candidates.isEmpty()?"Identify this card":
             printings!=null&&printings.length()>0?"Select the correct printing":"Closest card matches",20,0xFF17202B);
         title.setTypeface(null,1);root.addView(title);

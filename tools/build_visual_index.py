@@ -27,7 +27,7 @@ def main():
     session=requests.Session();session.headers.update({'User-Agent':'ManaVaultVisualIndexer/0.1 (personal noncommercial tool)','Accept':'image/*'})
     out=[];seen=set();items=[]
     for c in cards(args.bulk):
-        name=c.get('name');url=(c.get('image_uris') or {}).get('art_crop') or ((c.get('card_faces') or [{}])[0].get('image_uris') or {}).get('art_crop')
+        name=c.get('name');url=(c.get('image_uris') or {}).get('normal') or ((c.get('card_faces') or [{}])[0].get('image_uris') or {}).get('normal') or (c.get('image_uris') or {}).get('art_crop')
         if not name or not url or url in seen:continue
         seen.add(url);items.append((c,url))
         if args.limit>0 and len(items)>=args.limit:break
@@ -42,7 +42,8 @@ def main():
             im=Image.open(path).convert('RGB')
             # Optional import uses the same physical artwork window as CameraX.
             w,h=im.size
-            im=im.crop((round(w*.09),round(h*.15),round(w*.91),round(h*.49)))
+            if '/art_crop/' not in url:
+                im=im.crop((round(w*.09),round(h*.15),round(w*.91),round(h*.49)))
             features=[value for pixel in im.resize((8,8),Image.Resampling.BILINEAR).getdata() for value in pixel]
             return {'name':c['name'],'id':c.get('id'),'set':c.get('set'),'f':features}
         except Exception as e:

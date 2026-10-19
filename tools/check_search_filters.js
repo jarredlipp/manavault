@@ -8,7 +8,7 @@ const begin=html.lastIndexOf('//',html.indexOf('Combined, offline collection-sea
 const end=html.indexOf('</script>',begin);
 assert.ok(begin>0&&end>begin);
 const ctx={
- window:{filterQuery:''},
+ window:{filterQuery:''},mvCollectionSafety:{undoPanel:()=>'',bind:()=>{}},
  state:{cards:[
   {name:'River Hoopoe',set:'hou',set_name:'Hour of Devastation',collector_number:'143',type_line:'Creature — Bird',colors:['G','U'],color_identity:['G','U'],qty:2,price:.1},
   {name:'Sliver Hiveguard',set:'tst',set_name:'Test Set',collector_number:'11',type_line:'Creature — Sliver',colors:['W'],color_identity:['W'],qty:1,price:1},

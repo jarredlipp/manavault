@@ -16,6 +16,7 @@ import java.util.Map;
  * An OCR title is never considered a Scryfall printing ID. */
 final class NativeNameIndex {
     private final Map<String,String> names=new HashMap<>();
+    private final Map<String,String> distinctiveFirstWords=new HashMap<>();
     static String norm(String value){
         return Normalizer.normalize(value==null?"":value,Normalizer.Form.NFKD)
             .replace("Æ","Ae").replace("æ","ae").replace("Œ","Oe").replace("œ","oe")
@@ -34,14 +35,31 @@ final class NativeNameIndex {
                 String full=list.optString(i,"");
                 if(full.isEmpty())continue;
                 put(full,full,true);
-                for(String face:full.split(" // "))put(face,full,false);
+                for(String face:full.split(" // ")){
+                    put(face,full,false);
+                    String[] words=norm(face).split(" ");
+                    if(words.length>=2 && words[0].length()>=7){
+                        String prior=distinctiveFirstWords.get(words[0]);
+                        if(!distinctiveFirstWords.containsKey(words[0]))distinctiveFirstWords.put(words[0],full);
+                        else if(prior!=null && !prior.equals(full))distinctiveFirstWords.put(words[0],null);
+                    }
+                }
             }
-        }catch(Exception e){Log.w("ManaVaultNames","Native name index unavailable; OCR repetition fallback",e);names.clear();}
+        }catch(Exception e){Log.w("ManaVaultNames","Native name index unavailable; OCR repetition fallback",e);names.clear();distinctiveFirstWords.clear();}
     }
     private void put(String alias,String canonical,boolean whole){String key=norm(alias);if(!key.isEmpty()&&(whole||!names.containsKey(key)))names.put(key,canonical);}
     int size(){return names.size();}
+    /** Only a *suggested* identity. Requires two observations and independent
+     * printing evidence before a partially read stylized title can be saved. */
+    String distinctiveTitlePrefix(String raw){
+        if(TitleReadingPolicy.isFooterOrRulesNoise(raw))return null;
+        String key=norm(raw);
+        if(!key.matches("[a-z]{7,24}"))return null;
+        return distinctiveFirstWords.get(key);
+    }
     String exact(String text){
         final String key=norm(text);
+        if(TitleReadingPolicy.isFooterOrRulesNoise(text))return null;
         String known=names.get(key);
         if(known!=null)return known;
         // Common ML Kit glyph confusions in the PRINTED TITLE only. The
