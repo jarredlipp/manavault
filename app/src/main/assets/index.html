@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ManaVault — MTG Collection Studio</title><style>
 :root{color-scheme:dark;--bg:#0d111a;--panel:#171e2b;--panel2:#202a3b;--line:#334054;--txt:#f1f4fa;--muted:#a6b3c7;--accent:#a4e2ba;--gold:#f6d38c;--danger:#ff9b9b}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 0 0,#233248 0,transparent 38%),var(--bg);color:var(--txt);font:15px system-ui,-apple-system,Segoe UI,sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer;background:#2d3b50;border:1px solid #50617a;color:var(--txt);border-radius:10px;padding:10px 13px}button:hover{filter:brightness(1.15)}button.primary{background:var(--accent);color:#0e2419;border-color:var(--accent);font-weight:700}button.warn{color:var(--danger)}input,select,textarea{width:100%;background:#101722;border:1px solid #425169;color:var(--txt);border-radius:9px;padding:11px}textarea{min-height:110px}label{display:block;color:var(--muted);font-size:12px;margin:0 0 6px}h1,h2,h3,p{margin-top:0}h1{font-size:26px;letter-spacing:-.8px}h2{font-size:19px}h3{font-size:15px}.shell{max-width:1240px;margin:auto;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap}.brand{font-weight:850;font-size:23px;letter-spacing:-.7px}.brand span{color:var(--accent)}.subtitle{color:var(--muted);font-size:13px;margin-top:3px}.tabs{display:flex;gap:7px;overflow:auto;padding:20px 0 16px}.tabs button{white-space:nowrap}.tabs button.active{background:#a4e2ba;color:#0e2419;border-color:#a4e2ba}.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:19px;margin-bottom:16px}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.stat{background:var(--panel2);border-radius:12px;padding:16px}.stat strong{font-size:25px;display:block}.stat small,.muted{color:var(--muted)}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:15px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.flex{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.grow{flex:1}.row{display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #303c50;padding:12px 0}.row:last-child{border:0}.thumb{width:49px;height:68px;object-fit:cover;border-radius:5px;background:#263348}.tag{display:inline-block;border:1px solid #586780;border-radius:99px;color:#c9d7e8;font-size:11px;padding:3px 8px;margin:2px}.result{display:flex;align-items:center;gap:11px;border-bottom:1px solid #354154;padding:10px 0}.result:last-child{border:0}.result img{width:48px;height:66px;object-fit:cover;border-radius:5px}.small{font-size:12px}.pill{color:var(--accent)}.hidden{display:none!important}.empty{padding:30px 8px;text-align:center;color:var(--muted)}.notice{background:#233a35;border:1px solid #3d6959;border-radius:10px;padding:12px;color:#d6f4e1;font-size:13px}.error{color:var(--danger)}.stack{display:grid;gap:12px}.scroll{max-height:480px;overflow:auto}.footer{font-size:12px;color:var(--muted);margin:24px 0}canvas{max-width:100%;border-radius:10px}a{color:var(--accent)}@media(max-width:700px){.shell{padding:13px}.stats{grid-template-columns:repeat(2,1fr)}.grid2,.grid3{grid-template-columns:1fr}.panel{padding:14px}.top{align-items:flex-start}.row{align-items:flex-start}}
- .help-steps{padding-left:22px;line-height:1.75;color:var(--txt)}.help-steps li{margin-bottom:6px}.help-section{scroll-margin-top:15px}.help-section summary{font-weight:700;cursor:pointer;padding:10px 0;font-size:16px}.help-section details{border-top:1px solid var(--line);padding:6px 0}.help-section details p{line-height:1.6;color:var(--muted)}.help-section details[open] summary{color:var(--accent)}.help-note{border-left:3px solid var(--gold);padding:9px 13px;background:#292a31;color:#f3e5c5;border-radius:6px}.help-links{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 20px}.help-links button{font-size:13px} </style><link rel="stylesheet" href="ui-polish.css"></head><body><div class="shell"><header class="top"><div><div class="brand">✦ Mana<span>Vault</span></div><div class="subtitle">Your cards. Your decks. Your next discovery.</div></div><div class="flex"><button id="exportBtn">Export backup</button><label for="importFile" style="margin:0"><span style="display:inline-block;border:1px solid #50617a;border-radius:10px;padding:10px 13px;cursor:pointer">Import backup</span></label><input id="importFile" type="file" accept="application/json" hidden></div></header><nav class="tabs" id="tabs"></nav><main id="main"></main><div class="footer">ManaVault v5.12.9 · Native CameraX + legacy OCR · Collection saved locally on this device. Card details and prices from Scryfall when online. Not affiliated with Wizards of the Coast.</div></div><script src="card-db.js"></script><script>
+ .help-steps{padding-left:22px;line-height:1.75;color:var(--txt)}.help-steps li{margin-bottom:6px}.help-section{scroll-margin-top:15px}.help-section summary{font-weight:700;cursor:pointer;padding:10px 0;font-size:16px}.help-section details{border-top:1px solid var(--line);padding:6px 0}.help-section details p{line-height:1.6;color:var(--muted)}.help-section details[open] summary{color:var(--accent)}.help-note{border-left:3px solid var(--gold);padding:9px 13px;background:#292a31;color:#f3e5c5;border-radius:6px}.help-links{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 20px}.help-links button{font-size:13px} </style><link rel="stylesheet" href="ui-polish.css"></head><body><div class="shell"><header class="top"><div><div class="brand">✦ Mana<span>Vault</span></div><div class="subtitle">Your cards. Your decks. Your next discovery.</div></div><div class="flex"><button id="exportBtn">Export backup</button><label for="importFile" style="margin:0"><span style="display:inline-block;border:1px solid #50617a;border-radius:10px;padding:10px 13px;cursor:pointer">Import backup</span></label><input id="importFile" type="file" accept="application/json" hidden></div></header><nav class="tabs" id="tabs"></nav><main id="main"></main><div class="footer">ManaVault v5.12.10 · Native CameraX + legacy OCR · Collection saved locally on this device. Card details and prices from Scryfall when online. Not affiliated with Wizards of the Coast.</div></div><script src="card-db.js"></script><script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STORE='manavault-v1';let state={cards:[],decks:[],wishlist:[],trades:[],alerts:[]};try{const s=JSON.parse(localStorage.getItem(STORE));if(s&&Array.isArray(s.cards))state={...state,...s}}catch{};let tab='Dashboard',searchResults=[],scanCandidates=[],lastSearch='',busy=false;const tabs=['Dashboard','Collection','Scan cards','Deck builder','Wishlist & trades','Price alerts','Settings','Help guide'];const save=()=>{localStorage.setItem(STORE,JSON.stringify(state));render()};const money=n=>'$'+Number(n||0).toFixed(2);const qtyTotal=()=>state.cards.reduce((a,c)=>a+c.qty,0);const valueTotal=()=>state.cards.reduce((a,c)=>a+c.qty*(+c.price||0),0);const image=c=>c.image||c.image_small||c.image_url||c.image_uris?.small||'';
 const mv594Placeholder='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 100"><rect width="72" height="100" rx="5" fill="#263348"/><rect x="8" y="8" width="56" height="84" rx="4" fill="none" stroke="#90a0b8" stroke-width="2"/><text x="36" y="58" text-anchor="middle" fill="#9aacc0" font-size="10">No art</text></svg>');window.mv594Placeholder=mv594Placeholder;const cardPrice=c=>c.prices?.usd||c.prices?.usd_foil||c.prices?.usd_etched||'0';const norm=s=>String(s||'').trim().toLowerCase();let info=c=>({id:c.id,name:c.name,set:c.set,set_name:c.set_name,collector_number:c.collector_number,rarity:c.rarity,colors:c.colors||[],color_identity:c.color_identity||[],type_line:c.type_line||'',oracle_text:c.oracle_text||'',cmc:c.cmc||0,legalities:c.legalities||{},image:c.image_uris?.small||c.card_faces?.[0]?.image_uris?.small||c.image_small||c.image_url||'',price:+cardPrice(c),updated:new Date().toISOString()});
@@ -175,7 +175,7 @@ let footer=document.querySelector('.footer');if(footer)footer.textContent=footer
 // v1.7 Continuous live-camera scanner: camera stays open between cards.
 let liveStream=null,liveWorker=null,liveActive=false,liveLoop=null,liveBusy=false,liveLastSignature='',livePending='',livePendingCount=0,liveSavedSignature='',liveScanned=0,livePaused=false;
 const liveScannerBase=scanner;
-scanner=function(){return liveScannerBase()+`<section class="panel" id="continuousPanel"><h2>Legacy browser OCR camera (fallback)</h2><p class='muted small'>Unified framing: the fixed stand defines the expected card area, and automatic detection refines its position when a reliable outline is found. Calibration remains available.</p><p class='muted small'>OCR searches the calibrated title first, then title bands within the top 40% of the card outline before trying unusual layouts. Bottom-title lands and showcase frames may still require manual confirmation.</p><p class='muted small'>For exact editions, confirm the set and collector number in the printing review. Scan destination supports your collection and existing Commander decks.</p><p class="muted small">Keep your camera pointed at the scanning area. Place one card at a time; the app automatically checks the title and adds confidently recognized cards without pressing the camera button again. Stack the next card over the previous one after the save sound. Works only in a secure browser context (HTTPS or localhost); local HTML files may block camera access.</p><div class="flex"><button id="mv591NativeShortcut" class="primary" type="button" onclick="window.mvNativeLaunchNow ? window.mvNativeLaunchNow() : (window.ManaVaultNativeScanner ? window.ManaVaultNativeScanner.open() : alert('Native scanner requires the v5.12.9 Android APK.'))">Open native CameraX scanner</button><button id="liveStart" type="button">Start legacy OCR camera</button><button id="mvTestLiveSound">Test success sound</button><button id="liveStop">Stop camera</button><button id="mvTorch" type="button" disabled>Flash: unavailable</button><button id="liveResume">Resume after review</button></div><details id="mvAdvancedScanner"><summary>Camera zoom and advanced controls</summary><div id="mvZoomPanel" class="panel" style="margin-top:12px"><label for="mvZoom">Camera zoom: <strong id="mvZoomValue">2.0×</strong></label><input type="range" id="mvZoom" min="1" max="4" step="0.1" value="2" style="width:100%"><p id="mvFocusStatus" class="small muted">Autofocus requested when supported. Zoom will activate when camera starts.</p></div></details><div id="mvLiveFrame" style="display:none;position:relative;width:100%;max-width:430px;height:min(46vh,440px);margin-top:12px;overflow:hidden;border-radius:10px;background:#111"><video id="liveVideo" autoplay muted playsinline style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;object-fit:cover"></video><canvas id="mvVisibleCanvas" style="display:block;width:100%;height:100%;object-fit:fill"></canvas><div style="position:absolute;pointer-events:none;left:17%;top:24%;width:77%;height:72%;border:2px solid #80e7a1;border-radius:10px;box-sizing:border-box"><div id="mvLiveOcrGuide" style="position:absolute;left:5.5%;top:2.0%;width:77%;height:6.4%;border:2px dashed #ffdb7b;box-sizing:border-box"></div></div></div><details id="mvCalibrationDiagnostics" class="panel" style="margin-top:10px;max-width:430px;padding:10px"><summary>OCR diagnostics (manual override)</summary><strong>OCR crop diagnostics</strong><p class="small muted">The title crop below updates during scanning. Keep this panel directly under the camera.</p><div class="panel" style="padding:10px"><strong>OCR title alignment</strong><p class="small muted">Adjust the title strip if the yellow guide does not line up with the printed card name.</p><label>Title vertical position <input id="mvTitleY" type="range" min="0" max="180" value="9" step="1"></label><label>Title band height <input id="mvTitleH" type="range" min="14" max="75" value="28" step="1"></label><label>Title width <input id="mvTitleW" type="range" min="175" max="295" value="245" step="5"></label><button id="mvResetCrop">Reset OCR alignment</button><button id="mvTestCrop" type="button">Test this exact OCR crop</button><p class="small muted" id="mvCropInfo"></p></div><p id="mvOcrPreview" class="small muted">Last OCR: none</p><p class="small muted">The large preview below shows the exact standard-title crop. Alternate-layout OCR may examine another region.</p><div id="mvTitlePreview" style="max-width:100%;overflow:hidden;min-height:110px;background:#101722;border:1px solid #52627a;border-radius:10px;padding:6px"></div><div class="flex"><button id="mvSaveDebugFrame" type="button">Save diagnostic frame + OCR crop</button></div><p class="small muted" id="mvFrameDiagnostic">Diagnostic images are saved only when requested.</p></details><p class="small muted">Automatic outline follows detected card boundaries when confidence is sufficient. Keep the entire card in view. OCR alignment sliders are diagnostic overrides only.</p><p id="mvHybridScore" class="small muted">Last successful identification: none</p><p id="mvLatestOcr" class="small muted">Latest OCR attempt: none</p><p id="mvScanTiming" class="small muted">Successful reads: 0 · average: —</p><details><summary>Database and artwork index status</summary><div class="panel"><strong>Offline Magic card database</strong><p class="small muted" id="mvDbStatus">Checking local database…</p><button id="mvDbSync">Check / refresh Scryfall database now</button><p class="small muted">Automatically downloads Scryfall Default Cards (100,000+ printing records) on first launch and checks for updates every 24 hours. Stores each printing by unique Scryfall ID; preserves the previous complete catalog if a download fails. The artwork index is separate. Candidate-specific Scryfall artwork and set-symbol fingerprints are cached on your device after comparison and reused across sessions.</p></div><div class="flex"><label class="small">Load visual index <input id="mvIndexFile" type="file" accept="application/json,.json" /></label><button id="mvIndexClear">Clear visual index</button></div><p id="mvIndexStatus" class="small muted">Bundled visual index loads automatically when Scan cards opens; optional JSON import remains available.</p></details><p id="liveStatus" class="small muted" aria-live="polite">Camera off. Saved this session: 0.</p><p class="small muted" id="liveDiagnostics">Camera diagnostics: checking environment…</p><div id="liveReview" class="small"></div><p class="small muted">Fast scanning uses exact local-name matches immediately and confirms the printing before saving. Fuzzy OCR needs two agreeing reads. Artwork-only matches never override OCR. Confirm the destination deck and the “also add to collection” option above before starting. Legacy browser mode may require manual printing review; native CameraX supports exact printing lookup. The native scanner detects a stable new top card and waits for saving before accepting another.</p></section>`};
+scanner=function(){return liveScannerBase()+`<section class="panel" id="continuousPanel"><h2>Legacy browser OCR camera (fallback)</h2><p class='muted small'>Unified framing: the fixed stand defines the expected card area, and automatic detection refines its position when a reliable outline is found. Calibration remains available.</p><p class='muted small'>OCR searches the calibrated title first, then title bands within the top 40% of the card outline before trying unusual layouts. Bottom-title lands and showcase frames may still require manual confirmation.</p><p class='muted small'>For exact editions, confirm the set and collector number in the printing review. Scan destination supports your collection and existing Commander decks.</p><p class="muted small">Keep your camera pointed at the scanning area. Place one card at a time; the app automatically checks the title and adds confidently recognized cards without pressing the camera button again. Stack the next card over the previous one after the save sound. Works only in a secure browser context (HTTPS or localhost); local HTML files may block camera access.</p><div class="flex"><button id="mv591NativeShortcut" class="primary" type="button" onclick="window.mvNativeLaunchNow ? window.mvNativeLaunchNow() : (window.ManaVaultNativeScanner ? window.ManaVaultNativeScanner.open() : alert('Native scanner requires the v5.12.10 Android APK.'))">Open native CameraX scanner</button><button id="liveStart" type="button">Start legacy OCR camera</button><button id="mvTestLiveSound">Test success sound</button><button id="liveStop">Stop camera</button><button id="mvTorch" type="button" disabled>Flash: unavailable</button><button id="liveResume">Resume after review</button></div><details id="mvAdvancedScanner"><summary>Camera zoom and advanced controls</summary><div id="mvZoomPanel" class="panel" style="margin-top:12px"><label for="mvZoom">Camera zoom: <strong id="mvZoomValue">2.0×</strong></label><input type="range" id="mvZoom" min="1" max="4" step="0.1" value="2" style="width:100%"><p id="mvFocusStatus" class="small muted">Autofocus requested when supported. Zoom will activate when camera starts.</p></div></details><div id="mvLiveFrame" style="display:none;position:relative;width:100%;max-width:430px;height:min(46vh,440px);margin-top:12px;overflow:hidden;border-radius:10px;background:#111"><video id="liveVideo" autoplay muted playsinline style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;object-fit:cover"></video><canvas id="mvVisibleCanvas" style="display:block;width:100%;height:100%;object-fit:fill"></canvas><div style="position:absolute;pointer-events:none;left:17%;top:24%;width:77%;height:72%;border:2px solid #80e7a1;border-radius:10px;box-sizing:border-box"><div id="mvLiveOcrGuide" style="position:absolute;left:5.5%;top:2.0%;width:77%;height:6.4%;border:2px dashed #ffdb7b;box-sizing:border-box"></div></div></div><details id="mvCalibrationDiagnostics" class="panel" style="margin-top:10px;max-width:430px;padding:10px"><summary>OCR diagnostics (manual override)</summary><strong>OCR crop diagnostics</strong><p class="small muted">The title crop below updates during scanning. Keep this panel directly under the camera.</p><div class="panel" style="padding:10px"><strong>OCR title alignment</strong><p class="small muted">Adjust the title strip if the yellow guide does not line up with the printed card name.</p><label>Title vertical position <input id="mvTitleY" type="range" min="0" max="180" value="9" step="1"></label><label>Title band height <input id="mvTitleH" type="range" min="14" max="75" value="28" step="1"></label><label>Title width <input id="mvTitleW" type="range" min="175" max="295" value="245" step="5"></label><button id="mvResetCrop">Reset OCR alignment</button><button id="mvTestCrop" type="button">Test this exact OCR crop</button><p class="small muted" id="mvCropInfo"></p></div><p id="mvOcrPreview" class="small muted">Last OCR: none</p><p class="small muted">The large preview below shows the exact standard-title crop. Alternate-layout OCR may examine another region.</p><div id="mvTitlePreview" style="max-width:100%;overflow:hidden;min-height:110px;background:#101722;border:1px solid #52627a;border-radius:10px;padding:6px"></div><div class="flex"><button id="mvSaveDebugFrame" type="button">Save diagnostic frame + OCR crop</button></div><p class="small muted" id="mvFrameDiagnostic">Diagnostic images are saved only when requested.</p></details><p class="small muted">Automatic outline follows detected card boundaries when confidence is sufficient. Keep the entire card in view. OCR alignment sliders are diagnostic overrides only.</p><p id="mvHybridScore" class="small muted">Last successful identification: none</p><p id="mvLatestOcr" class="small muted">Latest OCR attempt: none</p><p id="mvScanTiming" class="small muted">Successful reads: 0 · average: —</p><details><summary>Database and artwork index status</summary><div class="panel"><strong>Offline Magic card database</strong><p class="small muted" id="mvDbStatus">Checking local database…</p><button id="mvDbSync">Check / refresh Scryfall database now</button><p class="small muted">Automatically downloads Scryfall Default Cards (100,000+ printing records) on first launch and checks for updates every 24 hours. Stores each printing by unique Scryfall ID; preserves the previous complete catalog if a download fails. The artwork index is separate. Candidate-specific Scryfall artwork and set-symbol fingerprints are cached on your device after comparison and reused across sessions.</p></div><div class="flex"><label class="small">Load visual index <input id="mvIndexFile" type="file" accept="application/json,.json" /></label><button id="mvIndexClear">Clear visual index</button></div><p id="mvIndexStatus" class="small muted">Bundled visual index loads automatically when Scan cards opens; optional JSON import remains available.</p></details><p id="liveStatus" class="small muted" aria-live="polite">Camera off. Saved this session: 0.</p><p class="small muted" id="liveDiagnostics">Camera diagnostics: checking environment…</p><div id="liveReview" class="small"></div><p class="small muted">Fast scanning uses exact local-name matches immediately and confirms the printing before saving. Fuzzy OCR needs two agreeing reads. Artwork-only matches never override OCR. Confirm the destination deck and the “also add to collection” option above before starting. Legacy browser mode may require manual printing review; native CameraX supports exact printing lookup. The native scanner detects a stable new top card and waits for saving before accepting another.</p></section>`};
 function liveStatus(msg){let el=document.getElementById('liveStatus');if(el)el.textContent=msg+' · Saved this session: '+liveScanned}
 function liveStop(){clearInterval(mvEdgeTimer);mvEdgeTimer=null;mvLiveQuad=null;mvSessionGeneration++;clearInterval(mvHealthTimer);mvHealthTimer=null;liveBusy=false;mvBusySince=0;mvTorchEnabled=false;mvTorchUpdateUI(false);liveActive=false;livePaused=false;if(liveLoop)clearTimeout(liveLoop);liveLoop=null;if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null}if(liveWorker){let w=liveWorker;liveWorker=null;w.terminate().catch(()=>{})}let v=document.getElementById('liveVideo');if(v){v.pause();v.srcObject=null;v.style.display='block';let frame=document.getElementById('mvLiveFrame');if(frame)frame.style.display='none'}liveStatus('Camera stopped')}
 function liveSignature(ctx,w,h){let a=ctx.getImageData(0,0,w,h).data,parts=[];for(let y=0;y<h;y+=10)for(let x=0;x<w;x+=10){let i=(y*w+x)*4;parts.push(Math.floor((a[i]+a[i+1]+a[i+2])/3/24))}return parts}
@@ -232,6 +232,21 @@ function mvHybridCandidates(raw){
  if(!n)return[];if(!mvNamesReady)return[];
  // Always honor real catalog names, including short or unusual titles.
  if(mvHybridExact.has(n))return [{name:mvHybridExact.get(n),score:1,exact:true}];
+ // Scryfall's general card-name list may omit token-only names such as Jace.
+ // A direct exact-name lookup in our bundled printing catalog is bounded and
+ // never guesses a printing. Cache only an exact canonical name match.
+ if(n.length>=3 && n.length<=55 && typeof window!=='undefined' && window.ManaVaultNativeScanner?.lookupOfflinePrintings){
+  try{
+   const response=JSON.parse(window.ManaVaultNativeScanner.lookupOfflinePrintings('name',n,64));
+   const matching=(Array.isArray(response?.rows)?response.rows:[]).filter(p=>
+     p?.name && mvHybridNorm(p.name)===n && p.digital!==true);
+   if(matching.length){
+    const canonical=matching[0].name;
+    mvHybridExact.set(n,canonical);
+    return [{name:canonical,score:1,exact:true}];
+   }
+  }catch{}
+ }
  // Reject noise only after the exact-name lookup.
  if(n.length<3||/(.)\1{4,}/i.test(n.replace(/ /g,''))||/^(?:[a-z]{1,2}\s+){4,}[a-z]{1,2}$/.test(n))return[];
  if(mvHybridExact.has(n))return [{name:mvHybridExact.get(n),score:1,exact:true}];
@@ -250,6 +265,16 @@ function mvHybridCandidates(raw){
    const whole=(' '+n+' ').includes(' '+a+' ');
    const distance=mvHybridEdit(n,a);
    let score=1-distance/Math.max(n.length,a.length);
+   // OCR frequently confuses lowercase l and uppercase I ("Arbor EIf").
+   // Raise only a single-character lookalike, never arbitrary near matches.
+   // The non-exact result still needs repeated OCR and printing evidence.
+   if(a.length>=8 && n.length===a.length && distance===1){
+    const differences=[...a].filter((ch,i)=>ch!==n[i]);
+    if(differences.length===1){
+     const i=[...a].findIndex((ch,j)=>ch!==n[j]);
+     if((a[i]==='l'&&n[i]==='i')||(a[i]==='i'&&n[i]==='l'))score=Math.max(score,.95);
+    }
+   }
    if(whole&&a.length>=5&&n===a)score=1;
    else if(a.length>=6&&n.startsWith(a+' ')&&n.length-a.length<=5)score=Math.max(score,.90);
    else if(a.length>=8&&n.length>=a.length-2&&n.length<=a.length+5){
@@ -866,10 +891,10 @@ let mv58ArtworkPendingUrl=null;
 let mv58ArtworkNote=null;
 const mv58OldScanner=scanner;
 scanner=function(){
- const nativePanel=`<section class="panel" id="mv58NativePanel"><h2>Native Card Scanner — v5.12.9 · Stack mode</h2>
+ const nativePanel=`<section class="panel" id="mv58NativePanel"><h2>Native Card Scanner — v5.12.10 · Stack mode</h2>
  <p class="muted small">CameraX resolves and saves each card to your collection while scanning continues. Wait for the saved-card chime, then place the next card on top; CameraX detects the stable new top automatically. Finish only closes the camera after every scan is resolved. Verified editions are saved immediately; uncertain printings open a native set/collector-number review before the next scan. Legacy browser OCR is a fallback.</p>
  <button id="mv58NativeStart" class="primary" type="button">Open native CameraX scanner</button>
- <p id="mv58NativeStatus" class="small muted" aria-live="polite">${window.ManaVaultNativeScanner?'Native CameraX bridge connected — ready.':'Native CameraX bridge missing. Confirm you installed ManaVault v5.12.9, not an older APK.'}</p>
+ <p id="mv58NativeStatus" class="small muted" aria-live="polite">${window.ManaVaultNativeScanner?'Native CameraX bridge connected — ready.':'Native CameraX bridge missing. Confirm you installed ManaVault v5.12.10, not an older APK.'}</p>
  <p id="mv115OfflineStatus" class="small muted">Offline native printing index: checking…</p><p id="mv58ArtworkStatus" class="small muted">Artwork comparison: not yet requested. Cached printing fingerprints are reused across sessions.</p><div id="mv59BatchStatus" class="small muted" aria-live="polite"></div><button id="mv59BatchSkip" style="display:none">Skip current scan and continue</button></section>`;
  return nativePanel+mv58OldScanner();
 };
@@ -883,7 +908,7 @@ window.mvNativeLaunchNow=function(){
  const status=document.getElementById('mv58NativeStatus');
  if(!bridge||typeof bridge.open!=='function'){
   if(status)status.textContent='Native camera unavailable: Android bridge is absent. Check the installed APK version (5.12.0 required).';
-  else alert('Native camera requires the v5.12.9 Android APK.');
+  else alert('Native camera requires the v5.12.10 Android APK.');
   return;
  }
  try{
@@ -990,7 +1015,7 @@ window.addEventListener('manavault:catalog-ready',()=>void mv594RepairSavedImage
 setTimeout(()=>void mv594RepairSavedImages(),2500);
 
 // Legacy review panel for identities that cannot be established automatically.
-// Accepted native scans are now saved during the camera session (v5.12.9).
+// Accepted native scans are now saved during the camera session (v5.12.10).
 let mv59Queue=[],mv59Cursor=-1;
 window.mv59BatchActive=false;
 window.mvNativeScanBatch=function(items){
@@ -1133,7 +1158,7 @@ async function mv60RankArtwork(index,printings){
  const selected=printings.find(x=>x.id===group.ids[0]);
  return selected ? {printing:selected,score:Number(top.score),margin} : {reason:'Artwork winner not in printing list'};
 }
-// v5.12.9: Fast, fully offline artwork comparison against the bundled art
+// v5.12.10: Fast, fully offline artwork comparison against the bundled art
 // atlas. A missing reference is NOT a losing candidate: the comparison fails.
 async function mv115RankBundledArtwork(index,printings){
  if(!window.ManaVaultNativeScanner?.rankBundledArtwork)return {reason:'No native bundled artwork matcher'};
@@ -1232,7 +1257,7 @@ function mv61SetHints(lines,printings){
  }
  return [...hints];
 }
-// v5.12.9: demand a mutually corroborating collector number and set code
+// v5.12.10: demand a mutually corroborating collector number and set code
 // in ONE physical footer OCR line. Copyright years, mana costs, rules text,
 // and numbers elsewhere in the card cannot establish a printing. OCR sometimes
 // confuses the rarity letter + leading zero ("RO345" -> "R0345").
@@ -1274,7 +1299,7 @@ function mv109FooterPairs(lines, printings){
  if(ranked[0].score<2)return null;
  return {printing:ranked[0].printing,method:'paired collector number + set code in card footer'};
 }
-// v5.12.9: OCR frequently splits "R 0334" and "TDM · EN" into
+// v5.12.10: OCR frequently splits "R 0334" and "TDM · EN" into
 // two text lines. They are two independent printing marks, even though
 // they were not returned as a single OCR line. Resolve against the
 // identified NAME's editions only, and reject all contradictions or
@@ -1293,11 +1318,11 @@ function mv122CrossLineFooterMatch(lines,printings){
  // number are distinct observed features, each matched to the known edition.
  return {printing:print[0],method:'cross-line printed set code + collector number'};
 }
-// v5.12.9: a collector number can independently narrow the known editions
+// v5.12.10: a collector number can independently narrow the known editions
 // of an already identified card. Require *two distinct OCR passes/regions* of
 // the same number and a unique card-name-scoped printing. No guessed set, and
 // a contradictory observed set code vetoes this fallback.
-// v5.12.9: set-scoped collector matching. OCR on a card marked
+// v5.12.10: set-scoped collector matching. OCR on a card marked
 // "086/254" may report BOTH 086 (the physical collector number) and 254
 // (the set total). Once MH1 is independently visible, only 086 is a valid
 // collector number among MH1 editions of that named card. Never select a
@@ -1314,7 +1339,7 @@ function mv125SetScopedFooterMatch(lines,printings){
  if(exact.length!==1)return null;
  return {printing:exact[0],method:'set-scoped collector number + printed expansion code'};
 }
-// v5.12.9: universal, position-aware printing-mark parser. A fraction such
+// v5.12.10: universal, position-aware printing-mark parser. A fraction such
 // as 086/254 represents ONE collector number and a separate set total; the
 // denominator is never an alternate collector-number candidate. Only OCR
 // from physical footer zones participates in a printing decision.
@@ -1345,6 +1370,9 @@ function mv126FooterEvidence(lines,printings){
   // the anchored rarity+number token, not arbitrary letters or artist text.
   raw=raw.replace(/(?:^|\s)([CMRUT])O(\d{2,4})(?=$|\s)/g,(_,rar,num)=>' '+rar+' 0'+num)
          .replace(/(?:^|\s)([CMRUT])(?=0\d{2,4}(?:$|\s))/g,' $1 ')
+         // Token collector fields sometimes print 'T 0005', not 'T0005'.
+         // Keep the token prefix instead of mistaking T for rarity.
+         .replace(/(?:^|\s)T\s+(0?\d{2,5})(?=$|\s)/g,(_,num)=>' T'+num)
          .replace(/\s+/g,' ').trim();
   const record={zone:row.zone,pass:row.pass||'color',text:raw};rows.push(record);
   const zoneWeight=row.zone==='footer-left'?4:row.zone==='footer-line'?3:row.zone==='footer-deep'?2:1;
@@ -1355,7 +1383,7 @@ function mv126FooterEvidence(lines,printings){
    if(re.test(raw))add(sets,code.toLowerCase(),record,zoneWeight);
   }
   const lang=raw.match(/(?:^|[^A-Z0-9])(EN|JP|DE|FR|IT|ES|PT|RU|KO|ZHS|ZHT)(?=$|[^A-Z0-9])/);
-  if(lang)languages.add(lang[1]);
+  if(lang && /\b[A-Z0-9]{2,5}\s*[•·]?\s*(?:EN|JP|DE|FR|IT|ES|PT|RU|KO|ZHS|ZHT)\b/.test(raw))languages.add(lang[1]);
   // The collector numerator can include T/S prefixes and a suffix letter.
   // Preserve its observed spelling, normalize only for catalog comparison.
   // Copyright fragments and stray 1-2 digit numbers have little value
@@ -1388,7 +1416,7 @@ function mv126FooterEvidence(lines,printings){
  }
  return {sets,numbers,totals,rarities:[...rarities],languages:[...languages],fractions,rows};
 }
-function mv126ResolveStructuredFooter(lines,printings){
+function mv126ResolveStructuredFooter(lines,printings,{titleVerified=true}={}){
  if(!Array.isArray(printings)||!printings.length)return {reason:'No local printings available'};
  const evidence=mv126FooterEvidence(lines,printings);
  const setKeys=[...evidence.sets.keys()];
@@ -1422,8 +1450,25 @@ function mv126ResolveStructuredFooter(lines,printings){
   // If the title and printed set code are reliable, a single printing in
   // the set can be identified even when older frames lack a collector number.
   // But NEVER ignore an observed numerator that contradicts that printing.
-  if(!evidence.numbers.size&&considered.length===1 && evidence.sets.get(set)?.score>=3)
+  if(titleVerified&&!evidence.numbers.size&&considered.length===1 && evidence.sets.get(set)?.score>=3)
    return {printing:considered[0],method:'unique named printing + printed set code',evidence:{...diag,set,collector:null}};
+  // A clear set code + an EXACT card title can identify a single printing
+  // in that set even if OCR saw only the denominator (e.g. 185/185 -> 185).
+  // An isolated number is not proof of a different printing. Do not take
+  // this route if a complete collector fraction or explicit rarity-prefixed
+  // collector contradicts the one possible edition, or if variants exist.
+  if(titleVerified&&considered.length===1 && evidence.sets.get(set)?.score>=3){
+   const only=considered[0],expected=mv61CollectorKey(only.collector_number);
+   const fractionConflict=evidence.fractions.some(f=>f.collector!==expected);
+   const explicitConflict=evidence.rows.some(row=>
+     ['footer-left','footer-line','footer-deep'].includes(row.zone) &&
+     /(?:^|\s)[CMRU]\s+[TS]?0?\d{2,5}[A-Z]?(?=$|\s)/.test(row.text) &&
+     [...row.text.matchAll(/(?:^|\s)[CMRU]\s+([TS]?0?\d{2,5}[A-Z]?)(?=$|\s)/g)]
+       .some(m=>mv61CollectorKey(m[1])!==expected));
+   if(!fractionConflict && !explicitConflict)
+    return {printing:only,method:'unique named printing + observed set code (collector unreadable)',
+     evidence:{...diag,set,collector:null}};
+  }
   if(evidence.numbers.size)return {reason:'Collector number does not match the observed set',evidence:diag,conflict:true};
   return {reason:'Set identified, collector or treatment unresolved',evidence:diag};
  }
@@ -1636,7 +1681,7 @@ function mv60StoreExactPrinting(card){
  // Native CameraX plays its own audible confirmation after the save receipt.
 }
 
-// v5.12.9: the printed set code + collector number can identify a card
+// v5.12.10: the printed set code + collector number can identify a card
 // even when decorative title lettering defeats OCR (e.g. WEBSTRIKE ELITE).
 // This is a bounded lookup in the already-downloaded printing database;
 // never infer a set or collector number from artwork similarity.
@@ -1832,7 +1877,7 @@ async function mv60DecideCapture(data,index,{liveFast=false}={}){
  // Structured evidence is evaluated BEFORE any older loose-token heuristic,
  // symbol lookup, or artwork comparison. A uniquely matched set/collector
  // pair is enough to verify a printing without network access.
- const structured=mv126ResolveStructuredFooter(marks.lines,print.printings);
+ const structured=mv126ResolveStructuredFooter(marks.lines,print.printings,{titleVerified:best.exact && data.source==='ocr-exact'});
  mv126EvidenceLog(best.name,structured);
  if(structured.printing && mv60CanonicalMatches(structured.printing.name,best.name) &&
     (!marks.token||/\btoken\b/i.test(structured.printing.type_line||'')))return structured;
@@ -1853,6 +1898,11 @@ async function mv60DecideCapture(data,index,{liveFast=false}={}){
   return {reason:'Token detected but matching token printing unavailable'};
  if(marks.token)print.printings=print.printings.filter(p=>/\btoken\b/i.test(p.type_line||''));
  if(!print.printings.length)return {reason:'No matching token printing in catalog'};
+ // Jace is also used on planeswalker tokens. Never certify a normal Jace
+ // printing from the name alone if the photographed type line was unreadable.
+ if(mvHybridNorm(best.name)==='jace' && !marks.token &&
+     print.printings.some(p=>/\btoken\b/i.test(p.type_line||'')))
+   return {reason:'Confirm Jace token type line; token or regular printing uncertain',printings:print.printings};
  // A fuzzy title is not enough to save an edition merely because one
  // database printing exists. It may still be saved as name-only below.
  if(print.printings.length===1 && best.exact && data.source!=='ocr-candidate'){
@@ -1953,7 +2003,7 @@ async function mv60DecideCapture(data,index,{liveFast=false}={}){
  if(fingerprint.printing)return fingerprint;
  return {reason:fingerprint.reason||compared.reason||'Exact edition remains ambiguous'};
 }
-// v5.12.9: CameraX sends each captured image as soon as it is accepted.
+// v5.12.10: CameraX sends each captured image as soon as it is accepted.
 // All printing verification and collection writes happen while CameraX remains
 // open. Closing the scanner only retries missing receipts and shows reviews.
 // A live scan can NEVER advance until the precise printing is saved or its
@@ -2247,7 +2297,7 @@ bind=function(){mv60BindBase();const button=document.getElementById('mv60UndoSav
  document.querySelectorAll('[data-resolve-printing]').forEach(b=>b.onclick=()=>mv60ResolveUnverified(b.dataset.resolvePrinting));};
 
 
-// v5.12.9: Combined, offline collection-search filters.
+// v5.12.10: Combined, offline collection-search filters.
 const mvCollectionColors=['','W','U','B','R','G','C'];
 const mvCollectionTypes=['','Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land','Battle','Token'];
 let mvCollectionColor='',mvCollectionType='',mvCollectionCreature='',mvCollectionSort='name';
@@ -2322,7 +2372,7 @@ bind=function(){
  if(sort)sort.onclick=()=>{mvCollectionSort=mvCollectionSort==='value'?'name':'value';sort.textContent=mvCollectionSort==='value'?'Sort by name':'Sort by value';refresh()};
 };
 
-// v5.12.9: Advanced Scryfall catalog lookup, in addition to the offline
+// v5.12.10: Advanced Scryfall catalog lookup, in addition to the offline
 // collection filters above. All optional criteria combine with AND.
 let mvCatalogColor='',mvCatalogType='',mvCatalogSet='',mvCatalogRarity='',mvCatalogCreature='';
 const mvCatalogScannerBase=scanner;

@@ -82,9 +82,9 @@ final class PrintingFingerprintVerifier {
             // non-token printings. Check the type bar even in fast mode when
             // that card's catalog has token and non-token possibilities.
             if(verifyToken){
-                int x=Math.round(card.getWidth()*.035f),y=Math.round(card.getHeight()*.57f);
+                int x=Math.round(card.getWidth()*.035f),y=Math.round(card.getHeight()*.49f);
                 int w=Math.min(card.getWidth()-x,Math.round(card.getWidth()*.93f));
-                int h=Math.min(card.getHeight()-y,Math.round(card.getHeight()*.14f));
+                int h=Math.min(card.getHeight()-y,Math.round(card.getHeight()*.17f));
                 Bitmap bar=Bitmap.createBitmap(card,x,y,w,h);
                 try{readRegion(reader,bar,"type-bar","token-check",lines,out,fast?550:1100);}
                 finally{bar.recycle();}
@@ -164,9 +164,13 @@ final class PrintingFingerprintVerifier {
             JSONObject row=lines.optJSONObject(i);
             if(row==null)continue;
             String raw=row.optString("text","").toUpperCase(Locale.ROOT);
-            // R 0345 DFT, 143/199 HOU, or C13 046; skip copyright years.
-            if(raw.matches(".*(?:^|[^A-Z0-9])(?:[CMRUT]\\s*)?[0-9]{2,4}(?:\\s*[/]\\s*[0-9]{2,4})?(?:$|[^A-Z0-9]).*")
-                    && !raw.matches(".*\\b(?:19|20)[0-9]{2}\\s+WIZARDS.*"))return true;
+            // Do NOT stop extra footer reads for a standalone set size such
+            // as 185 or 269. That was the reason Aven Skirmisher and Catalog
+            // needed manual selection although the set code was readable.
+            if(raw.matches(".*[0-9]{1,5}\\s*[/]\\s*[0-9]{2,5}.*"))return true;
+            // When the set code and a rarity/number are clearly together,
+            // extra OCR is unnecessary. Ignore a bare numeric denominator.
+            if(raw.matches(".*\\b[CMRU]\\s*0?[0-9]{2,5}\\s+[A-Z][A-Z0-9]{1,4}\\b.*"))return true;
         }
         return false;
     }

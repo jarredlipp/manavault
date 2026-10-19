@@ -3,6 +3,7 @@ package com.manavault.app;
 import android.content.Context;
 import android.util.Log;
 import org.json.JSONArray;
+import org.json.JSONObject;
 import java.io.File;
 import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
@@ -38,5 +39,28 @@ final class NativeNameIndex {
     }
     private void put(String alias,String canonical,boolean whole){String key=norm(alias);if(!key.isEmpty()&&(whole||!names.containsKey(key)))names.put(key,canonical);}
     int size(){return names.size();}
-    String exact(String text){return names.get(norm(text));}
+    String exact(String text){
+        final String key=norm(text);
+        String known=names.get(key);
+        if(known!=null)return known;
+        // Scryfall's generic catalog/card-names list can omit named tokens.
+        // Check the bundled full printing database before treating a clearly
+        // read short token title (e.g. Jace) as unknown. This is a name lookup,
+        // never an assertion of a particular printing or set.
+        if(key.length()<3 || key.length()>55 || !NativePrintingIndex.status().startsWith("Ready:"))return null;
+        try{
+            JSONObject result=new JSONObject(NativePrintingIndex.lookup("name",key,64));
+            JSONArray rows=result.optJSONArray("rows");
+            if(rows==null)return null;
+            for(int i=0;i<rows.length();i++){
+                JSONObject row=rows.optJSONObject(i);
+                if(row!=null && !row.optBoolean("digital",false) && key.equals(norm(row.optString("name","")))){
+                    String canonical=row.optString("name","");
+                    names.put(key,canonical);
+                    return canonical;
+                }
+            }
+        }catch(Exception e){Log.w("ManaVaultNames","Native printing-name fallback failed",e);}
+        return null;
+    }
 }
