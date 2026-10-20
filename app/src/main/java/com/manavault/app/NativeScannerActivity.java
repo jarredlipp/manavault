@@ -135,6 +135,17 @@ public final class NativeScannerActivity extends ComponentActivity {
                     ": "+message.optString("name","")+
                     ("retry".equals(result)?" · hold card steady":" · stack next card"));
             if("retry".equals(result)){
+                String failed=message.optString("name","");
+                if(failed.equals(unresolvedRetryIdentity))unresolvedRetryCount++;
+                else{unresolvedRetryIdentity=failed;unresolvedRetryCount=1;}
+                if(unresolvedRetryCount>=2){
+                    // Do not endlessly re-run OCR on the same physical top card.
+                    // Keep the camera paused until the user stacks a NEW card.
+                    waitingForNext=true;
+                    status.setText("Unresolved: "+failed+" · use Close to review, or stack next card");
+                    keepButton.setText("Same copy");keepButton.setEnabled(true);
+                    return;
+                }
                 waitingForNext=false;stackGate.clear();goodFrames=0;
                 previousOcr="";previousOcrCount=0;
                 sceneStartedAt=SystemClock.elapsedRealtime();
@@ -243,6 +254,8 @@ public final class NativeScannerActivity extends ComponentActivity {
     private volatile boolean waitingForNext=false;
     private String previousOcr="",lastSeenTitle="";
     private int previousOcrCount=0;
+    private int unresolvedRetryCount=0;
+    private String unresolvedRetryIdentity="";
     private long previewHash=0;
     private volatile Bitmap availableCard;
     private long lastEdgeMs=0,lastWarpMs=0,lastArtMs=0,lastOcrMs=0;
@@ -807,6 +820,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                 corrected.recycle();
                 if(newTop){
                     waitingForNext=false;previousOcr="";previousOcrCount=0;
+                    unresolvedRetryCount=0;unresolvedRetryIdentity="";
                     sceneStartedAt=now;lastRecognitionAt=now-220;
                     final String reason=stackGate.lastEvent();
                     runOnUiThread(()->{if(!closing){
@@ -867,13 +881,17 @@ public final class NativeScannerActivity extends ComponentActivity {
         }
         return bottom;
     }
-    private static String selectTitle(Text text){
+    private static String selectTitle(Text text,int imageHeight){
         String best="";float top=-999;
-        final int normalizedHeight=stripHeight(text);
+        final int normalizedHeight=imageHeight;
         for(Text.TextBlock block:text.getTextBlocks())for(Text.Line line:block.getLines()){
             String value=line.getText().trim().replaceAll("\\s+"," ");
             String letters=value.replaceAll("[^\\p{L}]","");
             if(letters.length()<3||letters.length()>52||value.length()>60 || TitleReadingPolicy.isFooterOrRulesNoise(value))continue;
+            android.graphics.Rect titleBounds=line.getBoundingBox();
+            // Hard geometric gate: footer/rules text cannot win by length.
+            // Even the enlarged title crop includes artwork, so prefer its upper band.
+            if(titleBounds==null || titleBounds.centerY()>normalizedHeight*.70f)continue;
             if(value.matches("(?i).*\\b(creature|instant|sorcery|enchantment|artifact|planeswalker|battle)\\s*[—-].*"))continue;
             if(value.matches("(?i)^(enchantment|creature|artifact|land|instant|sorcery|aura|legendary)(\\s+(aura|creature|artifact|land))?$"))continue;
             if(letters.matches("(?i).*(.)\\1{4,}.*"))continue;
@@ -903,6 +921,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             if(Math.abs(r.left-t.left)>Math.max(65,r.width()*.5))continue;
             String combined=a.getText().trim()+" "+b.getText().trim();
             if(TitleReadingPolicy.isFooterOrRulesNoise(combined))continue;
+            if(r.centerY()>stripHeight(result)*.68f || t.centerY()>stripHeight(result)*.85f)continue;
             String canonical=index.exact(combined);
             if(canonical!=null)return canonical;
         }
@@ -929,7 +948,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         recognizer.process(InputImage.fromBitmap(strip,0)).addOnCompleteListener(task->{
             String name="";
             if(task.isSuccessful()){
-                name=selectTitle(task.getResult());
+                name=selectTitle(task.getResult(),strip.getHeight());
                 String paired=indexedTwoLineTitle(task.getResult(),names);
                 if(paired!=null)name=paired;
                 if(TitleReadingPolicy.isFooterOrRulesNoise(name))name="";
@@ -979,7 +998,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                 return;
             }
             lastOcrMs=SystemClock.elapsedRealtime()-began;
-            if(bestTentative!=null){
+            if(bestTentative!=null && !TitleReadingPolicy.isFooterOrRulesNoise(bestTentative)){
                 String normalized=bestTentative.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");
                 if(normalized.equals(previousOcr))previousOcrCount++;
                 else{previousOcr=normalized;previousOcrCount=1;}

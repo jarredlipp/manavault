@@ -1826,6 +1826,7 @@ function mv60StoreUnverifiedName(name,printings,reason){
  mv120PersistScan();
 }
 function mv60CanSaveNameOnly(data){
+ if(mv613NonTitleText(String(data?.name||'')))return null;
  const candidates=mvHybridCandidates(String(data?.name||''));
  const first=candidates[0],runner=candidates[1];
  if(!first||first.score<.94||(runner&&first.score-runner.score<.07))return null;
@@ -1930,6 +1931,8 @@ function mv67TitleAgrees(ocr,printed){
 function mv613NonTitleText(raw){
  const n=mvHybridNorm(raw);
  if(!n||n==='unrecognized title')return true;
+ if(/^(?:cycling|haste|reach|lifelink|vigilance|trample|flying|deathtouch|first strike|double strike|menace|flash|ward|equip|unleash|scry|surveil|prowess|hexproof|indestructible)(?: [0-9wubrgcx]*)?$/.test(n))return true;
+ if(/^(?:each other creature|each creature you|when this|whenever this)(?: |$)/.test(n))return true;
  if(/^(?:of the coast|the coast|wizards(?: of the coast)?|copyright|illus(?:trated)?|artist)(?: |$)/.test(n))return true;
  if(/\b(?:19|20)\d{2}\b.*\b(?:wizards|coast|copyright|inc|llc)\b/.test(n))return true;
  if(/^[a-z0-9]{2,5} (?:en|jp|de|fr|it|es|pt|ru|ko|zhs|zht)[a-z]*(?: |$)/.test(n))return true;
@@ -2103,6 +2106,7 @@ async function mv120TextEvidence(index,observed){
 }
 async function mv60DecideCapture(data,index,{liveFast=false}={}){
  const raw=String(data.name||'').trim();
+ if(mv613NonTitleText(raw))return {reason:'Rules text or ability detected instead of card title; correct the title before saving'};
  await mvHybridLoadNames();
  const matches=mvHybridCandidates(raw);
  let best=matches[0];
@@ -2352,6 +2356,7 @@ function mvLiveAskReview(data,name,reason,printings){
 }
 function mv119ReliableName(data){
  const raw=String(data?.name||'').trim();
+ if(mv613NonTitleText(raw))return null;
  const names=mvHybridCandidates(raw);
  const first=names[0],second=names[1];
  if(!first||!first.exact||(second&&second.score>=first.score-.07))return null;
@@ -2451,14 +2456,8 @@ async function mvLivePump(){
       if(early.action==='retry'){result='retry';message='Retry this card';break;}
       if(early.action==='skip'){result='skipped';message='Skipped during scanning';break;}
      }
-     if(outcome.catalogUnavailable){
-      const reliable=mv119ReliableName(captured);
-      if(reliable){
-       mv60StoreUnverifiedName(reliable,[],outcome.reason||'Offline catalog unavailable');
-       mvLiveUnverified++;result='unverified';resultName=reliable;
-       message='Name verified; catalog still preparing (edition unverified)';break;
-      }
-     }
+     // An unavailable catalog is not permission to create a name-only item.
+     // Route through explicit on-camera review instead.
      if(outcome.printing){
       mv60StoreExactPrinting(outcome.printing);
       mvLiveVerified++;result='verified';resultName=outcome.printing.name;finalPrinting=outcome.printing;
@@ -2496,15 +2495,8 @@ async function mvLivePump(){
     }
    }catch(e){
     mvLogCamera('Live scan processing error: '+e.message,'info');
-    const reliable=mv119ReliableName(data);
-    if(reliable){
-     try{mv60StoreUnverifiedName(reliable,[],'Lookup error: '+e.message);
-      mvLiveUnverified++;result='unverified';resultName=reliable;
-      message='Name saved safely; printing deferred after lookup failure';
-      // The collection write is complete. A manual picker with zero choices
-      // cannot improve the result and must not block the next card.
-     }catch(saveError){mvLogCamera('Local collection write failed: '+saveError.message,'info');}
-    }
+    // Never turn verification exceptions into implicit collection writes.
+    // The user must explicitly approve a name-only save in the review UI.
     if(result!=='unverified')try{
      const choice=await mvLiveAskReview(data,'','Recognition error: '+e.message,[]);
      result=choice?.action==='retry'?'retry':'skipped';

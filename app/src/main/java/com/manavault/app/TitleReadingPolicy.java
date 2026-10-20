@@ -23,6 +23,10 @@ final class TitleReadingPolicy {
         if(k.matches("^[a-z0-9]{2,5} (?:en|jp|fr|de|it|es|pt|ru|ko|zhs|zht)[a-z]*\\b(?: .*)?$"))return true;
         if(k.matches("^(?:[cmrut] )?\\d{2,5}(?: \\d{2,5})?(?: [a-z0-9]{2,5})?(?: en)?$"))return true;
         if(k.matches("^(?:creature|enchantment|instant|sorcery|artifact|planeswalker|battle|land)(?: .*)?"))return true;
+        // Rules text is never promoted to card identity, even if a phrase happens
+        // to be a real card name. Only an explicitly observed title may match.
+        if(k.matches("^(?:cycling|haste|reach|lifelink|vigilance|trample|flying|deathtouch|first strike|double strike|menace|flash|ward|equip|unleash|scry|surveil|prowess|hexproof|indestructible)(?: [0-9wubrgcx ]*)?$"))return true;
+        if(k.startsWith("each other creature ")||k.startsWith("each creature you ")||k.startsWith("when this ")||k.startsWith("whenever this "))return true;
         if(k.startsWith("spells your opponents ")||k.startsWith("when you ")||k.startsWith("whenever you ")||k.startsWith("to one target "))return true;
         return false;
     }
