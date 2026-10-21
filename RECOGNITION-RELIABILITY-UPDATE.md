@@ -25,3 +25,40 @@
 - `python tools/check_name_layout_51211.py`: passed
 
 Test on a real device with Exava, Web-Slinger Elite, sideways battles, two-line showcase titles, and same-name reprints before relying on unattended bulk collection scans.
+
+
+## October 20 follow-up — v5.12.18 (Teysa/Captain America trial)
+
+Additional changes applied after observing the four-card trial:
+
+- **Critical fix:** Both native Java and JavaScript footer filters wrongly treated an
+  arbitrary word beginning with `en` as the printed English-language marker.
+  In particular, **Teysa, Envoy of Ghosts** was classified as footer noise.
+  Language markers now require a complete `EN` token (or a recognizably
+  uppercase fused printing+artist footer) rather than a lowercased prefix.
+- **Focused title OCR:** first pass reads the top 14.5% of the captured card;
+  a wider 23.5% color fallback remains for showcase and multi-line titles.
+  Detected line coordinates must be in the true title band.
+- **Rotation guard:** for upright physical portrait cards, only the first
+  orientation may generate an unverified name candidate. Rescue orientations
+  can return exact indexed names but cannot promote the reversed card's artist
+  credit or flavor text to an unverified title. Sideways card input prioritizes
+  the 90/270-degree orientations with its own supported tentative band.
+- **Type-line disambiguation:** "Land Tax" and "Artifact Mutation" are real
+  title candidates; strings such as "Legendary Creature — Human Advisor" are
+  not. This also prevents broad type keyword suppression of actual names.
+- **Safe footer suggestion:** if all attempted reads are non-title text, the
+  scanner may look for a unique physical set+collector combination and show the
+  possible printing for immediate confirmation; it cannot silently save it.
+- **New regression scripts:** `tools/check_title_rescue_guard.py` exercises the
+  production Java policy on the JVM and checks scanner wiring;
+  `tools/check_non_title_footer_review.js` checks JS review-only handling.
+- **Existing test alignment:** the catalog-warmup test now exercises explicit
+  approval of an unverified entry; the offline-assets test accepts the actual
+  Gradle pre-build asset generation dependency.
+
+Important: A successful test here proves policy logic and source wiring,
+**not** OCR quality from Android's ML Kit camera implementation. Re-scan
+Teysa and Captain America after installing the new APK; cards skipped in the
+previous trial were not added to the collection. The physical printer catalog
+and built-in reference fingerprints were not expanded in this release.

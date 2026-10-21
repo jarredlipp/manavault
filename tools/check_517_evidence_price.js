@@ -1,4 +1,4 @@
-/** ManaVault v5.12.17: phone-log printing ambiguities and exact-price provenance. */
+/** ManaVault v5.12.18: phone-log printing ambiguities and exact-price provenance. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const html=fs.readFileSync('app/src/main/assets/index.html','utf8');
 const start=html.indexOf('function mv61CollectorKey('),end=html.indexOf('function mv61NormalImage(',start);
@@ -23,7 +23,7 @@ assert.equal(result.printing,undefined,'rarity following a collector fraction ca
 result=resolver([row('R 0054'),row('FDN EN','footer-line')],[card('fdn','54'),card('fdn','54','rare','variant')]);
 assert.equal(result.printing,undefined,'multiple variants sharing same set and number remain ambiguous');
 
-const from=html.indexOf('// v5.12.17: Real prices are looked up by exact Scryfall printing ID');
+const from=html.indexOf('// v5.12.18: Real prices are looked up by exact Scryfall printing ID');
 const to=html.indexOf('// v5.12.11: Combined, offline collection-search filters.',from);
 assert(from>=0&&to>from);
 const uuid='d6b4fd44-1234-4acd-a1ac-a1b2c3d4e5f6';
@@ -70,5 +70,5 @@ vm.createContext(priceCtx);vm.runInContext(html.slice(from,to),priceCtx);
  assert(html.includes('Refresh exact-printing prices'));
  assert(html.includes('card.foil?p.usd_foil:p.usd'), 'normal prices must never silently fall back to foil-only prices');
  assert(html.includes('Scryfall USD, not live TCGplayer Market Price'));
- console.log('v5.12.17: credible collector ranking, rarity-veto boundaries, variant collisions and exact-printing Scryfall price refresh passed.');
+ console.log('v5.12.18: credible collector ranking, rarity-veto boundaries, variant collisions and exact-printing Scryfall price refresh passed.');
 })().catch(e=>{console.error(e);process.exit(1)});

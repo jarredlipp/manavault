@@ -121,7 +121,9 @@ console.log('v5.10.9 scene, OCR, printing evidence, and provisional-collection g
 // OCR can learn a name-only art fingerprint without pretending to know a set.
 const matcher=fs.readFileSync(path.join(root,'app/src/main/java/com/manavault/app/VisualMatcher.java'),'utf8');
 const workflow=fs.readFileSync(path.join(root,'.github/workflows/build-apk.yml'),'utf8');
-assert.match(workflow,/tools\/ensure_offline_assets\.sh/, 'Workflow must generate validated offline assets');
+assert.ok(/tools\/ensure_offline_assets\.sh/.test(workflow) ||
+ /dependsOn tasks\.named\('prepareOfflineAssets'\)/.test(fs.readFileSync(path.join(root,'app/build.gradle'),'utf8')),
+ 'GitHub workflow or mandatory Gradle preBuild must generate offline assets');
 assert.match(fs.readFileSync(path.join(root,'app/build.gradle'),'utf8'),/dependsOn tasks\.named\('prepareOfflineAssets'\)/, 'Gradle must prepare references before verification');
 assert.match(fs.readFileSync(path.join(root,'tools/verify_offline_assets.py'),'utf8'),/artworks < minimum_references/, 'Do not release an APK with zero bundled artwork references');
 assert.match(fs.readFileSync(path.join(root,'tools/verify_offline_assets.py'),'utf8'),/symbols < minimum_references/, 'Missing build failure for empty set-symbol references');

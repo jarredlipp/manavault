@@ -22,7 +22,7 @@ scanner=(r/'app/src/main/java/com/manavault/app/NativeScannerActivity.java').rea
 quad=(r/'app/src/main/java/com/manavault/app/CardQuadDetector.java').read_text()
 assert 'round(card.getWidth()*.956f)' in scanner
 assert 'round(card.getHeight()*.235f)' in scanner
-assert 'indexedTwoLineTitle(task.getResult(),names)' in scanner
+assert 'indexedTwoLineTitle(task.getResult(),names,strip.getHeight())' in scanner
 assert 'getWidth()>corrected.getHeight()' not in scanner
 assert 'boolean wasSideways=topEdge>sideEdge*1.12;' in scanner
 assert 'always to portrait' in quad

@@ -1,4 +1,4 @@
-# ManaVault v5.12.17 — Printing confidence and exact-price fixes
+# ManaVault v5.12.18 — Printing confidence and exact-price fixes
 
 Android Magic: The Gathering collection scanner, Commander deck studio, and inventory manager.
 

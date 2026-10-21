@@ -8,7 +8,7 @@ scanner=(java/'NativeScannerActivity.java').read_text()
 edge=(java/'CardQuadDetector.java').read_text()
 visual=(java/'VisualMatcher.java').read_text()
 symbols=(java/'PrintingFingerprintVerifier.java').read_text()
-assert 'int[] rotations=titleRotationOrder(card.getWidth(),card.getHeight())' in scanner
+assert 'int[] rotations=sideways ? new int[]{90,270,0,180}' in scanner and 'titleRotationOrder(card.getWidth(),card.getHeight())' in scanner
 assert scanner.index('if(rotationIndex<3){\n                readTitle') < scanner.index('enqueue(bestTentative,"ocr-candidate"'), 'try all orientations before unknown title'
 assert 'previousOcrCount>=2 && normalized.length()>=3' in scanner, 'short titles should reach review'
 assert 'Imgproc.RETR_LIST' in edge and 'hasEnclosingCardEdge(edgePixels' in edge

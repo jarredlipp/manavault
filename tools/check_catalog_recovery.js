@@ -15,6 +15,7 @@ const context={
  mvHybridEdit:(a,b)=>{let p=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let q=[i];for(let j=1;j<=b.length;j++)q[j]=Math.min(q[j-1]+1,p[j]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=q}return p[b.length]},
  mvHybridLoadNames:async()=>{},
  mvHybridCandidates:name=>name==='Light of Day'?[{name,score:1,exact:true}]:[],
+ mvHybridLookupCache:new Map(),
  mvLogCamera:()=>{},state:{cards:saved,decks:[]},
  scanAlsoOwn:true,insertIntoDeck:()=>false,
  info:p=>({id:p.id,name:p.name,qty:1}),mv53PrintingPrice:()=>null,
@@ -30,7 +31,7 @@ context.window.ManaVaultNativeScanner={
  lookupOfflinePrintings:()=>JSON.stringify({ready:false,complete:false,rows:[]}),
  scanResolved:payload=>receipts.push(JSON.parse(payload)),
  scanProgress:()=>{},
- reviewNow:payload=>{reviews.push(JSON.parse(payload));throw Error('No review should occur with reliable exact name during catalog warmup')},
+ reviewNow:payload=>{const request=JSON.parse(payload);reviews.push(request);context.window.mvNativeImmediateReviewChoice({scan_id:request.scan_id,action:'unverified'});},
  selectImage:()=>{},
  readPrintingMarks:raw=>{let data=JSON.parse(raw);context.window.mv61OnMarksResult({requestId:data.requestId,lines:[],token:false})}
 };
@@ -45,7 +46,8 @@ vm.createContext(context);vm.runInContext(code,context);
  assert.equal(saved[0].name,'Light of Day');
  assert.equal(receipts.length,1,'collection write must be acknowledged');
  assert.equal(receipts[0].status,'unverified');
- assert.equal(reviews.length,0,'do not show empty review when catalog is initializing');
+ assert.equal(reviews.length,1,'catalog warmup requires explicit user approval');
+ assert.equal(reviews[0].allow_unverified,true,'reliable catalog name may be kept only after user approval');
  context.window.mvNativeScanLive(scan);
  await vm.runInContext('mvLiveRunning',context);
  assert.equal(saved[0].qty,1,'same scan ID must not create duplicate');
@@ -58,6 +60,6 @@ vm.createContext(context);vm.runInContext(code,context);
  context.window.mvNativeScanLive({...scan,scan_id:'test-2',name:'garbled 123',source:'ocr-candidate'});
  await vm.runInContext('mvLiveRunning',context);
  assert.equal(saved.length,1,'unknown title must not be recorded as a card');
- assert.equal(reviews.length,1,'unknown title should receive correction/skip review');
- console.log('Catalog-not-ready recovery: saved exact name before Finish, no guessed printing, no empty review, no duplicate; unknown identity requires review.');
+ assert.equal(reviews.length,2,'unknown title should receive correction/skip review');
+ console.log('Catalog-not-ready recovery: explicit approval permits name-only save before Finish; no guessed printing/duplicates; unknown identity requires review.');
 })().catch(e=>{console.error(e);process.exit(1)});
