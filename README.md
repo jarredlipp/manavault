@@ -1,4 +1,4 @@
-# ManaVault v5.12.18 — Printing confidence and exact-price fixes
+# ManaVault v5.12.19 — Collector-number OCR recovery
 
 Android Magic: The Gathering collection scanner, Commander deck studio, and inventory manager.
 

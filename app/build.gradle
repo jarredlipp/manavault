@@ -7,8 +7,8 @@ android {
         applicationId 'com.manavault.app'
         minSdk 26
         targetSdk 35
-        versionCode 102
-        versionName '5.12.18'
+        versionCode 103
+        versionName '5.12.19'
     }
 }
 

@@ -62,3 +62,26 @@ Important: A successful test here proves policy logic and source wiring,
 Teysa and Captain America after installing the new APK; cards skipped in the
 previous trial were not added to the collection. The physical printer catalog
 and built-in reference fingerprints were not expanded in this release.
+
+
+## October 21 follow-up — v5.12.19 (collector/footer OCR)
+
+A new bounded rescue pass in `mv126FooterEvidence` recognizes OCR corruption of
+**the printed rarity or leading zero**, including `O054`, `RO054`, `CO100`,
+`U0232`, and `L0273`. For this path the OCR token must be a complete token
+in a printing-footer region, have at least three numeric digits, and match a
+collector number of the **already identified name** in the local catalog.
+
+The rescue has lower evidence weight than a clean printed fraction or a clear
+rarity+collector field; it cannot choose between two catalog variants with the
+same number, cannot override an independently observed set code, and cannot
+read a collector from the type-bar, illustrator credit, or copyright row.
+
+`tools/check_51219_ocr_collector_rescue.js` adds physical-log-derived positive
+and negative regression cases. No additional artwork references were bundled:
+450 remain available until the asset pipeline is run with the source catalog.
+
+Known limits: older border cards (e.g. Melek, Izzet Paragon) may still need
+manual edition review when the physical set symbol and collector are unreadable.
+Likewise, photo-based OCR is not verified on a real Android device by these
+static tests. User-confirmed copies of the same card are not silently deduped.
