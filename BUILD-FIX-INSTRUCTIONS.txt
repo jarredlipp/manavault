@@ -1,6 +1,0 @@
-ManaVault v4.0 Gradle build fix
-
-This ZIP has repository files at its ROOT (no enclosing project folder).
-In GitHub, replace settings.gradle and build.gradle at repository root, app/build.gradle in app/, and .github/workflows/build-apk.yml. Keep all other files as provided.
-Do not upload the ZIP itself as a repository file: extract it first.
-The original v4.0 ZIP already declared AGP 8.7.3; this release makes its configuration explicit, flattens the archive and adds a CI validation step. If the same plugin error persists, inspect the exact Gradle files in the checked-out GitHub repository and the first 25 lines of the build log.
