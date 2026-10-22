@@ -116,6 +116,10 @@ public final class NativeScannerActivity extends ComponentActivity {
         reviewDialogOpen=false;
         if(scanReviewDialog!=null){scanReviewDialog.dismiss();scanReviewDialog=null;scanReviewId="";}
         if(saved){
+            lastSavedName=message.optString("name", "").trim();
+            lastSavedAt=SystemClock.elapsedRealtime();
+            unresolvedRetryCount=0;
+            unresolvedRetryIdentity="";
             playSaveSound(message.optInt("volume",60));
             if(scanSuccessPanel!=null && scanSuccessPanel.getParent()==cameraRoot)
                 cameraRoot.removeView(scanSuccessPanel);
@@ -143,7 +147,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                     // Keep the camera paused until the user stacks a NEW card.
                     waitingForNext=true;
                     status.setText("Unresolved: "+failed+" · use Close to review, or stack next card");
-                    keepButton.setText("Same copy");keepButton.setEnabled(true);
+                    keepButton.setText("Next card");keepButton.setEnabled(true);
                     return;
                 }
                 waitingForNext=false;stackGate.clear();goodFrames=0;
@@ -254,8 +258,13 @@ public final class NativeScannerActivity extends ComponentActivity {
     private volatile boolean waitingForNext=false;
     private String previousOcr="",lastSeenTitle="";
     private int previousOcrCount=0;
-    private int unresolvedRetryCount=0;
-    private String unresolvedRetryIdentity="";
+    private volatile int unresolvedRetryCount=0;
+    private volatile String unresolvedRetryIdentity="";
+    // The live camera may visually change under glare. Until the user confirms
+    // a second physical copy, do not count the same just-saved title twice.
+    private volatile String lastSavedName="";
+    private volatile long lastSavedAt=0;
+    private volatile boolean sameCopyOverridePending=false;
     private long previewHash=0;
     private volatile Bitmap availableCard;
     private long lastEdgeMs=0,lastWarpMs=0,lastArtMs=0,lastOcrMs=0;
@@ -358,13 +367,20 @@ public final class NativeScannerActivity extends ComponentActivity {
                 // The manual bypass is ONLY for an actual newly stacked copy
                 // that appears identical. Require deliberate confirmation to
                 // avoid counting the same stationary card a second time.
+                boolean unresolvedBlock=unresolvedRetryCount>=2;
                 new android.app.AlertDialog.Builder(this)
-                    .setTitle("Scan an identical copy?")
-                    .setMessage("Only continue if you have placed another physical card on top of the stack. The camera cannot prove two identical-looking cards are separate.")
+                    .setTitle(unresolvedBlock?"Start scanning the next card?":"Scan an identical copy?")
+                    .setMessage(unresolvedBlock?
+                        "The previous card was not saved. Continue only after placing a different physical card on top of the stack.":
+                        "Only continue if you have placed another physical card on top of the stack. The camera cannot prove two identical-looking cards are separate.")
                     .setNegativeButton("Cancel",(dialog,which)->{})
-                    .setPositiveButton("Scan next copy",(dialog,which)->{
+                    .setPositiveButton(unresolvedBlock?"Scan next card":"Scan next copy",(dialog,which)->{
                         if(!waitingForNext||closing)return;
                         waitingForNext=false;sceneStartedAt=SystemClock.elapsedRealtime();
+                        sameCopyOverridePending=true;
+                        // An expressly confirmed new physical copy can have the
+                        // same name as the last unresolved or saved capture.
+                        unresolvedRetryCount=0;unresolvedRetryIdentity="";
                         previousOcr="";previousOcrCount=0;goodFrames=0;
                         stackGate.clear();
                         lastRecognitionAt=SystemClock.elapsedRealtime();
@@ -820,7 +836,10 @@ public final class NativeScannerActivity extends ComponentActivity {
                 corrected.recycle();
                 if(newTop){
                     waitingForNext=false;previousOcr="";previousOcrCount=0;
-                    unresolvedRetryCount=0;unresolvedRetryIdentity="";
+                    // Scene hashes can change because of glare or focus;
+                    // never clear a repeated-identity retry block here. Only
+                    // a successful save or deliberate same-copy confirmation
+                    // can reset that identity's retry budget.
                     sceneStartedAt=now;lastRecognitionAt=now-220;
                     final String reason=stackGate.lastEvent();
                     runOnUiThread(()->{if(!closing){
@@ -1048,6 +1067,32 @@ public final class NativeScannerActivity extends ComponentActivity {
      * Keep the original frame orientation for stack-change fingerprinting. */
     private synchronized void enqueue(String name,String source,float score,String imageId,Bitmap card,long hash,int rotationDegrees){
         if(closing||finishRequested||waitingForNext||captured.size()>=150)return;
+        // Guard against a false "new top" caused by changing exposure/artwork
+        // hashes. A duplicate of a just-saved name requires the existing
+        // explicit Same copy confirmation; unrelated new cards remain fast.
+        long now=SystemClock.elapsedRealtime();
+        String normalized=name==null?"":name.trim().toLowerCase(Locale.ROOT);
+        boolean sameRecentSaved=!normalized.isEmpty() &&
+            normalized.equals(lastSavedName.toLowerCase(Locale.ROOT)) &&
+            now-lastSavedAt>=0 && now-lastSavedAt<20000;
+        boolean retryLocked=unresolvedRetryCount>=2 && !normalized.isEmpty() &&
+            normalized.equals(unresolvedRetryIdentity.trim().toLowerCase(Locale.ROOT));
+        if((sameRecentSaved || retryLocked) && !sameCopyOverridePending){
+            // Re-arm against the CURRENT image, so stacking an actually
+            // different card still automatically resumes continuous scanning.
+            stackGate.captured(hash,wholeFrameHash(card),VisualMatcher.titleHash(card),now);
+            waitingForNext=true;
+            previousOcr="";previousOcrCount=0;
+            final String explanation=retryLocked?
+                "Unresolved card repeated · stack a different card or confirm Same copy":
+                "Same title still visible · stack next card, or confirm Same copy";
+            runOnUiThread(()->{if(!closing){
+                status.setText(explanation);
+                keepButton.setText(retryLocked?"Next card":"Same copy");keepButton.setEnabled(true);
+            }});
+            return;
+        }
+        sameCopyOverridePending=false;
         try{
             int number=captured.size()+1;
             File photo=new File(getCacheDir(),"native-scan-"+sessionStart+"-"+number+".jpg");

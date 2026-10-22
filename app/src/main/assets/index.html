@@ -1237,7 +1237,7 @@ async function mv60RankArtwork(index,printings){
 }
 // v5.12.11: Fast, fully offline artwork comparison against the bundled art
 // atlas. A missing reference is NOT a losing candidate: the comparison fails.
-async function mv115RankBundledArtwork(index,printings,{requireFooter=true}={}){
+async function mv115RankBundledArtwork(index,printings,{requireFooter=true,allowSharedArtwork=false}={}){
  if(!window.ManaVaultNativeScanner?.rankBundledArtwork)return {reason:'No native bundled artwork matcher'};
  const groups=new Map();
  for(const p of printings){
@@ -1266,9 +1266,12 @@ async function mv115RankBundledArtwork(index,printings,{requireFooter=true}={}){
  if(!top||Number(top.score)<minimum||Number(top.score)-Number(second?.score||0)<margin)
   return {reason:'Bundled artwork does not uniquely identify an illustration'};
  const group=choices.find(x=>x.id===top.id);
- if(!group||group.ids.length!==1)return {reason:'Different printings share the same artwork'};
+ if(!group)return {reason:'Winning illustration not found'};
+ if(group.ids.length!==1)
+  return allowSharedArtwork ? {winningIds:group.ids,score:Number(top.score),margin:Number(top.score)-Number(second?.score||0)} :
+   {reason:'Different printings share the same artwork'};
  const selected=printings.find(p=>p.id===group.ids[0]);
- return selected?{printing:selected,score:Number(top.score)}:{reason:'No matching candidate'};
+ return selected?{printing:selected,winningIds:group.ids,score:Number(top.score),margin:Number(top.score)-Number(second?.score||0)}:{reason:'No matching candidate'};
 }
 
 // v5.10.1: supplemental printing fingerprints. The bottom-left collector
@@ -1754,7 +1757,7 @@ function mv61NormalImage(print){
  if(!/^https:\/\/cards\.scryfall\.io\/small\//i.test(small))return '';
  return small.replace('/small/','/normal/');
 }
-async function mv61RankSetSymbols(index,choices,{offlineOnly=true}={}){
+async function mv61RankSetSymbols(index,choices,{offlineOnly=true,provisional=false}={}){
  // v5.12.12: always use the bundled Scryfall SVG icon silhouettes. Do NOT
  // request card photographs or block a live scan on a network image fetch.
  const bySet=new Map();
@@ -1771,9 +1774,77 @@ async function mv61RankSetSymbols(index,choices,{offlineOnly=true}={}){
  const gap=Number(top?.score)-Number(second?.score);
  // Similar symbols may map to multiple set codes. A high score by itself
  // cannot overcome an indistinguishable runner-up or variant within the set.
- if(!top||Number(top.score)<.92||gap<.12)
-  return {reason:'Expansion-symbol silhouettes are too similar for exact verification'};
- return {set:String(top.set||''),score:Number(top.score),margin:gap};
+ const score=Number(top?.score||0);
+ // A provisional symbol is NEVER a final edition decision by itself.
+ // Physical-evidence fusion additionally requires an independently read
+ // collector number, or stronger artwork + an exact title, before saving.
+ const minScore=provisional?.84:.92,minGap=provisional?.09:.12;
+ if(!top||score<minScore||gap<minGap)
+  return {reason:'Expansion-symbol silhouettes are too similar for exact verification',
+   topSet:String(top?.set||''),topScore:score,margin:Number.isFinite(gap)?gap:0};
+ return {set:String(top.set||''),score,margin:gap};
+}
+// v5.12.23: Merge three INDEPENDENT kinds of physical evidence for editions
+// that do not print a readable modern set code: collector numerator, the
+// photographed expansion-symbol silhouette, and the official illustration.
+// This is a candidate-scoped matcher; names, collector counts, copyright
+// years, and generic retro frames alone never justify exact printing IDs.
+function mv123ObservedCollector(lines,printings){
+ const evidence=mv126FooterEvidence(lines,printings);
+ const allowed=new Set((printings||[]).map(p=>mv61CollectorKey(p.collector_number)).filter(Boolean));
+ const fractions=[...new Set(evidence.fractions.map(f=>f.collector).filter(k=>allowed.has(k)))];
+ // A proper numerator/denominator is the strongest source. Contradictory
+ // distinct fractions must not be suppressed by an unrelated OCR fragment.
+ if(fractions.length>1)return '';
+ if(fractions.length===1)return fractions[0];
+ const hits=[...evidence.numbers.entries()].filter(([key,value])=>allowed.has(key)&&value.score>=5)
+  .sort((a,b)=>b[1].score-a[1].score);
+ if(!hits.length)return '';
+ if(hits.length>1&&hits[0][1].score<hits[1][1].score+3)return '';
+ return hits[0][0];
+}
+async function mv123ResolvePhysicalFusion(index,marks,printings,{exactTitle=false}={}){
+ if(!exactTitle||!Array.isArray(marks?.lines)||!Array.isArray(printings)||printings.length<2)
+  return {reason:'Title or printings insufficient for visual corroboration'};
+ const collector=mv123ObservedCollector(marks.lines,printings);
+ const observed=mv126FooterEvidence(marks.lines,printings);
+ // Do not override reliable printed codes or conflicting numerators with a
+ // visual resemblance. Structured footer matching has already run first.
+ if(observed.sets.size>1 || observed.fractions.length &&
+    new Set(observed.fractions.map(f=>f.collector)).size>1)
+  return {reason:'Conflicting physically observed printing marks'};
+ const symbol=await mv61RankSetSymbols(index,printings,{offlineOnly:true,provisional:true});
+ if(!symbol.set)return {reason:symbol.reason||'Expansion symbol unreadable',collector,
+  symbolScore:symbol.topScore||0,symbolMargin:symbol.margin||0};
+ const plausible=printings.filter(p=>String(p.set||'').toLowerCase()===symbol.set &&
+   (!collector||mv61CollectorKey(p.collector_number)===collector));
+ if(plausible.length!==1)return {reason:'Collector/symbol still leave ambiguous editions',collector,
+  symbolScore:symbol.score,symbolMargin:symbol.margin};
+ const winner=plausible[0];
+ // An independently observed collector + distinctive symbol identifies a
+ // single Scryfall printing even on old frames without a printed set code.
+ if(collector && symbol.score>=.86 && symbol.margin>=.10)
+  return {printing:winner,method:'printed collector number + physical expansion symbol',
+   evidence:{collector,set:symbol.set,symbolScore:symbol.score,symbolMargin:symbol.margin}};
+ // Older cards can lack a numbered collector. A very strong, distinctive
+ // physical expansion-symbol match is sufficient with an exact OCR title and
+ // only one edition of that title in the matched set.
+ if(!collector && symbol.score>=.965 && symbol.margin>=.17)
+  return {printing:winner,method:'exact card title + physical expansion symbol',
+   evidence:{set:symbol.set,symbolScore:symbol.score,symbolMargin:symbol.margin}};
+ // Where the symbol is recognizable but less certain, require independently
+ // matching OFFLINE illustration references for every candidate illustration.
+ // Artwork shared across reprints is allowed only because the physical set
+ // logo has independently distinguished a single edition in that set.
+ if(symbol.score>=.88 && symbol.margin>=.10 && printings.length<=24){
+  const art=await mv115RankBundledArtwork(index,printings,{requireFooter:true,allowSharedArtwork:true});
+  if((art.printing?.id===winner.id || art.winningIds?.includes(winner.id)) &&
+     art.score>=.96 && art.margin>=.10)
+   return {printing:winner,method:collector?'collector + symbol + bundled artwork':'physical symbol + bundled artwork + exact title',
+    evidence:{collector:collector||null,set:symbol.set,symbolScore:symbol.score,artScore:art.score}};
+ }
+ return {reason:'Symbol match needs stronger independent corroboration',collector,
+  symbolScore:symbol.score,symbolMargin:symbol.margin};
 }
 async function mv61ResolvePrinting(index,printings,artwork,preloadedMarks){
  const marks=preloadedMarks||await mv61Request('readPrintingMarks','mv61OnMarksResult',index,{},7500);
@@ -2188,9 +2259,13 @@ async function mv60DecideCapture(data,index,{liveFast=false}={}){
  // a regular planeswalker with the same visible title.
  // First try inexpensive collector/set-code OCR. A uniquely verified pair
  // identifies the printing without ANY remote image downloads.
+ // Transform / modal double-faced cards show ONE face at a time. Do not
+ // require both printed titles to be visible, as a true split card does.
+ // E.g. Depraved Harvester must resolve from its own reverse-face photo.
+ const verifySplit=print.printings.some(p=>p.layout==='split'||p.layout==='aftermath');
  const marks=await mv61Request('readPrintingMarks','mv61OnMarksResult',index,
-  {verifySplit:String(best.name||'').includes(' // '),verifyToken:print.printings.some(p=>/\btoken\b/i.test(p.type_line||'')),fast:liveFast},liveFast?2400:8500);
- if(String(best.name||'').includes(' // ') && !mvSplitFaceTitlesAgree(best.name,marks.lines))
+  {verifySplit,verifyToken:print.printings.some(p=>/\btoken\b/i.test(p.type_line||'')),fast:liveFast},liveFast?2400:8500);
+ if(verifySplit && !mvSplitFaceTitlesAgree(best.name,marks.lines))
   return {reason:'Split-card faces could not be confirmed; check both printed titles before saving'};
  // Explicit diagnostic evidence makes a failed footer OCR actionable;
  // never log or store the captured card photograph in the console.
@@ -2209,6 +2284,17 @@ async function mv60DecideCapture(data,index,{liveFast=false}={}){
  if(artistCollector && mv60CanonicalMatches(artistCollector.printing.name,best.name))
   return artistCollector;
  if(structured.conflict)return {reason:structured.reason,printings:mv614ReviewOrder(marks.lines,print.printings)};
+ // Before broad fallback heuristics, pair a collector with the photographed
+ // expansion symbol. This also handles old frames whose set code is graphical
+ // (Tempest, Invasion, Seventh Edition, and BRR retro artifacts).
+ const fused=await mv123ResolvePhysicalFusion(index,marks,print.printings,
+  {exactTitle:best.exact&&(data.source==='ocr-exact'||data.source==='manual-title')});
+ if(fused.printing && mv60CanonicalMatches(fused.printing.name,best.name) &&
+    (!marks.token||/\btoken\b/i.test(fused.printing.type_line||''))){
+  mvLogCamera('Physical printing fusion for '+best.name+': '+fused.method+'; set '+fused.evidence?.set+
+   '; collector '+(fused.evidence?.collector||'unreadable')+'; symbol '+Number(fused.evidence?.symbolScore||0).toFixed(3),'info');
+  return fused;
+ }
  const setScoped=mv125SetScopedFooterMatch(marks.lines,print.printings);
  if(setScoped && mv60CanonicalMatches(setScoped.printing.name,best.name) &&
     (!marks.token||/\btoken\b/i.test(setScoped.printing.type_line||'')))
@@ -2242,7 +2328,18 @@ async function mv60DecideCapture(data,index,{liveFast=false}={}){
       codes.length===1&&codes[0]!==String(only.set||'').toLowerCase())
     return {reason:'Physical printing marks contradict the lone database printing'};
   }
-  return {printing:only,method:'one catalog printing, no contradictory marks'};
+  // A database count is not a physical identification. For a single
+  // catalog edition, require a correctly observed set OR collector number;
+  // otherwise offer that printing for immediate on-camera confirmation.
+  const seenNums=mv61CollectorCandidates(marks.lines||[],print.printings);
+  const seenSets=mv61SetHints(marks.lines||[],print.printings);
+  const hasPhysicalIdentifier=seenNums.includes(mv61CollectorKey(only.collector_number)) ||
+    seenSets.includes(String(only.set||'').toLowerCase());
+  if(!hasPhysicalIdentifier)return {
+    reason:'Card name recognized, but printed set/collector cannot confirm its only catalog edition',
+    printings:[only]
+  };
+  return {printing:only,method:'one catalog printing + physical identifier'};
  }
  let footerNumber='',footerSet='';
  if(Array.isArray(marks.lines)){

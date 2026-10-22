@@ -208,9 +208,16 @@ final class PrintingFingerprintVerifier {
             // The type-line icon moves on older frames and premium card
             // treatments. Sample nearby sizes and centers; confidence is
             // still evaluated against every plausible competing set icon.
-            float[] xs={.80f,.84f,.88f,.92f};
-            float[] ys={.505f,.545f,.585f,.625f};
-            float[][] sizes={{.068f,.055f},{.086f,.070f}};
+            // v5.12.23: older, retro, and specialty MTG frames position the
+            // expansion logo lower than the modern type line.  The previous
+            // search stopped at 62.5% of card height and could miss Tempest,
+            // Invasion, Seventh Edition and BRR retro artifact marks entirely.
+            // Still search ONLY the right-hand type-line neighborhood, not
+            // arbitrary art pixels; score all plausible sets against the same
+            // crop collection and require a clearly separated winning shape.
+            float[] xs={.755f,.805f,.855f,.905f,.945f};
+            float[] ys={.495f,.535f,.575f,.615f,.655f,.695f};
+            float[][] sizes={{.060f,.048f},{.077f,.063f},{.092f,.077f}};
             for(float x:xs)for(float y:ys)for(float[] size:sizes){
                 byte[] mask=readSymbolMask(card,x,y,size[0],size[1]);
                 if(mask!=null)observed.add(mask);

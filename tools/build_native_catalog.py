@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 from reference_match import reference_fields
 
-FIELDS = ('id','name','oracle_id','illustration_id','set','set_name','collector_number','type_line','colors','color_identity','mana_cost','rarity','layout','frame','border_color','full_art','textless','promo','security_stamp','finishes','frame_effects','released_at','image_url','image_small','image_normal','scryfall_uri','lang','digital','foil','nonfoil','prices','oracle_text','flavor_text','artist','power','toughness','keywords')
+FIELDS = ('id','name','oracle_id','illustration_id','set','set_name','collector_number','type_line','colors','color_identity','mana_cost','rarity','layout','frame','border_color','full_art','textless','promo','security_stamp','finishes','frame_effects','released_at','image_url','image_small','image_normal','scryfall_uri','lang','digital','foil','nonfoil','prices','oracle_text','flavor_text','artist','power','toughness','keywords','illustration_id_back','image_normal_back')
 
 def normalized(name):
     import unicodedata, re
@@ -24,8 +24,11 @@ def record(c):
     faces=c.get('card_faces') or []
     face=faces[0] if faces else {}
     uri=c.get('image_uris') or face.get('image_uris') or {}
+    back=faces[1] if len(faces)>1 else {}
+    back_uri=back.get('image_uris') or {}
     data={key:c.get(key) for key in FIELDS}
-    data.update(illustration_id=c.get('illustration_id') or face.get('illustration_id') or '', image_url=uri.get('art_crop') or '',image_small=uri.get('small') or '',image_normal=uri.get('normal') or '')
+    data.update(illustration_id=c.get('illustration_id') or face.get('illustration_id') or '', image_url=uri.get('art_crop') or '',image_small=uri.get('small') or '',image_normal=uri.get('normal') or '',
+       illustration_id_back=back.get('illustration_id') or '',image_normal_back=back_uri.get('normal') or '')
     data['nameKey']=normalized(c['name']);data['collectorKey']=collector(c.get('collector_number'));data['setCollector']=str(c.get('set','')).lower()+'#'+str(c.get('collector_number','')).lower()
     return data
 

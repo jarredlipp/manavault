@@ -34,12 +34,19 @@ def names(records,max_refs):
         # Scryfall image_url is art_crop; use the full-card normal image
         # so the reference and photographed card use identical geometry.
         image=c.get('image_normal') or c.get('image_small') or c.get('image_url') or ''
-        if not name or not key or not art or not image.startswith('https://cards.scryfall.io/'):
+        if not name or not key or c.get('digital') or c.get('lang') not in (None,'en'):
             continue
-        if c.get('digital') or c.get('lang') not in (None,'en'):continue
         frequency[key]+=1
-        if len(grouped[key])<4 and art not in grouped[key]:
-            grouped[key][art]=(c['id'],name,c.get('set',''),image,art)
+        # A transforming/modal double-faced card can display either face.
+        # The offline seed must fingerprint BOTH face illustrations, not only
+        # the front image. Both signatures point to the same printing ID.
+        images=[(art,image),(c.get('illustration_id_back') or '',c.get('image_normal_back') or '')]
+        for illustration,url in images:
+            if len(grouped[key])>=4:break
+            if not illustration or not url.startswith('https://cards.scryfall.io/'):
+                continue
+            if illustration not in grouped[key]:
+                grouped[key][illustration]=(c['id'],name,c.get('set',''),url,illustration)
     order=sorted(grouped,key=lambda k:(0 if k in priority else 1,-frequency[k],k))
     output=[]
     for key in order:

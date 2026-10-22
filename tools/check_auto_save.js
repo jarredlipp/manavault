@@ -80,7 +80,12 @@ async function run(expr){return vm.runInContext(expr,context)}
 
  localCards=[printings[0]];
  let result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},0)');
- assert.equal(result.printing?.id,'a','Exactly one physical printing should auto-save');
+ assert.equal(!!result.printing,false,'A single database printing is not evidence of the photographed edition');
+ assert.ok(result.reason&&result.printings?.length===1,'Show the single candidate for immediate review');
+ printedLines=[{zone:'footer-left',text:'012 ONE EN',confidence:.95}];
+ result=await run('mv60DecideCapture({name:"Test Card",source:"ocr-exact",ocr_reads:1},0)');
+ assert.equal(result.printing?.id,'a','Physical set and collector evidence must resolve the single edition');
+ printedLines=[];
  result=await run('mv60DecideCapture({name:"Test Card",source:"ocr",ocr_reads:1},0)');
  assert.equal(!!result.printing,false,'One unsupported fuzzy OCR read cannot auto-save');
  localCards=printings;
@@ -142,6 +147,7 @@ async function run(expr){return vm.runInContext(expr,context)}
  printedLines=[];symbolResults=[];
 
  localCards=[printings[0]];
+ printedLines=[{zone:'footer-left',text:'012 ONE EN',confidence:.95}];
  await run('window.mvNativeScanBatch([{name:"Test Card",source:"ocr-exact",ocr_reads:1}])');
  assert.equal(context.state.cards.length,1,'Automatic batch should save without review');
  assert.equal(context.state.cards[0].id,'a');
@@ -149,6 +155,7 @@ async function run(expr){return vm.runInContext(expr,context)}
  assert.equal(context.state.cards[0].qty,2,'Repeated physical scans must increment quantity');
  await run('mv60UndoLast()');
  assert.equal(context.state.cards[0].qty,1,'Undo must remove only the last auto-added copy');
+ printedLines=[];
  // Ambiguous printings must be reviewed immediately while CameraX is open.
  // Vintage / pre-collector-number cards must be able to use independent
  // bundled set-symbol evidence to choose a unique edition. No number is read.
@@ -248,7 +255,7 @@ async function run(expr){return vm.runInContext(expr,context)}
  reviewChoice={action:'skip'};
  // v5.11.0: a capture is persisted as soon as CameraX emits it;
  // pressing Finish must NOT be required to trigger printing resolution.
- localCards=[printings[0]];printedLines=[];imageResults=[];symbolResults=[];
+ localCards=[printings[0]];printedLines=[{zone:'footer-left',text:'012 ONE EN',confidence:.95}];imageResults=[];symbolResults=[];
  const liveReceipts=[];
  context.window.ManaVaultNativeScanner.scanResolved=payload=>liveReceipts.push(JSON.parse(payload));
  const beforeLive=context.state.cards.find(c=>c.id==='a')?.qty||0;
