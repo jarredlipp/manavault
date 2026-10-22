@@ -1,1 +1,0 @@
-ManaVault v1.9: Extract this ZIP, then upload the CONTENTS of the extracted folder to the GitHub repository root. GitHub does not extract ZIP uploads. The .github folder is hidden on some systems; make sure .github/workflows/build-apk.yml is included. If you have already created the workflow, it can remain.
