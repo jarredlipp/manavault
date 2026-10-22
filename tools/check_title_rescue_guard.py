@@ -21,6 +21,12 @@ public class TitleRescueSmoke {
     yes(TitleReadingPolicy.plausibleTitlePosition(.30f,false),"upper title band accepted");
     yes(!TitleReadingPolicy.plausibleTitlePosition(.69f,false),"art text must not be candidate");
     yes(TitleReadingPolicy.plausibleTitlePosition(.69f,true),"late title line if indexed");
+    yes(TitleReadingPolicy.allowAutomaticExactOrientation(false,0),"portrait upright auto exact allowed");
+    yes(!TitleReadingPolicy.allowAutomaticExactOrientation(false,180),"portrait inverted credit must not save");
+    yes(TitleReadingPolicy.allowAutomaticExactOrientation(false,90),"portrait battle card horizontal title must be supported");
+    yes(TitleReadingPolicy.allowAutomaticExactOrientation(true,90),"sideways positive rotation allowed");
+    yes(TitleReadingPolicy.allowAutomaticExactOrientation(true,270),"sideways reverse rotation allowed");
+    yes(!TitleReadingPolicy.allowAutomaticExactOrientation(true,180),"sideways inverted false match blocked");
     yes(TitleReadingPolicy.allowTentativeOrientation(false,0),"portrait original allowed");
     yes(!TitleReadingPolicy.allowTentativeOrientation(false,1),"portrait inverted credit forbidden");
     yes(!TitleReadingPolicy.allowTentativeOrientation(false,2),"portrait rotated flavor forbidden");
@@ -34,6 +40,7 @@ public class TitleRescueSmoke {
     subprocess.run(['java','-cp',temp,'com.manavault.app.TitleRescueSmoke'],check=True)
 assert 'readTitle(corrected,hash,0,SystemClock.elapsedRealtime(),wasSideways)' in native
 assert 'int[] rotations=sideways ? new int[]{90,270,0,180}' in native
-assert 'if(enhancedPass)h=Math.round(card.getHeight()*.145f);' in native
+assert 'sideways?.23f:.145f' in native and 'else if(sideways)h=Math.round(card.getHeight()*.32f);' in native
+assert 'sideways || rotations[rotationIndex]%180!=0' in native
 assert 'plausibleTitlePosition(position,canonical!=null)' in native
 print('Production native scanner OCR guard wiring passed')

@@ -17,6 +17,14 @@ final class TitleReadingPolicy {
         if(!Float.isFinite(normalizedY)||normalizedY<0f)return false;
         return normalizedY<=.52f || (catalogExact && normalizedY<.76f);
     }
+    /** The OCR crop must be on the actual physical title edge, never on
+     * 180-degree portrait credits or flavor attribution. Perpendicular
+     * rotations are still required for battle/split cards printed sideways
+     * on a physically portrait-oriented piece of cardboard. */
+    static boolean allowAutomaticExactOrientation(boolean photographedSideways,int rotationDegrees){
+        int degrees=((rotationDegrees%360)+360)%360;
+        return photographedSideways ? (degrees==90 || degrees==270) : degrees!=180;
+    }
     static boolean allowTentativeOrientation(boolean photographedSideways,int rotationIndex){
         return photographedSideways ? rotationIndex<=1 : rotationIndex==0;
     }

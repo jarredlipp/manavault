@@ -860,14 +860,15 @@ public final class NativeScannerActivity extends ComponentActivity {
         Matrix m=new Matrix();m.postRotate(degrees);
         return Bitmap.createBitmap(source,0,0,source.getWidth(),source.getHeight(),m,true);
     }
-    private static Bitmap titleImage(Bitmap card,boolean enhancedPass){
+    private static Bitmap titleImage(Bitmap card,boolean enhancedPass,boolean sideways){
         // Start with a genuinely title-only crop. The previous 23.5% crop
         // contained artwork, and a 180-degree rescue could contain credits or
         // flavor text instead. Keep the 23.5% color crop for alternate layouts.
         int x=Math.round(card.getWidth()*.022f),y=Math.round(card.getHeight()*.012f);
         int w=Math.round(card.getWidth()*.956f);
         int h=Math.round(card.getHeight()*.235f);
-        if(enhancedPass)h=Math.round(card.getHeight()*.145f);
+        if(enhancedPass)h=Math.round(card.getHeight()*(sideways?.23f:.145f));
+        else if(sideways)h=Math.round(card.getHeight()*.32f);
         Bitmap strip=Bitmap.createBitmap(card,x,y,Math.min(w,card.getWidth()-x),Math.min(h,card.getHeight()-y));
         Bitmap prepared=enhancedPass?CardQuadDetector.enhanceTitle(strip):strip;
         Bitmap upscaled=Bitmap.createScaledBitmap(prepared,prepared.getWidth()*2,prepared.getHeight()*2,true);
@@ -936,7 +937,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         int[] rotations=sideways ? new int[]{90,270,0,180} :
             titleRotationOrder(card.getWidth(),card.getHeight());
         Bitmap rotated=rotate(card,rotations[rotationIndex]);
-        Bitmap strip=titleImage(rotated,enhancedPass);
+        Bitmap strip=titleImage(rotated,enhancedPass,sideways || rotations[rotationIndex]%180!=0);
         recognizer.process(InputImage.fromBitmap(strip,0)).addOnCompleteListener(task->{
             String name="";
             if(task.isSuccessful()){
@@ -949,6 +950,16 @@ public final class NativeScannerActivity extends ComponentActivity {
             if(closing){recognizing.set(false);return;}
             NativeNameIndex index=names;
             String canonical=name.isEmpty()?null:index==null?null:index.exact(name);
+            // For a physically upright portrait card, a 180-degree rotation
+            // puts the illustrator and flavor attribution into the title crop.
+            // An exact catalog-name hit there (e.g. "Volrath" printed beneath
+            // "Light of Day") is NOT evidence that it was the card's title.
+            // Sideways cards instead require a perpendicular title rotation.
+            // Leave inverted portrait cards for user review rather than auto-save.
+            if(canonical!=null && !TitleReadingPolicy.allowAutomaticExactOrientation(sideways,rotations[rotationIndex])){
+                canonical=null;
+                name="";
+            }
             if(canonical!=null){
                 lastOcrMs=SystemClock.elapsedRealtime()-began;
                 previousOcr=canonical.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");

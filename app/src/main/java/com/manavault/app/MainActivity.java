@@ -238,7 +238,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.12.19"; }
+            @JavascriptInterface public String version() { return "5.12.21"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
             @JavascriptInterface public void scanProgress(String payload){
                 try{NativeScannerActivity.receiveLiveProgress(new JSONObject(payload));}
@@ -447,7 +447,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.12.19 · CameraX");
+        versionLabel.setText("ManaVault 5.12.21 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
@@ -472,6 +472,13 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowUniversalAccessFromFileURLs(false);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setSupportMultipleWindows(false);
+        settings.setSafeBrowsingEnabled(true);
+        // SAF-based backup/import uses the Android file picker; content access is required.
         settings.setAllowContentAccess(true);
         WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
@@ -481,8 +488,21 @@ public class MainActivity extends Activity {
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
-                if ("appassets.androidplatform.net".equals(uri.getHost())) return false;
-                try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (Exception ignored) { }
+                final String scheme = uri.getScheme();
+                // Never navigate the privileged JavaScript-bridge WebView to a
+                // non-app page. Only its own HTTPS asset origin remains internal.
+                if ("https".equalsIgnoreCase(scheme) &&
+                    "appassets.androidplatform.net".equalsIgnoreCase(uri.getHost()) &&
+                    uri.getPath() != null && uri.getPath().startsWith("/assets/")) return false;
+                if (!request.isForMainFrame()) return true;
+                // Only ordinary web links may leave the application. Reject file:,
+                // content:, intent:, javascript:, and custom navigation schemes.
+                if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+                    try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+                    catch (Exception e) { Log.w("ManaVaultWeb", "Could not open external link", e); }
+                } else {
+                    Log.w("ManaVaultWeb", "Blocked navigation scheme: " + scheme);
+                }
                 return true;
             }
         });

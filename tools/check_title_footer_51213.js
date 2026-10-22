@@ -41,6 +41,6 @@ async function rescue(title){ctx.scanned=[{zone:'footer-left',text:'R 0345'},
  assert(overlay.includes('at(upright,.978f,.247f)'),'overlay guides full actual title crop');
  assert(scanner.includes('height()*.235f') || scanner.includes('getHeight()*.235f'),'two-line title crop');
  assert(scanner.includes('Unrecognized title'),'unreadable captures continue to review instead of hang');
- assert(scanner.includes('titleImage(rotated,enhancedPass)'),'color OCR rescue available');
+ assert(scanner.includes('titleImage(rotated,enhancedPass,sideways || rotations[rotationIndex]%180!=0)'),'color OCR rescue available');
  console.log('v5.12.13 title/footer tests passed: no phantom names, footer review, variants and exact-title performance.');
 })().catch(e=>{console.error(e);process.exitCode=1});

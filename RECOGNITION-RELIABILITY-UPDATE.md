@@ -85,3 +85,10 @@ Known limits: older border cards (e.g. Melek, Izzet Paragon) may still need
 manual edition review when the physical set symbol and collector are unreadable.
 Likewise, photo-based OCR is not verified on a real Android device by these
 static tests. User-confirmed copies of the same card are not silently deduped.
+
+## October 21 follow-up — v5.12.20 (unsafe inverted title and sideways layout)
+
+- Light of Day flavor-text signature `—Volrath` appeared as a distinct saved card in live trials. Inverted portrait title recognition must not cause an automatic exact save. Blocked in both native title orientation policy and JS verification. Existing invalid collection entries are not altered.
+- Battle cards like Invasion of Muraganda are printed sideways even when the rectangle detected by the camera is portrait. Perpendicular OCR rotations now use a taller cropped title region, without relaxing the normal portrait title region.
+- Legacy collector-number-only readings are not promoted to verified editions without independent corroboration. Tigereye Cameo 314/350, Lone Wolf 254/350, and Rakdos Shred-Freak 221/274 remain recommended real-device test cases.
+- Source-only regression suite runs locally. Full CameraX Android build, optical detection on actual device, and artwork coverage expansion remain untested/unimplemented.
