@@ -969,7 +969,10 @@ public final class NativeScannerActivity extends ComponentActivity {
                     Bitmap art=VisualMatcher.artRegion(card);
                     byte[] features=VisualMatcher.fingerprint(art);art.recycle();
                     final VisualMatcher matcher=visual;
-                    referenceExecutor.execute(()->matcher.learnObservedName(canonical,features));
+                    // canonical may be nulled by orientation validation above;
+                    // capture the resolved card name in an effectively-final local.
+                    final String observedName=canonical;
+                    referenceExecutor.execute(()->matcher.learnObservedName(observedName,features));
                 }
                 enqueue(canonical,"ocr-exact",1f,null,card,hash,rotations[rotationIndex]);
                 recognizing.set(false);return;

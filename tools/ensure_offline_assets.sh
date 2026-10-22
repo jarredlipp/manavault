@@ -36,9 +36,11 @@ try:
   with gzip.open(p,'rb') as src,target.open('wb') as dst:
    while data:=src.read(1048576):dst.write(data)
   db=sqlite3.connect(target)
-  try:assert db.execute('SELECT COUNT(*) FROM printings').fetchone()[0]>=100000
-  assert db.execute('SELECT COUNT(*) FROM reference_fts').fetchone()[0]>=100000
-  finally:db.close()
+  try:
+   assert db.execute('SELECT COUNT(*) FROM printings').fetchone()[0]>=100000
+   assert db.execute('SELECT COUNT(*) FROM reference_fts').fetchone()[0]>=100000
+  finally:
+   db.close()
 except (OSError,AssertionError,sqlite3.DatabaseError,EOFError):raise SystemExit(1)
 PY
 then
