@@ -1,6 +1,15 @@
-# ManaVault v5.12.21 — Security-focused source cleanup and scanner safeguards
+# ManaVault v5.12.24 — Continuous scan throughput and recognition safeguards
 
 Android Magic: The Gathering collection scanner, Commander deck studio, and inventory manager.
+
+## New in v5.12.24 — continuous stack throughput
+
+- Stable next-card scene changes can be detected while the previous card's printing is being saved in the WebView. The new card is never recognized/saved before the earlier capture receives its final receipt.
+- StackChangeGate requires multiple consistent artwork/whole-card/title changes, but removes the fixed 850 ms blind cooldown. Matching titles are permitted as separate cards after a real physical stack transition or explicit Same copy confirmation.
+- Real throughput timing now includes inter-capture gap, scene-to-capture delay, live verification, manual selection wait, and persistence receipt latency; slow gaps and session summaries appear in the scanner diagnostics.
+- When a user manually selects an exact printing, a small local artwork fingerprint is learned from the saved card photograph on a background thread. Card images are never uploaded for learning.
+- v5.12.24 integrates test coverage for ordering, stale receipts, same-copy prevention, and end-to-end telemetry into GitHub Actions. **The full APK and live-camera performance still require a GitHub/phone test.**
+- See `THROUGHPUT-v5.12.24.md` for implementation and test instructions.
 
 ## Source-security cleanup (v5.12.21)
 

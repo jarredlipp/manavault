@@ -244,6 +244,62 @@ final class VisualMatcher {
             return true;
         }catch(Exception e){Log.w(TAG,"Could not save observed artwork fingerprint",e);return false;}
     }
+    /** Learn the artwork of a printing the user explicitly selected ON CAMERA.
+     * Only a small irreversible feature vector is persisted; the user's photo
+     * stays local and no image/reference download is required. This improves
+     * FUTURE art comparisons, never certifies the edition on its own.
+     * Decode/crop happens before taking the matcher lock to keep CameraX fast. */
+    boolean learnConfirmedPhotograph(String name,String id,String illustrationId,File capturedPhoto){
+        if(name==null||name.trim().length()<3||id==null||id.isEmpty()||
+            capturedPhoto==null||!capturedPhoto.isFile())return false;
+        Bitmap bitmap=null,crop=null;
+        byte[] feature,perceptual;
+        try{
+            bitmap=BitmapFactory.decodeFile(capturedPhoto.getAbsolutePath());
+            if(bitmap==null)return false;
+            crop=artRegion(bitmap);
+            feature=fingerprint(crop);perceptual=perceptualDescriptor(crop);
+        }catch(Exception error){Log.w(TAG,"Confirmed artwork image unreadable",error);return false;}
+        finally{
+            if(crop!=null&&!crop.isRecycled())crop.recycle();
+            if(bitmap!=null&&!bitmap.isRecycled())bitmap.recycle();
+        }
+        synchronized(this){
+            for(Entry entry:learned)if(entry.id.equals(id))return true;
+            Entry confirmed=new Entry(name,id,illustrationId==null?"":illustrationId,feature);
+            confirmed.e=perceptual;
+            learned.add(confirmed);entries.add(confirmed);cache.clear();
+            while(learned.size()>MAX_LEARNED){
+                Entry removed=learned.remove(0);entries.remove(removed);
+            }
+            JSONArray array=new JSONArray();
+            for(Entry item:learned){
+                JSONObject row=new JSONObject();
+                try{
+                    row.put("name",item.name);row.put("id",item.id);
+                    if(!item.illustrationId.isEmpty())row.put("illustration_id",item.illustrationId);
+                    JSONArray f=new JSONArray();for(byte b:item.f)f.put(b&255);
+                    row.put("f",f);
+                    if(item.e!=null){
+                        JSONArray e=new JSONArray();for(byte b:item.e)e.put(b&255);
+                        row.put("e",e);
+                    }
+                    array.put(row);
+                }catch(Exception error){Log.w(TAG,"Could not encode confirmed reference",error);return false;}
+            }
+            File temporary=new File(learnedFile.getParentFile(),"learned-artwork-confirmed.tmp");
+            try(FileOutputStream out=new FileOutputStream(temporary)){
+                out.write(array.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }catch(Exception error){Log.w(TAG,"Could not write confirmed reference",error);return false;}
+            if(!temporary.renameTo(learnedFile)){
+                if(!learnedFile.delete()||!temporary.renameTo(learnedFile)){
+                    temporary.delete();Log.w(TAG,"Could not persist confirmed reference");return false;
+                }
+            }
+            return true;
+        }
+    }
+
     /** Cache only explicitly confirmed artwork references; no user identifiers or tokens. */
     synchronized boolean learn(String name,String id,String referenceUrl){
         if(name==null||name.trim().isEmpty()||id==null||id.trim().isEmpty())return false;

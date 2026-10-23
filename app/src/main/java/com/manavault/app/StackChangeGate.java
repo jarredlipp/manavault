@@ -12,11 +12,13 @@ package com.manavault.app;
  * regular JVM. All times are elapsedRealtime milliseconds.
  */
 final class StackChangeGate {
-    private static final long MIN_AFTER_CAPTURE_MS=850;
-    private static final long CHANGED_STABLE_MS=550;
-    private static final long SAME_CARD_REVEAL_STABLE_MS=700;
-    private static final int CHANGED_READS=4;
-    private static final int IDENTICAL_REVEAL_READS=5;
+    // Faster but still multi-frame and multi-region: no blind 850 ms cooldown.
+    // Persistence ordering is separately guarded by ScanCycleCoordinator.
+    private static final long MIN_AFTER_CAPTURE_MS=180;
+    private static final long CHANGED_STABLE_MS=210;
+    private static final long SAME_CARD_REVEAL_STABLE_MS=380;
+    private static final int CHANGED_READS=3;
+    private static final int IDENTICAL_REVEAL_READS=4;
     private long baselineArt,baselineFull,baselineTitle,capturedAt;
     private boolean active=false,covered=false;
     private int coveredReads=0,changedReads=0,identicalReads=0;

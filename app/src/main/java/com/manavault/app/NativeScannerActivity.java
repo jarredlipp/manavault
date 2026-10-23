@@ -75,6 +75,7 @@ public final class NativeScannerActivity extends ComponentActivity {
     private final ExecutorService referenceExecutor=Executors.newSingleThreadExecutor();
     private final CardQuadDetector detector=new CardQuadDetector();
     private final StackChangeGate stackGate=new StackChangeGate();
+    private final ScanCycleCoordinator scanCycle=new ScanCycleCoordinator();
     private final AtomicBoolean recognizing=new AtomicBoolean(false);
     private final ArrayList<JSONObject> captured=new ArrayList<>();
     private static volatile java.lang.ref.WeakReference<NativeScannerActivity> liveScanner = new java.lang.ref.WeakReference<>(null);
@@ -106,12 +107,24 @@ public final class NativeScannerActivity extends ComponentActivity {
     }
     private void showLiveResolution(JSONObject message){
         String id=message.optString("scan_id","");
-        if(id.isEmpty()||!id.startsWith(sessionId+"-")||!resolvedScanIds.add(id))return;
+        // Session membership is not sufficient: a stale completion from a
+        // previous physical card must never unlock the current capture.
+        if(id.isEmpty()||!id.startsWith(sessionId+"-")||
+            !id.equals(scanCycle.pendingId())||!resolvedScanIds.add(id))return;
         String result=message.optString("status","review");
         boolean saved="verified".equals(result)||"unverified".equals(result);
         if("verified".equals(result))verifiedCount++;
         else if("unverified".equals(result))unverifiedCount++;
         else reviewCount++;
+        // Scene analysis continued during the WebView persistence call.
+        // It may already have identified the NEXT card, but cannot scan it
+        // until the exact previous capture receives this final receipt.
+        boolean readyScene=scanCycle.receivedFinalReceipt(id,SystemClock.elapsedRealtime());
+        long persistMs=scanCycle.persistLatencyMs();
+        long postSaveSceneMs=scanCycle.postSaveSceneWaitMs();
+        Log.i(TAG,"Scan cycle receipt "+id+" · status="+result+
+            " · persistence_ms="+persistMs+" · post_save_scene_wait_ms="+postSaveSceneMs+
+            " · next_scene_prearmed="+scanCycle.scenePrearmedBeforeReceipt());
         resolutionPending=false;
         reviewDialogOpen=false;
         if(scanReviewDialog!=null){scanReviewDialog.dismiss();scanReviewDialog=null;scanReviewId="";}
@@ -121,6 +134,30 @@ public final class NativeScannerActivity extends ComponentActivity {
             unresolvedRetryCount=0;
             unresolvedRetryIdentity="";
             playSaveSound(message.optInt("volume",60));
+            // Learn challenging artwork ONLY after a user-selected printing is
+            // confirmed saved. The background task reads the existing local
+            // JPG and persists features; it never uploads private photos or
+            // delays the camera/receipt gate.
+            if("verified".equals(result) && message.optBoolean("manual_selected",false)){
+                JSONObject printing=message.optJSONObject("printing");
+                VisualMatcher matcher=visual;
+                String printingId=printing==null?"":printing.optString("id","");
+                String illustrationId=printing==null?"":printing.optString("illustration_id","");
+                String learnedName=message.optString("name","");
+                File acceptedPhoto=null;
+                for(JSONObject item:captured)if(id.equals(item.optString("scan_id"))){
+                    String name=item.optString("image_path","");
+                    File candidate=new File(getCacheDir(),new File(name).getName());
+                    if(candidate.getAbsolutePath().equals(name)&&candidate.isFile())acceptedPhoto=candidate;
+                    break;
+                }
+                final File photoForLearning=acceptedPhoto;
+                if(matcher!=null && photoForLearning!=null && !printingId.isEmpty())
+                    referenceExecutor.execute(()->{
+                        if(matcher.learnConfirmedPhotograph(learnedName,printingId,illustrationId,photoForLearning))
+                            Log.i(TAG,"Learned confirmed printing artwork locally: "+learnedName);
+                    });
+            }
             if(scanSuccessPanel!=null && scanSuccessPanel.getParent()==cameraRoot)
                 cameraRoot.removeView(scanSuccessPanel);
             String photo="";
@@ -142,6 +179,13 @@ public final class NativeScannerActivity extends ComponentActivity {
                 String failed=message.optString("name","");
                 if(failed.equals(unresolvedRetryIdentity))unresolvedRetryCount++;
                 else{unresolvedRetryIdentity=failed;unresolvedRetryCount=1;}
+                if(readyScene){
+                    // A genuinely new stack scene is already visible. Do not
+                    // re-OCR the previous failed capture or punish the new card.
+                    resumeAfterSceneChange("Previous card not saved · identifying new top card");
+                    if(finishRequested && resolvedScanIds.size()>=captured.size())completeBatch();
+                    return;
+                }
                 if(unresolvedRetryCount>=2){
                     // Do not endlessly re-run OCR on the same physical top card.
                     // Keep the camera paused until the user stacks a NEW card.
@@ -150,15 +194,34 @@ public final class NativeScannerActivity extends ComponentActivity {
                     keepButton.setText("Next card");keepButton.setEnabled(true);
                     return;
                 }
-                waitingForNext=false;stackGate.clear();goodFrames=0;
+                waitingForNext=false;stackGate.clear();scanCycle.clearPending();goodFrames=0;
                 previousOcr="";previousOcrCount=0;
                 sceneStartedAt=SystemClock.elapsedRealtime();
                 keepButton.setText("Keep title");keepButton.setEnabled(false);
+            }else if(readyScene){
+                resumeAfterSceneChange("Saved · new top card ready · identifying…");
             }else if(waitingForNext){
                 keepButton.setText("Same copy");keepButton.setEnabled(true);
             }
             if(finishRequested && resolvedScanIds.size()>=captured.size())completeBatch();
         }
+    }
+    /** Called on the main thread after both the scene and durable receipt
+     * gates have completed (in either order). Never runs for a stale receipt. */
+    private void resumeAfterSceneChange(String message){
+        if(closing||finishRequested||!waitingForNext)return;
+        waitingForNext=false;
+        confirmedNewTop=true;
+        sceneStartedAt=scanCycle.sceneAt()>0?scanCycle.sceneAt():SystemClock.elapsedRealtime();
+        previousOcr="";previousOcrCount=0;
+        lastRecognitionAt=0;
+        unresolvedRetryCount=0;unresolvedRetryIdentity="";
+        scanCycle.clearPending();
+        keepButton.setText("Keep title");keepButton.setEnabled(false);
+        if(scanSuccessPanel!=null && scanSuccessPanel.getParent()==cameraRoot)
+            cameraRoot.removeView(scanSuccessPanel);
+        scanSuccessPanel=null;
+        status.setText(message);
     }
     private void playSaveSound(int requestedVolume){
         // Audible confirmation ONLY after the collection write receipt, never
@@ -265,6 +328,9 @@ public final class NativeScannerActivity extends ComponentActivity {
     private volatile String lastSavedName="";
     private volatile long lastSavedAt=0;
     private volatile boolean sameCopyOverridePending=false;
+    // A true StackChangeGate transition (or explicit physical-copy confirmation)
+    // authorizes the next save even if the card name is identical.
+    private volatile boolean confirmedNewTop=false;
     private long previewHash=0;
     private volatile Bitmap availableCard;
     private long lastEdgeMs=0,lastWarpMs=0,lastArtMs=0,lastOcrMs=0;
@@ -378,6 +444,8 @@ public final class NativeScannerActivity extends ComponentActivity {
                         if(!waitingForNext||closing)return;
                         waitingForNext=false;sceneStartedAt=SystemClock.elapsedRealtime();
                         sameCopyOverridePending=true;
+                        confirmedNewTop=true;
+                        scanCycle.clearPending();
                         // An expressly confirmed new physical copy can have the
                         // same name as the last unresolved or saved capture.
                         unresolvedRetryCount=0;unresolvedRetryIdentity="";
@@ -725,9 +793,16 @@ public final class NativeScannerActivity extends ComponentActivity {
             long now=SystemClock.elapsedRealtime();
             // Preview stays live, but do not burn CPU doing full-size edge finding
             // every 75ms while the resolver or visual picker has the scan lock.
-            int frameInterval=(resolutionPending||reviewDialogOpen)?240:waitingForNext?105:75;
+            // Scene monitoring keeps running while WebView persists the previous card.
+            // A review dialog remains deliberately slower; no new OCR starts
+            // until a durable receipt is acknowledged.
+            int frameInterval=reviewDialogOpen?180:waitingForNext?65:75;
             if(closing||now-lastProcessAt<frameInterval)return;
             lastProcessAt=now;
+            // The following card has already passed multi-frame scene gating.
+            // Until the previous save receipt arrives, do not even convert
+            // full-resolution CameraX frames. Preview remains live separately.
+            if(waitingForNext && scanCycle.hasSceneReady() && resolutionPending)return;
             int sensorW=proxy.getWidth(),sensorH=proxy.getHeight();
             if(sensorW!=activeSensorWidth||sensorH!=activeSensorHeight){
                 activeSensorWidth=sensorW;activeSensorHeight=sensorH;
@@ -830,22 +905,29 @@ public final class NativeScannerActivity extends ComponentActivity {
             // change, not a fleeting reflection, before automatic rearming.
             // Identical-looking copies require a genuine cover/reveal event.
             if(waitingForNext){
-                if(resolutionPending || reviewDialogOpen){corrected.recycle();return;}
+                // Recognition stays locked, but scene monitoring may pre-arm
+                // the NEXT card before the old printing's receipt returns.
+                if(reviewDialogOpen){corrected.recycle();return;}
+                if(scanCycle.hasSceneReady()){corrected.recycle();return;}
                 long fullHash=wholeFrameHash(corrected);
                 boolean newTop=stackGate.observe(hash,fullHash,VisualMatcher.titleHash(corrected),now);
                 corrected.recycle();
                 if(newTop){
-                    waitingForNext=false;previousOcr="";previousOcrCount=0;
-                    // Scene hashes can change because of glare or focus;
-                    // never clear a repeated-identity retry block here. Only
-                    // a successful save or deliberate same-copy confirmation
-                    // can reset that identity's retry budget.
-                    sceneStartedAt=now;lastRecognitionAt=now-220;
                     final String reason=stackGate.lastEvent();
-                    runOnUiThread(()->{if(!closing){
-                        keepButton.setText("Keep title");keepButton.setEnabled(false);
-                        status.setText("New top card detected ("+reason+") · identifying…");
-                    }});
+                    boolean receiptAlreadyArrived=scanCycle.observedNewScene(now);
+                    Log.i(TAG,"Scan cycle scene change · event="+reason+
+                        " · waiting_for_receipt="+!receiptAlreadyArrived);
+                    if(receiptAlreadyArrived){
+                        // If the UI thread has not yet processed the receipt,
+                        // schedule all state changes on that thread.
+                        runOnUiThread(()->{
+                            if(!closing && !resolutionPending && waitingForNext)
+                                resumeAfterSceneChange("New top card ("+reason+") · identifying…");
+                        });
+                    }else runOnUiThread(()->{
+                        if(!closing && waitingForNext && resolutionPending)
+                            status.setText("New card detected · completing previous save…");
+                    });
                 }
                 return;
             }
@@ -1067,32 +1149,25 @@ public final class NativeScannerActivity extends ComponentActivity {
      * Keep the original frame orientation for stack-change fingerprinting. */
     private synchronized void enqueue(String name,String source,float score,String imageId,Bitmap card,long hash,int rotationDegrees){
         if(closing||finishRequested||waitingForNext||captured.size()>=150)return;
-        // Guard against a false "new top" caused by changing exposure/artwork
-        // hashes. A duplicate of a just-saved name requires the existing
-        // explicit Same copy confirmation; unrelated new cards remain fast.
+        // The StackChangeGate / ScanCycleCoordinator handshake, not elapsed
+        // wall time or card name, decides whether a physical new top exists.
+        // This allows legitimate back-to-back identical copies (e.g. Shining
+        // Armor) while retaining the actual stable scene-change requirement.
         long now=SystemClock.elapsedRealtime();
         String normalized=name==null?"":name.trim().toLowerCase(Locale.ROOT);
-        boolean sameRecentSaved=!normalized.isEmpty() &&
-            normalized.equals(lastSavedName.toLowerCase(Locale.ROOT)) &&
-            now-lastSavedAt>=0 && now-lastSavedAt<20000;
         boolean retryLocked=unresolvedRetryCount>=2 && !normalized.isEmpty() &&
             normalized.equals(unresolvedRetryIdentity.trim().toLowerCase(Locale.ROOT));
-        if((sameRecentSaved || retryLocked) && !sameCopyOverridePending){
-            // Re-arm against the CURRENT image, so stacking an actually
-            // different card still automatically resumes continuous scanning.
-            stackGate.captured(hash,wholeFrameHash(card),VisualMatcher.titleHash(card),now);
+        if(retryLocked && !sameCopyOverridePending && !confirmedNewTop){
             waitingForNext=true;
             previousOcr="";previousOcrCount=0;
-            final String explanation=retryLocked?
-                "Unresolved card repeated · stack a different card or confirm Same copy":
-                "Same title still visible · stack next card, or confirm Same copy";
             runOnUiThread(()->{if(!closing){
-                status.setText(explanation);
-                keepButton.setText(retryLocked?"Next card":"Same copy");keepButton.setEnabled(true);
+                status.setText("Unresolved card repeated · stack a different card or confirm Next card");
+                keepButton.setText("Next card");keepButton.setEnabled(true);
             }});
             return;
         }
         sameCopyOverridePending=false;
+        confirmedNewTop=false;
         try{
             int number=captured.size()+1;
             File photo=new File(getCacheDir(),"native-scan-"+sessionStart+"-"+number+".jpg");
@@ -1107,8 +1182,14 @@ public final class NativeScannerActivity extends ComponentActivity {
             result.put("elapsed",SystemClock.elapsedRealtime()-sessionStart);
             result.put("card_ms",SystemClock.elapsedRealtime()-(sceneStartedAt>0?sceneStartedAt:sessionStart));
             result.put("image_path",photo.getAbsolutePath());
-            result.put("scan_id",sessionId+"-"+number);
+            String scanId=sessionId+"-"+number;
+            result.put("scan_id",scanId);
             result.put("scan_index",number-1);
+            // Real capture-to-capture throughput, not only OCR callback time.
+            scanCycle.captured(scanId,SystemClock.elapsedRealtime());
+            result.put("capture_gap_ms",scanCycle.captureGapMs());
+            result.put("scene_to_capture_ms",sceneStartedAt>0?
+                    Math.max(0,SystemClock.elapsedRealtime()-sceneStartedAt):-1);
             result.put("photo_rotation_degrees",rotationDegrees);
             result.put("edge_ms",lastEdgeMs);result.put("warp_ms",lastWarpMs);
             result.put("art_ms",lastArtMs);result.put("ocr_ms",lastOcrMs);
@@ -1133,7 +1214,11 @@ public final class NativeScannerActivity extends ComponentActivity {
             lastCapturedBrightness=currentCardBrightness;
             missingSince=0;changedEmptyFrames=0;
             lastSeenTitle="";previousOcr="";previousOcrCount=0;
-            final String msg="Captured "+name+" ("+source+") · resolving and saving before next card…";
+            final String msg="Captured "+name+" ("+source+") · resolving while watching for next card…";
+            Log.i(TAG,"Scan cycle capture "+scanId+" · gap_ms="+scanCycle.captureGapMs()+
+                " · scene_to_capture_ms="+result.optLong("scene_to_capture_ms",-1)+
+                " · edge_ms="+lastEdgeMs+" · warp_ms="+lastWarpMs+
+                " · artwork_ms="+lastArtMs+" · ocr_ms="+lastOcrMs);
             final String watchdogId=result.optString("scan_id","");
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->{
                 if(closing||!resolutionPending||reviewDialogOpen||captured.isEmpty()||
@@ -1150,7 +1235,11 @@ public final class NativeScannerActivity extends ComponentActivity {
             runOnUiThread(()->{if(!closing){
                 status.setText(msg);keepButton.setText("Resolving");keepButton.setEnabled(false);
                 reviewButton.setText("Finish ("+(verifiedCount+unverifiedCount)+" saved)");
-                lastTiming="Edge "+lastEdgeMs+" ms · warp "+lastWarpMs+" ms · art "+lastArtMs+" ms · OCR "+lastOcrMs+" ms · references "+(visual==null?0:visual.count());showMetrics();
+                long gap=scanCycle.captureGapMs();
+                lastTiming="Scan gap "+(gap<0?"first":gap+" ms")+
+                    " · edge "+lastEdgeMs+" ms · warp "+lastWarpMs+
+                    " ms · art "+lastArtMs+" ms · OCR "+lastOcrMs+
+                    " ms · refs "+(visual==null?0:visual.count());showMetrics();
             }});
         }catch(Exception e){Log.e(TAG,"Could not queue card",e);}
     }

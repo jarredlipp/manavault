@@ -14,7 +14,7 @@ public final class StackChangeGateTest {
         require(!gate.observe(0,0,7000),"Glitch rearmed scanner");
         for(int i=0;i<6;i++){
             boolean ready=gate.observe(bits(27),bits(24),7400+i*200);
-            require(ready==(i==3),"Stable different card not accepted at correct time: "+i);
+            require(ready==(i==2),"Stable different card not accepted at correct time: "+i);
             if(ready)break;
         }
         require("new top artwork".equals(gate.lastEvent()),"Wrong event type");
@@ -26,7 +26,7 @@ public final class StackChangeGateTest {
         for(int i=0;i<4;i++)gate.coverFrame(true);
         for(int i=0;i<8;i++){
             boolean ready=gate.observe(bits(27),bits(24),14000+i*190);
-            require(ready==(i==4),"Identical-cover sequence did not rearm as expected: "+i);
+            require(ready==(i==3),"Identical-cover sequence did not rearm as expected: "+i);
             if(ready)break;
         }
         require(gate.lastEvent().contains("identical"),"Identical-copy event not recorded");
@@ -35,7 +35,7 @@ public final class StackChangeGateTest {
         gate.captured(0,0,0,16000);
         for(int i=0;i<4;i++){
             boolean ready=gate.observe(bits(11),bits(6),bits(24),17100+i*220);
-            require(ready==(i==3),"Title-assisted stack change failed: "+i);
+            require(ready==(i==2),"Title-assisted stack change failed: "+i);
         }
         // A title-only lighting flare is not an independent scene change.
         gate.captured(0,0,0,18500);
