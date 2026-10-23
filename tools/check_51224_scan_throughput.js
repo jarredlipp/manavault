@@ -18,7 +18,7 @@ assert.match(native,/learnConfirmedPhotograph/);
 assert.match(matcher,/synchronized\(this\)/);
 assert.match(coordinator,/synchronized boolean observedNewScene/);
 assert.match(coordinator,/synchronized boolean receivedFinalReceipt/);
-assert.match(main,/return "5\.12\.25"/);
+assert.match(main,/return "5\.12\.\d+"/);
 assert.match(html,/manual_selected:Boolean\(data\.manual_selected\)/);
 assert.match(html,/capture_gap_ms/);
 assert.match(html,/manual_review_ms/);

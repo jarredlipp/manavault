@@ -1,3 +1,7 @@
+## v5.12.26 legacy printing and title recovery
+
+See `RECOGNITION-v5.12.26.md` for observed performance, changed evidence paths, and safety limitations.
+
 ## v5.12.25 scanner verification/copy controls
 
 See `COPY-AND-EDITION-v5.12.25.md` for user-visible copy choices and cautious offline printing improvements.

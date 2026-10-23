@@ -55,7 +55,12 @@ final class NativeNameIndex {
         if(TitleReadingPolicy.isFooterOrRulesNoise(raw))return null;
         String key=norm(raw);
         if(!key.matches("[a-z]{7,24}"))return null;
-        return distinctiveFirstWords.get(key);
+        if(distinctiveFirstWords.containsKey(key))return distinctiveFirstWords.get(key);
+        // Stylized uppercase card titles commonly confuse a single glyph
+        // (WEPSTRIKE vs WEBSTRIKE). Only a UNIQUE near-first-word match may
+        // be returned, and it remains an OCR CANDIDATE requiring another read
+        // and independent physical printing evidence before saving.
+        return TitlePrefixMatcher.uniqueOneSubstitution(key,distinctiveFirstWords);
     }
     String exact(String text){
         final String key=norm(text);
