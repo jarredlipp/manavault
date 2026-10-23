@@ -43,6 +43,19 @@ final class ScanCycleCoordinator {
         return Math.max(0,sceneAt-receiptAt);
     }
     synchronized boolean scenePrearmedBeforeReceipt(){return sceneReady&&receiptAt>0&&sceneAt<=receiptAt;}
+    /** Restore the ALREADY CONFIRMED previous save gate after a visually
+     * indistinguishable candidate was rejected before collection persistence.
+     * No new receipt is fabricated and no card is saved by this operation.
+     * The next genuinely changed scene may advance normally. */
+    synchronized void rearmConfirmedPrevious(String scanId,long now){
+        if(scanId==null||scanId.isEmpty())throw new IllegalArgumentException("previous scan ID required");
+        pendingId=scanId;
+        captureAt=previousCaptureAt>0?previousCaptureAt:now;
+        receiptAt=now;
+        sceneAt=0;
+        receiptReady=true;
+        sceneReady=false;
+    }
     synchronized void clearPending(){
         pendingId="";captureAt=sceneAt=receiptAt=0;sceneReady=receiptReady=false;
     }

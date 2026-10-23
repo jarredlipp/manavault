@@ -25,6 +25,12 @@ public final class ScanCycleCoordinatorTest {
         ok(c.postSaveSceneWaitMs()==150,"Post-save idle measurement wrong");
         c.clearPending();
         ok(!c.observedNewScene(2200),"Scene accepted without pending capture");
+        // A false visual scene transition must not produce a duplicate save.
+        // Reuse the real previous receipt, wait for a genuinely new scene.
+        c.rearmConfirmedPrevious("session-2",2250);
+        ok(!c.awaitingReceipt(),"Already persisted copy must not wait on a new receipt");
+        ok(c.observedNewScene(2300),"New physical scene cannot advance after rejected duplicate");
+        c.clearPending();
         System.out.println("ScanCycleCoordinator JVM tests passed: prearming, ordering, stale receipts, gaps and post-save latency.");
     }
 }

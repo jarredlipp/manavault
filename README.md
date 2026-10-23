@@ -1,3 +1,7 @@
+## v5.12.25 scanner verification/copy controls
+
+See `COPY-AND-EDITION-v5.12.25.md` for user-visible copy choices and cautious offline printing improvements.
+
 # ManaVault v5.12.24 — Continuous scan throughput and recognition safeguards
 
 Android Magic: The Gathering collection scanner, Commander deck studio, and inventory manager.

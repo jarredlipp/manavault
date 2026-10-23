@@ -23,6 +23,13 @@ IMPORTANT_NAMES='''Forest Plains Island Swamp Mountain'''.split() + [
 'Rakdos Shred-Freak','Knightly Valor','Deep Reconnaissance','Bloodied Ghost',
 'Prismite','Aether Adept','Joyful Stormsculptor','Bloodfire Expert',
 'Jace','Invasion of Muraganda // Primordial Plasm','Hada Spy Patrol',
+'Festering Newt','Highway Robber','Horncaller\'s Chant','Aerial Predation',
+'Chorus of Might','Trained Caracal','Azorius Arrester','Time to Feed',
+'Centaur\'s Herald','Rubbleback Rhino','Axebane Stag','Eagle of the Watch',
+'Sanctuary Cat','Loyal Cathar // Unhallowed Cathar','Shining Armor',
+'Bottomless Pool // Locker Room','There // They\'re // Their',
+'Who // What // When // Where // Why','Stall for Time',
+'Rakdos Shred-Freak','Light of Day','Tigereye Cameo','Lone Wolf',
 'Living Lands','Stillness in Motion','Webstrike Elite','Fanatic of Xenagos',
 ]
 
@@ -42,7 +49,7 @@ def names(records,max_refs):
         # the front image. Both signatures point to the same printing ID.
         images=[(art,image),(c.get('illustration_id_back') or '',c.get('image_normal_back') or '')]
         for illustration,url in images:
-            if len(grouped[key])>=4:break
+            if len(grouped[key])>=(12 if key in priority else 4):break
             if not illustration or not url.startswith('https://cards.scryfall.io/'):
                 continue
             if illustration not in grouped[key]:
@@ -76,7 +83,7 @@ def reference_art_region(image,url):
         return image.convert('RGB')
     return crop_reference_art(image)
 
-def build(catalog,output,max_refs=450,workers=8):
+def build(catalog,output,max_refs=1200,workers=8):
     chosen=names(catalog_cards(catalog),max_refs)
     def download(item):
         id,name,set_code,url,art=item
@@ -111,5 +118,5 @@ def build(catalog,output,max_refs=450,workers=8):
     return len(cards)
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--catalog',default='app/src/main/assets/printing-catalog.dat');p.add_argument('--output',default='app/src/main/assets/visual-index.json');p.add_argument('--max',type=int,default=450);p.add_argument('--workers',type=int,default=8);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--catalog',default='app/src/main/assets/printing-catalog.dat');p.add_argument('--output',default='app/src/main/assets/visual-index.json');p.add_argument('--max',type=int,default=1200);p.add_argument('--workers',type=int,default=8);a=p.parse_args()
     build(a.catalog,a.output,a.max,a.workers)

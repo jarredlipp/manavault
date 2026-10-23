@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if python3 tools/verify_offline_assets.py >/dev/null 2>&1; then
+if python3 tools/verify_offline_assets.py --minimum-references 900 >/dev/null 2>&1; then
   echo 'ManaVault: existing offline printing and fingerprint assets verified; skipping download.'
   exit 0
 fi
@@ -53,12 +53,12 @@ import json
 from pathlib import Path
 try:
  p=json.loads(Path('app/src/main/assets/visual-index.json').read_text())
- assert p['format']=='manavault-visual-v2' and len(p['cards'])>=12
+ assert p['format']=='manavault-visual-v2' and len(p['cards'])>=900
 except (OSError,ValueError,KeyError,AssertionError):raise SystemExit(1)
 PY
 then
   echo 'ManaVault: generating offline artwork fingerprints...'
-  timeout 600 "$VENV/bin/python" tools/build_artwork_index.py --max 450
+  timeout 600 "$VENV/bin/python" tools/build_artwork_index.py --max 1200
 fi
 
 if ! "$VENV/bin/python" - <<'PY'
@@ -75,4 +75,4 @@ then
   timeout 600 "$VENV/bin/python" tools/build_symbol_index.py
 fi
 
-"$VENV/bin/python" tools/verify_offline_assets.py
+"$VENV/bin/python" tools/verify_offline_assets.py --minimum-references 900

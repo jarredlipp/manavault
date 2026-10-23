@@ -79,7 +79,7 @@ public final class NativeScannerActivity extends ComponentActivity {
     private final AtomicBoolean recognizing=new AtomicBoolean(false);
     private final ArrayList<JSONObject> captured=new ArrayList<>();
     private static volatile java.lang.ref.WeakReference<NativeScannerActivity> liveScanner = new java.lang.ref.WeakReference<>(null);
-    private final java.util.HashSet<String> resolvedScanIds=new java.util.HashSet<>();
+    private final java.util.Set<String> resolvedScanIds=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private int verifiedCount=0,unverifiedCount=0,reviewCount=0;
     private boolean finishRequested=false,forceFinishEnabled=false;
     // The top card cannot be rearmed until the WebView has persisted or the
@@ -201,7 +201,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             }else if(readyScene){
                 resumeAfterSceneChange("Saved · new top card ready · identifying…");
             }else if(waitingForNext){
-                keepButton.setText("Same copy");keepButton.setEnabled(true);
+                keepButton.setText("Copy options");keepButton.setEnabled(true);
             }
             if(finishRequested && resolvedScanIds.size()>=captured.size())completeBatch();
         }
@@ -434,25 +434,38 @@ public final class NativeScannerActivity extends ComponentActivity {
                 // that appears identical. Require deliberate confirmation to
                 // avoid counting the same stationary card a second time.
                 boolean unresolvedBlock=unresolvedRetryCount>=2;
+                // Two explicit physical-copy choices: the stationary card
+                // must never create another collection entry merely because
+                // exposure or framing changed. The user can acknowledge a
+                // second indistinguishable copy WITHOUT waiting for a timer.
                 new android.app.AlertDialog.Builder(this)
-                    .setTitle(unresolvedBlock?"Start scanning the next card?":"Scan an identical copy?")
+                    .setTitle(unresolvedBlock?"Unresolved card · what next?":"Physical copy control")
                     .setMessage(unresolvedBlock?
-                        "The previous card was not saved. Continue only after placing a different physical card on top of the stack.":
-                        "Only continue if you have placed another physical card on top of the stack. The camera cannot prove two identical-looking cards are separate.")
+                        "This title was not saved. Keep the same card in view to retry, or place a different physical card on top and select Next card.":
+                        "Same physical card = already saved; do NOT increase quantity. Another physical copy = you stacked a SECOND card; scan it and add one more to the collection.")
                     .setNegativeButton("Cancel",(dialog,which)->{})
-                    .setPositiveButton(unresolvedBlock?"Scan next card":"Scan next copy",(dialog,which)->{
-                        if(!waitingForNext||closing)return;
+                    .setNeutralButton(unresolvedBlock?"Still same card":"Same card · no save",(dialog,which)->{
+                        if(closing||!waitingForNext)return;
+                        status.setText(unresolvedBlock?
+                            "Same unresolved card · not saved again":"Same physical card · no additional copy saved");
+                        // Remain gated: this is not a new-card event.
+                        keepButton.setText(unresolvedBlock?"Next card":"Copy options");
+                        keepButton.setEnabled(true);
+                    })
+                    .setPositiveButton(unresolvedBlock?"Next card":"Another copy · scan +1",(dialog,which)->{
+                        if(!waitingForNext||closing||resolutionPending||reviewDialogOpen)return;
                         waitingForNext=false;sceneStartedAt=SystemClock.elapsedRealtime();
                         sameCopyOverridePending=true;
                         confirmedNewTop=true;
                         scanCycle.clearPending();
-                        // An expressly confirmed new physical copy can have the
-                        // same name as the last unresolved or saved capture.
+                        // The user explicitly confirms that another physical
+                        // piece of cardboard has been placed onto the stack.
                         unresolvedRetryCount=0;unresolvedRetryIdentity="";
                         previousOcr="";previousOcrCount=0;goodFrames=0;
                         stackGate.clear();
                         lastRecognitionAt=SystemClock.elapsedRealtime();
-                        status.setText("Manual same-copy override · identifying next card…");
+                        status.setText(unresolvedBlock?"New top card confirmed · identifying…":
+                            "Second physical copy confirmed · identifying and saving +1…");
                         keepButton.setText("Keep title");keepButton.setEnabled(false);
                     }).show();
             }else if(card!=null&&!card.isRecycled()&&!lastSeenTitle.isEmpty())
@@ -914,6 +927,20 @@ public final class NativeScannerActivity extends ComponentActivity {
                 corrected.recycle();
                 if(newTop){
                     final String reason=stackGate.lastEvent();
+                    // A cover/reveal with the SAME photographed artwork can
+                    // also be a hand, shadow, or camera exposure transient.
+                    // Never auto-increment quantity on that alone. The user
+                    // must choose Another copy in the explicit copy control.
+                    if(reason.contains("identical copy")){
+                        Log.i(TAG,"Identical-looking scene transition · awaiting physical-copy confirmation");
+                        runOnUiThread(()->{
+                            if(!closing && waitingForNext){
+                                status.setText("Identical-looking top card · choose Copy options to distinguish same card from another copy");
+                                keepButton.setText("Copy options");keepButton.setEnabled(true);
+                            }
+                        });
+                        return;
+                    }
                     boolean receiptAlreadyArrived=scanCycle.observedNewScene(now);
                     Log.i(TAG,"Scan cycle scene change · event="+reason+
                         " · waiting_for_receipt="+!receiptAlreadyArrived);
@@ -1165,6 +1192,33 @@ public final class NativeScannerActivity extends ComponentActivity {
                 keepButton.setText("Next card");keepButton.setEnabled(true);
             }});
             return;
+        }
+        // A stack-gate scene transition may be caused by glare or a hand.
+        // Before writing another collection entry, compare the *actual* new
+        // rectified card to the already-saved capture. This also catches the
+        // case where a later OCR pass gives the SAME photographed card a
+        // DIFFERENT title (e.g. flavor text mistaken for a split card).
+        // A user-confirmed second physical copy remains allowed, without any
+        // arbitrary 20-second delay. The gate uses image identity, not name.
+        if(!sameCopyOverridePending && !captured.isEmpty() && lastSavedAt>0 &&
+           Long.bitCount(hash^lastCapturedHash)<=8){
+            String previousId=captured.get(captured.size()-1).optString("scan_id","");
+            if(resolvedScanIds.contains(previousId)){
+                waitingForNext=true;
+                confirmedNewTop=false;
+                goodFrames=0;
+                previousOcr="";previousOcrCount=0;
+                stackGate.captured(hash,wholeFrameHash(card),VisualMatcher.titleHash(card),now);
+                scanCycle.rearmConfirmedPrevious(previousId,now);
+                runOnUiThread(()->{
+                    if(!closing){
+                        status.setText("Same photographed card · not saved twice. For another physical copy, choose Copy options.");
+                        keepButton.setText("Copy options");keepButton.setEnabled(true);
+                    }
+                });
+                Log.i(TAG,"Rejected unchanged card appearance before persistence · OCR suggestion="+name);
+                return;
+            }
         }
         sameCopyOverridePending=false;
         confirmedNewTop=false;
