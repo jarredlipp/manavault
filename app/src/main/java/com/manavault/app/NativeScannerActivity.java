@@ -312,6 +312,8 @@ public final class NativeScannerActivity extends ComponentActivity {
     private int goodFrames=0,missingFrames=0,changeFrames=0;
     private long lastGoodAt=0,lastProcessAt=0,lastRecognitionAt=0,sessionStart=0;
     private volatile long lastCapturedHash=0,lastCapturedSceneHash=0;
+    private volatile long lastCapturedTitleHash=0,lastCapturedFullHash=0;
+    private volatile byte[] lastCapturedColor=null;
     private long sceneStartedAt=0;
     private long missingSince=0;
     private int changedEmptyFrames=0;
@@ -621,6 +623,8 @@ public final class NativeScannerActivity extends ComponentActivity {
         if(standZoomApplied>1.02f)cardInfo+=" · stand zoom "+String.format(Locale.US,"%.2f",standZoomApplied)+"×";
         String detail=lastTiming.isEmpty()?"": "\n"+lastTiming;
         if(lastArtworkRefs>=0)detail+="\nArtwork library: "+lastArtworkRefs+" bundled/learned · Scryfall symbol icons: "+BundledSetSymbols.count()+"/"+BundledSetSymbols.eligibleCount()+" physical sets · cached edition signatures: "+ReferenceFingerprintCache.count();
+        int fullIndexFaces=FullArtworkIndex.totalFaces(getApplicationContext());
+        if(fullIndexFaces>0)detail+=" · full offline printing artwork: "+fullIndexFaces+" faces";
         metrics.setText(cameraInfo+cardInfo+detail);
     }
     /** Apply ONE conservative sensor zoom per scanner session, not one per card.
@@ -974,12 +978,17 @@ public final class NativeScannerActivity extends ComponentActivity {
             boolean wasSideways=topEdge>sideEdge*1.12;
             VisualMatcher.Match candidate=v==null||wasSideways?null:v.match(corrected);
             lastArtMs=SystemClock.elapsedRealtime()-begin;
-            if(candidate!=null&&candidate.usable()){
-                enqueue(candidate.name,"artwork",candidate.similarity,candidate.id,corrected,hash);
-                recognizing.set(false);
-            }else{
-                readTitle(corrected,hash,0,SystemClock.elapsedRealtime(),wasSideways);
-            }
+            // Artwork references are advisory for CARD NAME. A 1,200-image
+            // seed cannot safely compete against the complete card catalog,
+            // and full-art/promotional frames can have misleading art crops.
+            // Always examine the physically printed TITLE first. Printing
+            // verification may then use art/set/collector as independent clues.
+            // Avoid early return from a visually similar but wrong artwork
+            // reference (observed: Webstrike Elite -> unrelated split title).
+            if(candidate!=null&&candidate.usable())
+                Log.i(TAG,"Artwork-only title suggestion (not auto-accepted): "+
+                    candidate.name+" score="+candidate.similarity);
+            readTitle(corrected,hash,0,SystemClock.elapsedRealtime(),wasSideways);
         }catch(Exception e){Log.w(TAG,"Native frame analysis failed",e);recognizing.set(false);}
         finally{frame.recycle();}
     }
@@ -1047,6 +1056,28 @@ public final class NativeScannerActivity extends ComponentActivity {
         }
         return null;
     }
+    /** Two-line title with a *single* OCR-glyph error in the long first word.
+     * E.g. WEPSTRIKE / ELITE suggests Webstrike Elite; this remains an OCR
+     * CANDIDATE requiring a second read and independent printing evidence. */
+    private static String suggestedTwoLineTitle(Text result,NativeNameIndex index,int height){
+        if(index==null)return null;
+        ArrayList<Text.Line> lines=new ArrayList<>();
+        for(Text.TextBlock block:result.getTextBlocks())lines.addAll(block.getLines());
+        for(int i=0;i<lines.size();i++)for(int j=i+1;j<lines.size();j++){
+            Text.Line a=lines.get(i),b=lines.get(j);
+            android.graphics.Rect r=a.getBoundingBox(),t=b.getBoundingBox();
+            if(r==null||t==null||t.top<r.top||t.top-r.bottom>Math.max(40,r.height()*2))continue;
+            if(r.centerY()>height*.52f||t.centerY()>height*.86f)continue;
+            if(Math.abs(r.left-t.left)>Math.max(70,r.width()*.6f))continue;
+            String first=a.getText().trim(),second=b.getText().trim();
+            String possible=index.distinctiveTitlePrefix(first);
+            if(possible==null||index.exact(first)!=null||!possible.contains(" "))continue;
+            int space=possible.indexOf(' ');
+            if(NativeNameIndex.norm(possible.substring(space+1)).equals(NativeNameIndex.norm(second)))
+                return possible;
+        }
+        return null;
+    }
     static int[] titleRotationOrder(int width,int height){
         return width>height*1.12f ? new int[]{90,270,0,180} : new int[]{0,180,90,270};
     }
@@ -1054,10 +1085,11 @@ public final class NativeScannerActivity extends ComponentActivity {
      * A battle or split card turned sideways can have readable rules text in
      * the title strip while its actual title is in a later rotation. */
     private void readTitle(Bitmap card,long hash,int rotationIndex,long began,boolean sideways){
-        readTitle(card,hash,rotationIndex,began,sideways,null,0,true);
+        readTitle(card,hash,rotationIndex,began,sideways,null,0,true,false);
     }
     private void readTitle(Bitmap card,long hash,int rotationIndex,long began,
-            boolean sideways,String tentative,int tentativeRotation,boolean enhancedPass){
+            boolean sideways,String tentative,int tentativeRotation,boolean enhancedPass,
+            boolean tentativeTwoLine){
         if(closing){recognizing.set(false);return;}
         // The rectifier already returns a portrait-shaped image, including
         // sideways battles. Try upright and upside-down title strips before
@@ -1072,12 +1104,18 @@ public final class NativeScannerActivity extends ComponentActivity {
                 name=selectTitle(task.getResult(),strip.getHeight(),names);
                 String paired=indexedTwoLineTitle(task.getResult(),names,strip.getHeight());
                 if(paired!=null)name=paired;
+                else {
+                    String suggested=suggestedTwoLineTitle(task.getResult(),names,strip.getHeight());
+                    if(suggested!=null)name="__SUGGESTED__"+suggested;
+                }
                 if(TitleReadingPolicy.isFooterOrRulesNoise(name))name="";
             }else Log.w(TAG,"ML Kit title read failed",task.getException());
             strip.recycle();if(rotated!=card)rotated.recycle();
             if(closing){recognizing.set(false);return;}
             NativeNameIndex index=names;
-            String canonical=name.isEmpty()?null:index==null?null:index.exact(name);
+            boolean suggestedTwoLine=name.startsWith("__SUGGESTED__");
+            if(suggestedTwoLine)name=name.substring("__SUGGESTED__".length());
+            String canonical=suggestedTwoLine?null:name.isEmpty()?null:index==null?null:index.exact(name);
             // For a physically upright portrait card, a 180-degree rotation
             // puts the illustrator and flavor attribution into the title crop.
             // An exact catalog-name hit there (e.g. "Volrath" printed beneath
@@ -1115,6 +1153,7 @@ public final class NativeScannerActivity extends ComponentActivity {
             if(partial!=null)current=partial;
             String bestTentative=tentative;
             int bestRotation=tentativeRotation;
+            boolean bestSuggestedTwoLine=tentativeTwoLine;
             // On normal portrait cards only the original orientation may
             // supply an UNVERIFIED candidate. Upside-down and sideways rescue
             // can still accept an EXACT catalog title, but must never promote
@@ -1122,18 +1161,21 @@ public final class NativeScannerActivity extends ComponentActivity {
             boolean trustedCandidateOrientation=TitleReadingPolicy.allowTentativeOrientation(sideways,rotationIndex);
             if(trustedCandidateOrientation && !current.isEmpty() &&
                     current.length()>=3 && current.length()<=55 &&
-                    (bestTentative==null || current.length()>bestTentative.length())){
+                    (bestTentative==null ||
+                     (suggestedTwoLine && rotationIndex==0) ||
+                     (rotationIndex==0 && current.length()>bestTentative.length()))){
                 bestTentative=current;bestRotation=rotationIndex;
+                bestSuggestedTwoLine=suggestedTwoLine && rotationIndex==0;
             }
             // If the enhanced pass did not find a title, retry the same
             // orientation with RAW COLOR. This is a rescue, not an added
             // cost on ordinary successful exact-title scans.
             if(enhancedPass && (rotationIndex==0 || rotationIndex==1)){
-                readTitle(card,hash,rotationIndex,began,sideways,bestTentative,bestRotation,false);
+                readTitle(card,hash,rotationIndex,began,sideways,bestTentative,bestRotation,false,bestSuggestedTwoLine);
                 return;
             }
             if(rotationIndex<3){
-                readTitle(card,hash,rotationIndex+1,began,sideways,bestTentative,bestRotation,true);
+                readTitle(card,hash,rotationIndex+1,began,sideways,bestTentative,bestRotation,true,bestSuggestedTwoLine);
                 return;
             }
             lastOcrMs=SystemClock.elapsedRealtime()-began;
@@ -1149,9 +1191,16 @@ public final class NativeScannerActivity extends ComponentActivity {
                 }});
                 // A short name like JACE must reach the title-correction
                 // gallery, never be discarded solely due to length.
-                if(previousOcrCount>=2 && normalized.length()>=3 &&
+                // For a uniquely reconstructed TWO-LINE title (e.g.
+                // WEPSTRIKE / ELITE), capture once and ask the OFFLINE
+                // collector+set resolver to corroborate it. This never skips
+                // printing evidence or turns a fuzzy title into an exact one.
+                boolean printingFirstTitleRescue=bestSuggestedTwoLine && bestRotation==0 &&
+                        NativeNameIndex.norm(bestTentative).contains(" ") && normalized.length()>=10;
+                if((previousOcrCount>=2 || printingFirstTitleRescue) && normalized.length()>=3 &&
                         !normalized.matches(".*(.)\\1{4,}.*"))
-                    enqueue(bestTentative,"ocr-candidate",0,null,card,hash,rotations[bestRotation]);
+                    enqueue(bestTentative,printingFirstTitleRescue?"ocr-two-line-suggested":"ocr-candidate",
+                            0,null,card,hash,rotations[bestRotation]);
             }else{
                 // No title in any orientation, including the RAW color
                 // rescue. On a second stable attempt, capture the card for
@@ -1160,8 +1209,33 @@ public final class NativeScannerActivity extends ComponentActivity {
                 if("__unreadable_title__".equals(previousOcr))previousOcrCount++;
                 else{previousOcr="__unreadable_title__";previousOcrCount=1;}
                 if(previousOcrCount>=2){
-                    lastSeenTitle="Unrecognized title";
-                    enqueue(lastSeenTitle,"ocr-candidate",0,null,card,hash,0);
+                    // Use SQLite's perceptual-hash band index only AFTER OCR
+                    // has exhausted its title passes. This provides an
+                    // ADVISORY name for full-art/alternate-art designs; it
+                    // cannot bypass exact printing evidence in the WebView.
+                    String artName=null;
+                    try{
+                        if(index!=null && FullArtworkIndex.ready(getApplicationContext())){
+                            org.json.JSONObject nearby=FullArtworkIndex.nearest(getApplicationContext(),card,3);
+                            org.json.JSONArray alternatives=nearby.optJSONArray("choices");
+                            if(alternatives!=null && alternatives.length()>0){
+                                org.json.JSONObject first=alternatives.optJSONObject(0);
+                                org.json.JSONObject second=alternatives.optJSONObject(1);
+                                double bestArt=first==null?0:first.optDouble("score",0);
+                                double gap=second==null?1:bestArt-second.optDouble("score",0);
+                                if(bestArt>=.955 && gap>=.10)
+                                    artName=index.exact(first.optString("nameKey",""));
+                            }
+                        }
+                    }catch(Exception e){Log.i(TAG,"Optional complete-art title hint unavailable",e);}
+                    if(artName!=null){
+                        lastSeenTitle=artName;
+                        Log.i(TAG,"Full artwork index supplied unverified name suggestion: "+artName);
+                        enqueue(artName,"art-index-suggestion",0,null,card,hash,0);
+                    }else{
+                        lastSeenTitle="Unrecognized title";
+                        enqueue(lastSeenTitle,"ocr-candidate",0,null,card,hash,0);
+                    }
                 }
             }
             recognizing.set(false);
@@ -1193,33 +1267,51 @@ public final class NativeScannerActivity extends ComponentActivity {
             }});
             return;
         }
-        // A stack-gate scene transition may be caused by glare or a hand.
-        // Before writing another collection entry, compare the *actual* new
-        // rectified card to the already-saved capture. This also catches the
-        // case where a later OCR pass gives the SAME photographed card a
-        // DIFFERENT title (e.g. flavor text mistaken for a split card).
-        // A user-confirmed second physical copy remains allowed, without any
-        // arbitrary 20-second delay. The gate uses image identity, not name.
-        if(!sameCopyOverridePending && !captured.isEmpty() && lastSavedAt>0 &&
-           Long.bitCount(hash^lastCapturedHash)<=8){
-            String previousId=captured.get(captured.size()-1).optString("scan_id","");
-            if(resolvedScanIds.contains(previousId)){
+        // v5.12.27: A changed hash proves only that the image changed,
+        // NOT that the user placed another physical copy on the stack.
+        // Keep a conservative guard on consecutive saves of the SAME title
+        // (even if glare/movement changes the hash substantially). Do not
+        // impose a time window: another actual copy can be confirmed instantly
+        // through Copy options, while different cards continue automatically.
+        if(!sameCopyOverridePending && !lastSavedName.isEmpty() &&
+                PhysicalCopyPolicy.needsCopyConfirmation(lastSavedName,name)){
+            String previousId=captured.isEmpty()?"":captured.get(captured.size()-1).optString("scan_id","");
+            if(!previousId.isEmpty() && resolvedScanIds.contains(previousId)){
                 waitingForNext=true;
                 confirmedNewTop=false;
-                goodFrames=0;
                 previousOcr="";previousOcrCount=0;
                 stackGate.captured(hash,wholeFrameHash(card),VisualMatcher.titleHash(card),now);
                 scanCycle.rearmConfirmedPrevious(previousId,now);
                 runOnUiThread(()->{
                     if(!closing){
-                        status.setText("Same photographed card · not saved twice. For another physical copy, choose Copy options.");
+                        status.setText("Already saved "+name+" · same card or a second physical copy? Choose Copy options.");
                         keepButton.setText("Copy options");keepButton.setEnabled(true);
                     }
                 });
-                Log.i(TAG,"Rejected unchanged card appearance before persistence · OCR suggestion="+name);
+                Log.i(TAG,"Copy confirmation required before another save of "+name+
+                    " · scene change alone does not prove a new physical card");
                 return;
             }
         }
+        // Never equate one similar artwork hash with the same PHYSICAL card.
+        // A distinct title is legitimate even if two artwork hashes collide.
+        // Only extremely similar independent title/art/full-frame AND color
+        // evidence yields a POSSIBLE conflict. Such a conflict is REVIEWED,
+        // not silently reported as a confirmed duplicate or discarded.
+        final long fullCardHash=wholeFrameHash(card);
+        final long titleBandHash=VisualMatcher.titleHash(card);
+        final byte[] cardColors=VisualMatcher.fingerprint(card);
+        final String previousCaptureName=captured.isEmpty()?"":
+                captured.get(captured.size()-1).optString("name","");
+        final boolean confirmedPrior=!captured.isEmpty() &&
+                resolvedScanIds.contains(captured.get(captured.size()-1).optString("scan_id",""));
+        final boolean photoConflict=!sameCopyOverridePending && confirmedPrior &&
+                CaptureIdentityPolicy.needsIdentityReview(previousCaptureName,name,
+                    lastCapturedHash,hash,lastCapturedTitleHash,titleBandHash,
+                    lastCapturedFullHash,fullCardHash,lastCapturedColor,cardColors);
+        if(photoConflict)
+            Log.w(TAG,"Near-identical visual evidence but DIFFERENT OCR title: prior="+
+                previousCaptureName+" proposed="+name+"; requesting title review before persistence");
         sameCopyOverridePending=false;
         confirmedNewTop=false;
         try{
@@ -1231,6 +1323,8 @@ public final class NativeScannerActivity extends ComponentActivity {
             }finally{if(printingPhoto!=card)printingPhoto.recycle();}
             JSONObject result=new JSONObject();
             result.put("name",name);result.put("source",source);result.put("artworkId",imageId==null?"":imageId);
+            result.put("identity_conflict",photoConflict);
+            if(photoConflict)result.put("identity_conflict_note","Title differs from last saved card but visual regions are nearly identical; confirm title or retry");
             result.put("similarity",Math.round(score*1000)/1000.0);
             result.put("ocr_reads",source.startsWith("ocr")?previousOcrCount:0);
             result.put("elapsed",SystemClock.elapsedRealtime()-sessionStart);
@@ -1259,6 +1353,9 @@ public final class NativeScannerActivity extends ComponentActivity {
             MainActivity.deliverLiveCapture(result);
             stackGate.captured(hash,wholeFrameHash(card),VisualMatcher.titleHash(card),SystemClock.elapsedRealtime());
             waitingForNext=true;changeFrames=0;lastCapturedHash=hash;
+            lastCapturedTitleHash=titleBandHash;
+            lastCapturedFullHash=fullCardHash;
+            lastCapturedColor=cardColors;
             lastCapturedSceneHash=currentFrameSceneHash;
             if(smoothed!=null){
                 lastCapturedCorners=new PointF[4];

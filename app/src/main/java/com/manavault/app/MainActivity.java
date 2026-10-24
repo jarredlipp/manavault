@@ -206,6 +206,20 @@ public class MainActivity extends Activity {
         liveHost=new java.lang.ref.WeakReference<>(this);
         ReferenceFingerprintCache.configure(getApplicationContext());
         NativePrintingIndex.start(getApplicationContext());
+        // The large all-printings visual index is optional, installed separately
+        // and never fetched during an active CameraX recognition request.
+        artworkExecutor.execute(() -> FullArtworkIndex.ready(getApplicationContext()));
+        if (getPreferences(MODE_PRIVATE).getBoolean("full_art_auto_updates",false)) {
+            android.net.ConnectivityManager cm=(android.net.ConnectivityManager)
+                getSystemService(CONNECTIVITY_SERVICE);
+            long last=getPreferences(MODE_PRIVATE).getLong("full_art_last_check",0);
+            if(cm!=null && !cm.isActiveNetworkMetered() &&
+                System.currentTimeMillis()-last>24L*60*60*1000){
+                getPreferences(MODE_PRIVATE).edit().putLong("full_art_last_check",System.currentTimeMillis()).apply();
+                FullArtworkIndexUpdater.request(getApplicationContext(),result->
+                    Log.i("ManaVaultFullArt",result.optString("message","")));
+            }
+        }
         BundledSetSymbols.initialize(getApplicationContext());
         webView = new WebView(this);
         // Index is loaded lazily after the first confirmed printing; never block app launch.
@@ -231,7 +245,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.12.28"; }
+            @JavascriptInterface public String version() { return "5.12.31"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
             @JavascriptInterface public void scanProgress(String payload){
                 try{NativeScannerActivity.receiveLiveProgress(new JSONObject(payload));}
@@ -260,6 +274,19 @@ public class MainActivity extends Activity {
             }
             @JavascriptInterface public int cachedPrintingFingerprints() {
                 return ReferenceFingerprintCache.count();
+            }
+            @JavascriptInterface public String fullArtworkStatus(){
+                return FullArtworkIndex.status(getApplicationContext())+" · "+FullArtworkIndexUpdater.status();
+            }
+            @JavascriptInterface public void downloadFullArtworkIndex(){
+                // Explicit user consent on first install. Later versions are
+                // checked at app launch on unmetered connections only.
+                getPreferences(MODE_PRIVATE).edit().putBoolean("full_art_auto_updates",true).apply();
+                FullArtworkIndexUpdater.request(getApplicationContext(),result->{
+                    final String data=result.toString();
+                    runOnUiThread(()->{if(webView!=null)webView.evaluateJavascript(
+                        "window.mvFullArtworkIndexUpdated && window.mvFullArtworkIndexUpdated("+data+")",null);});
+                });
             }
             /** Store a public name catalog for fast native exact-match recognition.
              * Write atomically and never block the WebView JavaScript thread. */
@@ -352,8 +379,12 @@ public class MainActivity extends Activity {
                     JSONObject result;
                     try{
                         if(photo==null||!photo.isFile())throw new java.io.IOException("Captured photo unavailable");
-                        if(artworkIndex==null)artworkIndex=new VisualMatcher(getApplicationContext());
-                        result=artworkIndex.rankBundled(photo,request);
+                        if(FullArtworkIndex.ready(getApplicationContext()))
+                            result=FullArtworkIndex.rank(getApplicationContext(),photo,request);
+                        else {
+                            if(artworkIndex==null)artworkIndex=new VisualMatcher(getApplicationContext());
+                            result=artworkIndex.rankBundled(photo,request);
+                        }
                     }catch(Exception e){
                         result=new JSONObject();
                         try{result.put("requestId",request.optString("requestId",""));result.put("error","Bundled artwork unavailable");}catch(Exception ignored){}
@@ -440,7 +471,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.12.28 · CameraX");
+        versionLabel.setText("ManaVault 5.12.31 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));

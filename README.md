@@ -1,3 +1,7 @@
+## v5.12.31 — Complete, printing-level offline artwork database
+
+The native scanner can use a separate compressed SQLite visual index for **all available English paper printings and both card faces**. Each printing remains distinct even when Scryfall illustration IDs and artwork are identical. Candidate comparisons use artwork color, full-frame layout, title, rules/text box and footer, with independently observed set/collector marks required when the artwork is shared. No collection-format change. This release adds a dedicated GitHub Actions **Build full printing artwork database** workflow, a SHA-256-verified app download button, and subsequent delta updates. **Run that GitHub workflow and publish its release first; the full index is not in the source ZIP or ordinary APK.** See [FULL-ARTWORK-v5.12.31.md](FULL-ARTWORK-v5.12.31.md). The camera remains native-only. Source tests passed; full APK compilation and 120k-image index generation remain to be verified.
+
 ## v5.12.28 — Native CameraX-only scanner
 
 The Android app now uses **only its native CameraX / ML Kit scanner**. Retired browser-video capture, optional uploaded-photo OCR, multi-card photo scanner and remote Tesseract.js loader are removed from the Android UI/source. Browser WebView camera permissions are denied. Manual card search, batch text import, deck integration, and during-scan printing save/verification remain supported. The collection storage key and Android package name are unchanged.
@@ -67,10 +71,15 @@ The GitHub workflow builds the offline Scryfall catalog, SVG symbol reference at
 
 **Important:** This project was tested locally using JavaScript/Java smoke tests, not a complete Android SDK build or a physical-camera session. Real-device OCR, symbol detection, offline asset generation and APK compilation require the next GitHub test build. Don't treat automatic verification as infallible; confirm representative printings, especially older editions and basic lands.
 
-App ID: `com.manavault.app`. Version code: **105**. Collection storage key remains `manavault-v1`.
+App ID: `com.manavault.app`. Version code: **111**. Collection storage key remains `manavault-v1`.
 
 
 ## v5.12.27 scanner duplicate safety
 
 See `DUPLICATE-SAFETY-v5.12.27.md` for the conservative consecutive-name copy gate,
 Webstrike-style two-line OCR recovery, and offline artwork diagnostics.
+
+
+## v5.12.29 identity integrity update
+
+See [IDENTITY-INTEGRITY-v5.12.29.md](IDENTITY-INTEGRITY-v5.12.29.md). The native-only scanner now protects distinct new cards from single-artwork-hash false duplicate rejection, restricts ambiguous split-face aliases, and offers physical-footer verification for a uniquely reconstructed stylized two-line title. On-camera review remains mandatory when evidence conflicts. No collection migration is required.
