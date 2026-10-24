@@ -43,6 +43,13 @@ html=(root/'app/src/main/assets/index.html').read_text()
 assert 'frame-src \'none\'' in html
 assert 'object-src \'none\'' in html
 assert 'manavault-v1' in html, 'Collection key must be preserved'
+assert 'window.mvNativeScanLive' in html, 'Native live capture bridge missing'
+assert 'window.mvNativeLaunchNow' in html, 'Native CameraX launch bridge missing'
+assert 'tesseract.js' not in html.lower(), 'Legacy CDN OCR loader reintroduced'
+assert 'getUserMedia' not in html, 'WebView camera capture reintroduced'
+assert 'id="liveVideo"' not in html and 'id="liveStart"' not in html, 'Old browser camera UI reintroduced'
+assert "script-src 'self' 'unsafe-inline'" in html, 'Remote JavaScript must be blocked by policy'
+assert 'runOnUiThread(request::deny)' in java, 'WebView media permissions must be denied'
 gradle=(root/'app/build.gradle').read_text()
 version=re.search(r"versionName\s+'([^']+)'",gradle).group(1)
 assert 'ManaVault '+version in java
@@ -51,4 +58,4 @@ workflow=(root/'.github/workflows/build-apk.yml').read_text()
 assert 'tools/check_source_hygiene.py' in workflow
 assert 'tools/ensure_offline_assets.sh' in workflow
 print('Source hygiene PASSED: no retired duplicates; Android app and workflow intact; WebView guards present; version and collection key consistent.')
-print('NOTICE: Static hygiene is not an antivirus scan. Legacy Tesseract OCR still loads JavaScript from a CDN when requested.')
+print('NOTICE: Static hygiene is not an antivirus scan. Browser camera and remote Tesseract loader are absent.')

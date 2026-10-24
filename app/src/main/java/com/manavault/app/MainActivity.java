@@ -34,7 +34,6 @@ public class MainActivity extends Activity {
     private static final int NATIVE_SCANNER_REQUEST = 42;
     private static final int BACKUP_DOCUMENT_REQUEST = 43;
     private WebView webView;
-    private PermissionRequest pendingCameraRequest;
     private ValueCallback<Uri[]> fileCallback;
     private final ExecutorService backupExecutor = Executors.newSingleThreadExecutor();
     private String pendingBackupJson;
@@ -202,12 +201,6 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void cameraEvent(String message) {
-        Log.d("ManaVaultCamera", message);
-        if (webView != null) webView.post(() -> webView.evaluateJavascript(
-            "window.mvNativeCameraEvent && window.mvNativeCameraEvent(" + org.json.JSONObject.quote(message) + ")", null));
-    }
-
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         liveHost=new java.lang.ref.WeakReference<>(this);
@@ -238,7 +231,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.12.26"; }
+            @JavascriptInterface public String version() { return "5.12.28"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
             @JavascriptInterface public void scanProgress(String payload){
                 try{NativeScannerActivity.receiveLiveProgress(new JSONObject(payload));}
@@ -447,7 +440,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.12.26 · CameraX");
+        versionLabel.setText("ManaVault 5.12.28 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
@@ -511,28 +504,11 @@ public class MainActivity extends Activity {
                 Log.d("ManaVaultWeb", message.message() + " (line " + message.lineNumber() + ")");
                 return true;
             }
+            // The legacy WebView camera was removed. Camera access is owned
+            // exclusively by the Android CameraX activity; deny all web media
+            // requests even when the requesting origin is the app's own asset URL.
             @Override public void onPermissionRequest(PermissionRequest request) {
-                cameraEvent("WebView requested camera: origin=" + request.getOrigin() + " resources=" + java.util.Arrays.toString(request.getResources()));
-                runOnUiThread(() -> {
-                    if (request.getOrigin() == null || !"https".equals(request.getOrigin().getScheme()) || !"appassets.androidplatform.net".equals(request.getOrigin().getHost())) {
-                        cameraEvent("Camera permission denied: untrusted origin"); request.deny(); return;
-                    }
-                    boolean cameraRequested = false;
-                    for (String resource : request.getResources()) {
-                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) cameraRequested = true;
-                        else { cameraEvent("Camera permission denied: unsupported resource " + resource); request.deny(); return; }
-                    }
-                    if (!cameraRequested) { cameraEvent("Camera permission denied: video not requested"); request.deny(); return; }
-                    if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                        cameraEvent("WebView video permission granted"); request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
-                    } else {
-                        cameraEvent("Requesting Android runtime CAMERA permission"); pendingCameraRequest = request;
-                        requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_REQUEST);
-                    }
-                });
-            }
-            @Override public void onPermissionRequestCanceled(PermissionRequest request) {
-                if (pendingCameraRequest == request) pendingCameraRequest = null;
+                runOnUiThread(request::deny);
             }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
@@ -562,12 +538,7 @@ public class MainActivity extends Activity {
             }
             return;
         }
-        if (requestCode == CAMERA_REQUEST && pendingCameraRequest != null) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                cameraEvent("Runtime camera permission granted"); pendingCameraRequest.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
-            } else { cameraEvent("Runtime camera permission denied"); pendingCameraRequest.deny(); }
-            pendingCameraRequest = null;
-        }
+
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -626,7 +597,6 @@ public class MainActivity extends Activity {
         }
     }
     @Override protected void onDestroy() {
-        if (pendingCameraRequest != null) pendingCameraRequest.deny();
         if (fileCallback != null) fileCallback.onReceiveValue(null);
         liveHost.clear();
         artworkExecutor.shutdownNow();

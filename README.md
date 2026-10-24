@@ -1,3 +1,9 @@
+## v5.12.28 — Native CameraX-only scanner
+
+The Android app now uses **only its native CameraX / ML Kit scanner**. Retired browser-video capture, optional uploaded-photo OCR, multi-card photo scanner and remote Tesseract.js loader are removed from the Android UI/source. Browser WebView camera permissions are denied. Manual card search, batch text import, deck integration, and during-scan printing save/verification remain supported. The collection storage key and Android package name are unchanged.
+
+This is a surface-area reduction and static security hardening, **not an antivirus clearance or proof of false-positive detections**. Scan the package with Microsoft Defender before installing or executing it. See `NATIVE-CAMERA-v5.12.28.md` for scope, test results, and limitations.
+
 ## v5.12.26 legacy printing and title recovery
 
 See `RECOGNITION-v5.12.26.md` for observed performance, changed evidence paths, and safety limitations.
@@ -62,3 +68,9 @@ The GitHub workflow builds the offline Scryfall catalog, SVG symbol reference at
 **Important:** This project was tested locally using JavaScript/Java smoke tests, not a complete Android SDK build or a physical-camera session. Real-device OCR, symbol detection, offline asset generation and APK compilation require the next GitHub test build. Don't treat automatic verification as infallible; confirm representative printings, especially older editions and basic lands.
 
 App ID: `com.manavault.app`. Version code: **105**. Collection storage key remains `manavault-v1`.
+
+
+## v5.12.27 scanner duplicate safety
+
+See `DUPLICATE-SAFETY-v5.12.27.md` for the conservative consecutive-name copy gate,
+Webstrike-style two-line OCR recovery, and offline artwork diagnostics.

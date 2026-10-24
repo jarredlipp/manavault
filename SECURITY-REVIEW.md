@@ -44,3 +44,11 @@ Both paths were removed from this package. This removal reduces the previously r
 3. Commit the cleanup to a new branch first. Run GitHub Actions and review its logs, dependencies and generated Android APK.
 4. Back up your collection via ManaVault before installing any new APK. Debug APK signatures may differ across builds; **do not uninstall your data-bearing app** to force an update.
 5. For an authoritative verdict on the prior alert, send the prior detection/sample to Microsoft Security Intelligence. A negative quick scan of Windows is reassuring for that computer, but is not a verdict on the code.
+
+## October 24, 2026 follow-up (v5.12.28)
+
+The user's second Windows Defender detection has not been independently identified (the second alert's affected filenames and signature were not provided). **Do not assume it is a false positive or that source cleanup establishes safety.** The previously flagged root HTML and development test remain absent.
+
+This revision removes the obsolete browser webcam and photo OCR paths and removes the CDN-hosted Tesseract script loader from the Android app's active HTML. It denies all WebView media permission requests while retaining the CameraX permission at the Android Activity level. A Content Security Policy now prevents externally hosted JavaScript from loading.
+
+Build-time Scryfall downloads and other existing sources/tests remain. This review is limited to static code paths; an independent Defender/AV scan, full GitHub build, and real-device test are still required. If Defender flags the new ZIP, do not bypass it; record the detection name and the affected path from Protection history.
