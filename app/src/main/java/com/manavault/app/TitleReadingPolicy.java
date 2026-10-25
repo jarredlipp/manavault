@@ -30,6 +30,10 @@ final class TitleReadingPolicy {
     static boolean isFooterOrRulesNoise(String observed){
         final String k=key(observed);
         if(k.isEmpty()||k.equals("unrecognized title"))return true;
+        // A lone word from a sideways split card's RULES BOX is not a title.
+        if(java.util.Arrays.asList("player","players","opponent","opponents",
+                "owner","owners","target","targets","controls","permanent",
+                "permanents","damage","destroy","return","until","creatures").contains(k))return true;
         if(k.matches("^(?:of the coast|the coast|wizards of the coast|wizards|copyright|artist|illustrated by|illus|illustration)(?: .*)?$"))return true;
         if(k.matches(".*\\b(?:19|20)\\d{2}\\b.*") && k.matches(".*\\b(?:wizards|coast|inc|llc|copyright|illus)\\b.*"))return true;
         // Set/language/artist footer, e.g. DFT *EN SAM McKENZIE.

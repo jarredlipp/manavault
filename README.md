@@ -1,10 +1,10 @@
-# ManaVault v5.13.0 — Scanner engine accuracy and recovery overhaul
+# ManaVault v5.13.1 — Split-card title recovery and recognition safeguard
 
 This is the complete project, with no collection/deck features or historical tests removed.
 The recognition update introduces conservative rotated-title gates, catalog-based
 OCR correction, offline rules-text review suggestions, captured-photo quality
 metrics, adaptive footer OCR, and an honest physical-card throughput benchmark.
-See [SCANNER-OVERHAUL-v5.13.0.md](SCANNER-OVERHAUL-v5.13.0.md).
+See [SCANNER-FIX-v5.13.1.md](SCANNER-FIX-v5.13.1.md) for this release, and [SCANNER-OVERHAUL-v5.13.0.md](SCANNER-OVERHAUL-v5.13.0.md) for the prior engine update.
 
 **The full artwork index must still be generated and installed separately**, and
 an APK/phone test is required before treating source tests as performance claims.

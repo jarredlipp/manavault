@@ -18,10 +18,11 @@ required = {
     'CaptureIdentityPolicy.java': ('needsIdentityReview',),
     'SymbolShapeMatcher.java': ('normalizeInk', 'extractInk', 'score'),
     'SplitCardLayoutPolicy.java': ('panels', 'titleRotation', 'zones'),
+    'SplitFacePairPolicy.java': ('resolve', 'key'),
     'TitleRecoveryPolicy.java': ('uniqueCandidate', 'isBadMultiFaceGuess'),
     'CaptureQualityPolicy.java': ('measure', 'glarePercent'),
-    'NativeScannerActivity.java': ('PhysicalCopyPolicy.needsCopyConfirmation', 'CaptureIdentityPolicy.needsIdentityReview', 'TitleRecoveryPolicy.isBadMultiFaceGuess', 'CaptureQualityPolicy.measure'),
-    'NativeNameIndex.java': ('TitleRecoveryPolicy.uniqueCandidate',),
+    'NativeScannerActivity.java': ('PhysicalCopyPolicy.needsCopyConfirmation', 'CaptureIdentityPolicy.needsIdentityReview', 'TitleRecoveryPolicy.isBadMultiFaceGuess', 'CaptureQualityPolicy.measure', 'readSplitTitlePanels'),
+    'NativeNameIndex.java': ('TitleRecoveryPolicy.uniqueCandidate', 'SplitFacePairPolicy.resolve'),
     'PrintingFingerprintVerifier.java': ('SymbolShapeMatcher.normalizeInk', 'SplitCardLayoutPolicy.panels'),
     'MainActivity.java': ('request.optBoolean("footerFirst",false)',),
 }
@@ -68,6 +69,14 @@ public final class ScannerContractProbe {
             "portrait split title panels should be upper/lower");
         require(SplitCardLayoutPolicy.titleRotation(820,1145) == 90,
             "portrait split title must be rotated upright");
+        java.util.Map<String,String> pairs=new java.util.HashMap<>();
+        pairs.put(SplitFacePairPolicy.key("Night","Day"),"Night // Day");
+        require("Night // Day".equals(SplitFacePairPolicy.resolve(pairs,
+            java.util.Arrays.asList("Night"),java.util.Arrays.asList("Day"))),
+            "both independent split face titles are needed");
+        require(SplitFacePairPolicy.resolve(pairs,
+            java.util.Arrays.asList("Night"),java.util.Arrays.asList("player"))==null,
+            "rules-text token may not establish split identity");
         require(!TitleReadingPolicy.allowAutomaticExactOrientation(false,90),
             "portrait sideways OCR cannot assert an exact title");
         require(TitleRecoveryPolicy.isBadMultiFaceGuess("Who // What // When // Where // Why",false),
@@ -85,7 +94,7 @@ with TemporaryDirectory(prefix='mv-scanner-contract-') as temp:
     probe.write_text(probe_source, encoding='utf-8')
     production = [java / filename for filename in (
         'PhysicalCopyPolicy.java', 'CaptureIdentityPolicy.java', 'SymbolShapeMatcher.java',
-        'SplitCardLayoutPolicy.java', 'TitleReadingPolicy.java',
+        'SplitCardLayoutPolicy.java', 'SplitFacePairPolicy.java', 'TitleReadingPolicy.java',
         'TitleRecoveryPolicy.java', 'CaptureQualityPolicy.java'
     )]
     subprocess.run(['javac', '-d', str(output), *(str(s) for s in production), str(probe)], check=True)

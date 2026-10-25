@@ -20,6 +20,7 @@ final class NativeNameIndex {
     private final Map<String,String> names=new HashMap<>();
     private final Map<String,String> distinctiveFirstWords=new HashMap<>();
     private final Map<String,List<String>> correctionBuckets=new HashMap<>();
+    private final Map<String,String> splitPairs=new HashMap<>();
     static String norm(String value){
         return Normalizer.normalize(value==null?"":value,Normalizer.Form.NFKD)
             .replace("Æ","Ae").replace("æ","ae").replace("Œ","Oe").replace("œ","oe")
@@ -38,6 +39,15 @@ final class NativeNameIndex {
                 String full=list.optString(i,"");
                 if(full.isEmpty())continue;
                 put(full,full,true);
+                String[] physicalFaces=full.split(" // ");
+                if(physicalFaces.length==2){
+                    String pair=SplitFacePairPolicy.key(physicalFaces[0],physicalFaces[1]);
+                    if(!pair.isEmpty()){
+                        String existing=splitPairs.get(pair);
+                        if(!splitPairs.containsKey(pair))splitPairs.put(pair,full);
+                        else if(existing!=null&&!existing.equals(full))splitPairs.put(pair,null);
+                    }
+                }
                 String bucket=TitleRecoveryPolicy.keyPrefix(norm(full));
                 if(!bucket.isEmpty())correctionBuckets.computeIfAbsent(bucket,k->new ArrayList<>()).add(full);
                 for(String face:full.split(" // ")){
@@ -50,10 +60,14 @@ final class NativeNameIndex {
                     }
                 }
             }
-        }catch(Exception e){Log.w("ManaVaultNames","Native name index unavailable; OCR repetition fallback",e);names.clear();distinctiveFirstWords.clear();correctionBuckets.clear();}
+        }catch(Exception e){Log.w("ManaVaultNames","Native name index unavailable; OCR repetition fallback",e);names.clear();distinctiveFirstWords.clear();correctionBuckets.clear();splitPairs.clear();}
     }
     private void put(String alias,String canonical,boolean whole){String key=norm(alias);if(!key.isEmpty()&&(whole||!names.containsKey(key)))names.put(key,canonical);}
     int size(){return names.size();}
+    /** Resolve only after BOTH physical split panels have been OCR-read. */
+    String pairedSplitTitle(Iterable<String> left,Iterable<String> right){
+        return SplitFacePairPolicy.resolve(splitPairs,left,right);
+    }
     /** Only a *suggested* identity. Requires two observations and independent
      * printing evidence before a partially read stylized title can be saved. */
     String distinctiveTitlePrefix(String raw){

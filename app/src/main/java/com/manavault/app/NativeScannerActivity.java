@@ -1229,6 +1229,81 @@ public final class NativeScannerActivity extends ComponentActivity {
                 readTitle(card,hash,rotationIndex+1,began,sideways,bestTentative,bestRotation,true,bestSuggestedTwoLine);
                 return;
             }
+            // Ordinary title strips failed. Sideways printed split cards (Night/Day,
+            // Fire/Ice, Stand/Deliver) have TWO independent title bars, one in
+            // each half of the portrait card. OCR them separately before taking
+            // a generic word from a rotated rules box as the card name.
+            if(!sideways && card.getHeight()>card.getWidth()*1.15f && names!=null){
+                final String rescueName=bestTentative;
+                final int rescueRotation=bestRotation;
+                final boolean rescueTwoLine=bestSuggestedTwoLine;
+                readSplitTitlePanels(card,hash,began,()->
+                    completeUnmatchedTitle(card,hash,began,rescueName,rescueRotation,rescueTwoLine,false));
+                return;
+            }
+            completeUnmatchedTitle(card,hash,began,bestTentative,bestRotation,bestSuggestedTwoLine,sideways);
+        });
+    }
+    /** A split-pair probe runs only after ordinary title recognition fails.
+     * Both printed title bars must resolve to one exact two-face catalog name.
+     * The downstream verifier independently checks both faces and the footer.
+     * A read failure falls through to the existing manual title workflow. */
+    private void readSplitTitlePanels(Bitmap card,long hash,long began,Runnable fallback){
+        final float[][] zones=SplitCardLayoutPolicy.panels(card.getWidth(),card.getHeight());
+        final java.util.ArrayList<String> first=new java.util.ArrayList<>();
+        readOneSplitPanel(card,zones[0],first,()->{
+            final java.util.ArrayList<String> second=new java.util.ArrayList<>();
+            readOneSplitPanel(card,zones[1],second,()->{
+                String paired=names==null?null:names.pairedSplitTitle(first,second);
+                if(paired!=null && !closing){
+                    lastOcrMs=SystemClock.elapsedRealtime()-began;
+                    Log.i(TAG,"Both photographed split titles agree on: "+paired+
+                        " (candidate; printing still requires verification)");
+                    lastSeenTitle=paired;
+                    enqueue(paired,"ocr-split-provisional",0,null,card,hash,0);
+                    recognizing.set(false);
+                }else fallback.run();
+            });
+        });
+    }
+    private void readOneSplitPanel(Bitmap card,float[] region,java.util.List<String> candidates,Runnable done){
+        Bitmap transformed=null;
+        try{
+            int x=Math.max(0,Math.round(card.getWidth()*region[0]));
+            int y=Math.max(0,Math.round(card.getHeight()*region[1]));
+            int w=Math.max(1,Math.min(card.getWidth()-x,Math.round(card.getWidth()*region[2])));
+            int h=Math.max(1,Math.min(card.getHeight()-y,Math.round(card.getHeight()*region[3])));
+            Bitmap piece=Bitmap.createBitmap(card,x,y,w,h);
+            // Upright portrait split halves have text sideways along the left
+            // outer edge. The left edge becomes the TOP after this rotation.
+            Bitmap upright=rotate(piece,90);
+            piece.recycle();
+            int titleHeight=Math.max(1,Math.round(upright.getHeight()*.22f));
+            Bitmap title=Bitmap.createBitmap(upright,0,0,upright.getWidth(),titleHeight);
+            upright.recycle();
+            transformed=Bitmap.createScaledBitmap(title,title.getWidth()*2,title.getHeight()*2,true);
+            title.recycle();
+        }catch(Exception e){Log.i(TAG,"Split title region unavailable",e);done.run();return;}
+        final Bitmap image=transformed;
+        recognizer.process(InputImage.fromBitmap(image,0)).addOnCompleteListener(task->{
+            try{
+                if(task.isSuccessful()){
+                    Text result=task.getResult();
+                    for(Text.TextBlock block:result.getTextBlocks())for(Text.Line line:block.getLines()){
+                        String raw=line.getText().trim();
+                        if(!TitleReadingPolicy.isFooterOrRulesNoise(raw) && raw.length()>=3 && raw.length()<=35)
+                            candidates.add(raw);
+                    }
+                }
+            }finally{image.recycle();done.run();}
+        });
+    }
+    /** No strong title, including a two-panel split: use the conservative
+     * existing candidate and offline-artwork review path, never an auto-save. */
+    private void completeUnmatchedTitle(Bitmap card,long hash,long began,
+            String bestTentative,int bestRotation,boolean bestSuggestedTwoLine,boolean sideways){
+            NativeNameIndex index=names;
+            int[] titleRotations=sideways?new int[]{90,270,0,180}:titleRotationOrder(card.getWidth(),card.getHeight());
             lastOcrMs=SystemClock.elapsedRealtime()-began;
             if(bestTentative!=null && !TitleReadingPolicy.isFooterOrRulesNoise(bestTentative)){
                 String normalized=bestTentative.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");
@@ -1252,7 +1327,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                         !normalized.matches(".*(.)\\1{4,}.*"))
                     enqueue(bestTentative,printingFirstTitleRescue?"ocr-two-line-suggested":
                         "ocr-candidate",
-                            0,null,card,hash,rotations[bestRotation]);
+                            0,null,card,hash,titleRotations[bestRotation]);
             }else{
                 // No title in any orientation, including the RAW color
                 // rescue. On a second stable attempt, capture the card for
@@ -1293,7 +1368,6 @@ public final class NativeScannerActivity extends ComponentActivity {
                 }
             }
             recognizing.set(false);
-        });
     }
     /** Called on analyzer or ML Kit callback thread. Store each capture once,
      * then wait for a stable new top card on the physical stack. */

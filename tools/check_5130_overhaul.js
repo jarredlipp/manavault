@@ -10,6 +10,7 @@ const context={
  mv67ResolveFromPrintedMarks:async()=>({reason:'Unclear printed collector'}),
  mv120TextEvidence:async()=>({suggestion:'Webstrike Elite',words:4}),
  mvHybridNorm:x=>String(x||'').toLowerCase(),
+ mv131ReferenceTitleCompatible:(observed,proposed)=>observed.includes(' // '),
  mvLogCamera:()=>{},mv613NonTitleText:()=>false,mv67TitleAgrees:()=>false,
  console
 };
