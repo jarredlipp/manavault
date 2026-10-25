@@ -68,6 +68,10 @@ final class PrintingFingerprintVerifier {
     }
     static JSONObject readMarks(File photo,String requestId,boolean verifySplit,boolean fast,
             boolean verifyToken,JSONArray expectedCollectors) throws Exception {
+        return readMarks(photo,requestId,verifySplit,fast,verifyToken,expectedCollectors,false);
+    }
+    static JSONObject readMarks(File photo,String requestId,boolean verifySplit,boolean fast,
+            boolean verifyToken,JSONArray expectedCollectors,boolean footerFirst) throws Exception {
         JSONObject out=new JSONObject();out.put("requestId",requestId);
         JSONArray lines=new JSONArray();out.put("lines",lines);
         Bitmap card=BitmapFactory.decodeFile(photo.getAbsolutePath());
@@ -86,20 +90,36 @@ final class PrintingFingerprintVerifier {
                 try{readRegion(reader,bar,"type-bar","token-check",lines,out,fast?550:1100);}
                 finally{bar.recycle();}
             }
-            // For a split card, first corroborate BOTH photographed title
-            // halves before spending time on the less reliable tiny footer.
+            // v5.12.33: true split cards have TWO independently printed
+            // title panels. Portrait photos show stacked sideways panels;
+            // scanner-rotated landscape photos show left/right panels. The
+            // former must be rotated before OCR; the old left/right unrotated
+            // probes on a portrait photo mostly read RULES TEXT instead.
             if(verifySplit){
-                float[][] halves={{.015f,.012f,.48f,.27f},{.50f,.012f,.48f,.27f}};
-                String[] labels={"split-title-left","split-title-right"};
-                for(int i=0;i<halves.length;i++){
-                    float[] r=halves[i];
+                float[][] panels=SplitCardLayoutPolicy.panels(card.getWidth(),card.getHeight());
+                String[] labels=SplitCardLayoutPolicy.zones(card.getWidth(),card.getHeight());
+                int degrees=SplitCardLayoutPolicy.titleRotation(card.getWidth(),card.getHeight());
+                for(int i=0;i<panels.length;i++){
+                    float[] r=panels[i];
                     int x=Math.round(card.getWidth()*r[0]),y=Math.round(card.getHeight()*r[1]);
-                    int w=Math.min(card.getWidth()-x,Math.max(1,Math.round(card.getWidth()*r[2])));
-                    int h=Math.min(card.getHeight()-y,Math.max(1,Math.round(card.getHeight()*r[3])));
+                    int w=Math.max(1,Math.min(card.getWidth()-x,Math.round(card.getWidth()*r[2])));
+                    int h=Math.max(1,Math.min(card.getHeight()-y,Math.round(card.getHeight()*r[3])));
                     Bitmap half=Bitmap.createBitmap(card,x,y,w,h);
-                    Bitmap scaled=Bitmap.createScaledBitmap(half,w*2,h*2,true);
-                    half.recycle();
-                    try{readRegion(reader,scaled,labels[i],"split-check",lines,out,fast?1050:4000);}
+                    Bitmap upright=half;
+                    if(degrees!=0){
+                        android.graphics.Matrix rotation=new android.graphics.Matrix();
+                        rotation.postRotate(degrees);
+                        upright=Bitmap.createBitmap(half,0,0,w,h,rotation,true);
+                        half.recycle();
+                    }
+                    // Once rotated, OCR only the TOP of each sub-card; the
+                    // right/lower rules area must never supply an exact name.
+                    int titleHeight=Math.max(1,Math.round(upright.getHeight()*.34f));
+                    Bitmap title=Bitmap.createBitmap(upright,0,0,upright.getWidth(),titleHeight);
+                    if(upright!=half || degrees==0)upright.recycle();
+                    Bitmap scaled=Bitmap.createScaledBitmap(title,title.getWidth()*2,title.getHeight()*2,true);
+                    title.recycle();
+                    try{readRegion(reader,scaled,labels[i],"split-rotated-title",lines,out,fast?1050:1800);}
                     finally{scaled.recycle();}
                 }
             }
@@ -149,6 +169,25 @@ final class PrintingFingerprintVerifier {
                         finally{enhanced.recycle();}
                     }
                 }finally{enlarged.recycle();}
+            }
+            // If title OCR is uncertain, spend one limited, high-contrast
+            // footer pass BEFORE querying by guessed name. This must include
+            // the tiny set + collector row (e.g. DFT R 0345, FIN U 0214,
+            // LCI U 0303). This never claims a title or a printing by itself.
+            if(footerFirst && !hasFooterIdentifier(lines) &&
+                    android.os.SystemClock.elapsedRealtime()-started<(fast?1850:5600)){
+                int x=Math.round(card.getWidth()*.013f),y=Math.round(card.getHeight()*.91f);
+                int w=Math.max(1,Math.min(card.getWidth()-x,Math.round(card.getWidth()*.78f)));
+                int h=Math.max(1,Math.min(card.getHeight()-y,Math.round(card.getHeight()*.086f)));
+                Bitmap strip=Bitmap.createBitmap(card,x,y,w,h);
+                Bitmap scaled=Bitmap.createScaledBitmap(strip,w*4,h*4,true);
+                strip.recycle();
+                try{
+                    Bitmap enhanced=CardQuadDetector.enhanceTitle(scaled);
+                    try{readRegion(reader,enhanced,"footer-deep","footer-first-contrast",lines,out,fast?1050:1600);}
+                    finally{enhanced.recycle();}
+                }finally{scaled.recycle();}
+                out.put("footerFirstRescueAttempted",true);
             }
             // Exact-title printings give us a small set of POSSIBLE collector
             // numbers. If rapid OCR missed all of them, spend one additional

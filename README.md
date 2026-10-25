@@ -1,3 +1,11 @@
+## v5.12.33 — Physical-footer-first title integrity and split-card OCR
+
+* When native OCR produces a *tentative* title, the resolver reads the photographed set/collector footer **before** looking up printings for the guessed title. Contradicting title/footer evidence produces a visible review choice, not an automatic collection mutation. The precise collector/set is still cross-checked against the offline Scryfall printing catalog.
+* Three-or-more-face split-card guesses cannot become automatic captures on normal photographic title evidence. Non-title rules/flavor/artist OCR remains review-only, even if it coincides with real card printing data.
+* True sideways split cards now have orientation-aware paired-title crops: two upper/lower sideways panels on portrait captures and left/right title strips when the scan image was already rotated into landscape. Both printed faces must corroborate the name.
+* The native live camera now explicitly reports whether the **complete** printing-level artwork database is installed, its version and face count, and the last indexed artwork comparison (rather than showing only the bundled starter reference count).
+* Adds regression tests and an early Gradle source contract for the new split-layout class. All existing features and tests remain intact. This update is **source-tested, not yet APK-compiled or phone-benchmarked**. See [RECOGNITION-v5.12.33.md](RECOGNITION-v5.12.33.md).
+
 ## v5.12.32 — Accuracy-first indexed artwork and printing OCR
 
 * Preserves the full v5.12.31 feature set, native CameraX scanner, existing decks/collection, all tests, and complete artwork database architecture.

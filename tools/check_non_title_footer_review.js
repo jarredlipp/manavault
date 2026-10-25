@@ -9,10 +9,12 @@ const mkCtx=found=>({
  mvHybridNorm:s=>String(s||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').trim(),
  mv61Request:async()=>({lines:[{text:'DGM EN',zone:'footer-left'}]}),
  mv67ResolveFromPrintedMarks:async()=>found,
+ mv67TitleAgrees:()=>false,mvLogCamera:()=>{},
 });
 async function run(raw,found){
  const ctx=mkCtx(found);vm.createContext(ctx);
  vm.runInContext(html.slice(start,stop),ctx);
+ vm.runInContext(html.slice(html.indexOf('function mv133FooterFirstRequired('),decideStart),ctx);
  vm.runInContext(html.slice(decideStart,decideEnd)+' return {reason:"title passed guard"};\n}',ctx);
  return ctx.mv60DecideCapture({name:raw,source:'ocr-candidate',ocr_reads:2},0,{liveFast:true});
 }

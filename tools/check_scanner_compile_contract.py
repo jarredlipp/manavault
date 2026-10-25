@@ -17,8 +17,10 @@ required = {
     'PhysicalCopyPolicy.java': ('needsCopyConfirmation',),
     'CaptureIdentityPolicy.java': ('needsIdentityReview',),
     'SymbolShapeMatcher.java': ('normalizeInk', 'extractInk', 'score'),
+    'SplitCardLayoutPolicy.java': ('panels', 'titleRotation', 'zones'),
     'NativeScannerActivity.java': ('PhysicalCopyPolicy.needsCopyConfirmation', 'CaptureIdentityPolicy.needsIdentityReview'),
-    'PrintingFingerprintVerifier.java': ('SymbolShapeMatcher.normalizeInk',),
+    'PrintingFingerprintVerifier.java': ('SymbolShapeMatcher.normalizeInk', 'SplitCardLayoutPolicy.panels'),
+    'MainActivity.java': ('request.optBoolean("footerFirst",false)',),
 }
 for filename, symbols in required.items():
     path = java / filename
@@ -59,6 +61,10 @@ public final class ScannerContractProbe {
         byte[] normalized = SymbolShapeMatcher.normalizeInk(ink);
         require(normalized != null && SymbolShapeMatcher.score(normalized, normalized) > .95,
             "symbol normalization contract failed");
+        require(SplitCardLayoutPolicy.panels(820,1145)[1][1] > .49f,
+            "portrait split title panels should be upper/lower");
+        require(SplitCardLayoutPolicy.titleRotation(820,1145) == 90,
+            "portrait split title must be rotated upright");
         System.out.println("Native scanner compile contracts PASS: copy, identity, symbol normalization");
     }
 }
@@ -68,7 +74,8 @@ with TemporaryDirectory(prefix='mv-scanner-contract-') as temp:
     probe = output / 'ScannerContractProbe.java'
     probe.write_text(probe_source, encoding='utf-8')
     production = [java / filename for filename in (
-        'PhysicalCopyPolicy.java', 'CaptureIdentityPolicy.java', 'SymbolShapeMatcher.java'
+        'PhysicalCopyPolicy.java', 'CaptureIdentityPolicy.java', 'SymbolShapeMatcher.java',
+        'SplitCardLayoutPolicy.java'
     )]
     subprocess.run(['javac', '-d', str(output), *(str(s) for s in production), str(probe)], check=True)
     subprocess.run(['java', '-cp', str(output), 'com.manavault.app.ScannerContractProbe'], check=True)

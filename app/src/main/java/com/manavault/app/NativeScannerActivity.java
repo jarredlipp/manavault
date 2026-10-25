@@ -80,6 +80,13 @@ public final class NativeScannerActivity extends ComponentActivity {
     private final ArrayList<JSONObject> captured=new ArrayList<>();
     private static volatile java.lang.ref.WeakReference<NativeScannerActivity> liveScanner = new java.lang.ref.WeakReference<>(null);
     private final java.util.Set<String> resolvedScanIds=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private volatile String lastFullIndexLookup="not attempted";
+    static void noteFullIndexLookup(String result){
+        NativeScannerActivity active=liveScanner.get();
+        if(active!=null)active.runOnUiThread(()->{
+            if(!active.closing){active.lastFullIndexLookup=result;active.showMetrics();}
+        });
+    }
     private int verifiedCount=0,unverifiedCount=0,reviewCount=0;
     private boolean finishRequested=false,forceFinishEnabled=false;
     // The top card cannot be rearmed until the WebView has persisted or the
@@ -624,7 +631,10 @@ public final class NativeScannerActivity extends ComponentActivity {
         String detail=lastTiming.isEmpty()?"": "\n"+lastTiming;
         if(lastArtworkRefs>=0)detail+="\nArtwork library: "+lastArtworkRefs+" bundled/learned · Scryfall symbol icons: "+BundledSetSymbols.count()+"/"+BundledSetSymbols.eligibleCount()+" physical sets · cached edition signatures: "+ReferenceFingerprintCache.count();
         int fullIndexFaces=FullArtworkIndex.totalFaces(getApplicationContext());
-        if(fullIndexFaces>0)detail+=" · full offline printing artwork: "+fullIndexFaces+" faces";
+        detail+="\nFull printing artwork: "+(fullIndexFaces>0?
+            fullIndexFaces+" faces ("+FullArtworkIndex.installedVersion(getApplicationContext())+")":
+            "NOT INSTALLED — using starter references");
+        detail+=" · last indexed lookup: "+lastFullIndexLookup;
         metrics.setText(cameraInfo+cardInfo+detail);
     }
     /** Apply ONE conservative sensor zoom per scanner session, not one per card.
@@ -1217,6 +1227,8 @@ public final class NativeScannerActivity extends ComponentActivity {
                     try{
                         if(index!=null && FullArtworkIndex.ready(getApplicationContext())){
                             org.json.JSONObject nearby=FullArtworkIndex.nearest(getApplicationContext(),card,3);
+                            noteFullIndexLookup("name candidates: "+nearby.optInt("examined",0)+
+                                (nearby.optBoolean("expanded",false)?" (expanded search)":" (direct search)"));
                             org.json.JSONArray alternatives=nearby.optJSONArray("choices");
                             if(alternatives!=null && alternatives.length()>0){
                                 org.json.JSONObject first=alternatives.optJSONObject(0);

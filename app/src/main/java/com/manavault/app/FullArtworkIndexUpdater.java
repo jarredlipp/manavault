@@ -51,7 +51,7 @@ final class FullArtworkIndexUpdater {
         if(!"https".equals(uri.getProtocol()))throw new SecurityException("HTTPS is required");
         HttpURLConnection conn=(HttpURLConnection)uri.openConnection();
         conn.setConnectTimeout(12000);conn.setReadTimeout(50000);
-        conn.setRequestProperty("User-Agent","ManaVault/5.12.32 offline artwork updater");
+        conn.setRequestProperty("User-Agent","ManaVault/5.12.33 offline artwork updater");
         if(conn.getResponseCode()!=200){int status=conn.getResponseCode();conn.disconnect();throw new java.io.IOException("Artwork release HTTP "+status+" (publish artwork-db first)");}
         return conn;
     }
