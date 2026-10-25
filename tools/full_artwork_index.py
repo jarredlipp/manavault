@@ -21,7 +21,6 @@ import sqlite3
 import tempfile
 import time
 from pathlib import Path
-from PIL import Image, ImageOps
 
 SCHEMA = 1
 REGIONS = {
@@ -57,6 +56,8 @@ def valid_url(url):
 
 
 def photo_regions(image):
+    # Image dependencies are only needed when building fingerprints, never while merging shards.
+    from PIL import Image, ImageOps
     image = ImageOps.exif_transpose(image).convert('RGB')
     w,h=image.size
     if w<80 or h<110:raise ValueError('card artwork reference too small')
@@ -164,6 +165,7 @@ def fetch_image(url,cache):
 
 
 def build(catalog,output,shard=0,shards=1,workers=6,cache='.manavault-artwork-cache',seed=None,fetch=None,max_items=0):
+    from PIL import Image  # Only image-download workers require Pillow.
     if not (0<=shard<shards):raise ValueError('Invalid shard')
     path=Path(output);path.parent.mkdir(parents=True,exist_ok=True)
     db=sqlite3.connect(path)
