@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Fail quickly on mismatched native scanner source before expensive catalog downloads.
+"""Fast, self-contained native scanner Java contract check before offline downloads.
 
-This is a narrowly scoped Java source contract check, not a full Android compile.
-It catches missing scanner policy classes and set-symbol methods that caused
-v5.12.31/v5.12.32 GitHub Actions Javac failures.
+Production contract validation must not depend on separate Java unit-test files,
+because those tests are run independently in CI and may be missing from a patch-
+based GitHub checkout. A missing production class still fails immediately with an
+explicit path. The built-in JVM probe checks behavioral and signature contracts.
+This is not a complete Android compilation.
 """
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -11,11 +13,12 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 java = root / 'app/src/main/java/com/manavault/app'
-tools = root / 'tools'
 required = {
     'PhysicalCopyPolicy.java': ('needsCopyConfirmation',),
     'CaptureIdentityPolicy.java': ('needsIdentityReview',),
     'SymbolShapeMatcher.java': ('normalizeInk', 'extractInk', 'score'),
+    'NativeScannerActivity.java': ('PhysicalCopyPolicy.needsCopyConfirmation', 'CaptureIdentityPolicy.needsIdentityReview'),
+    'PrintingFingerprintVerifier.java': ('SymbolShapeMatcher.normalizeInk',),
 }
 for filename, symbols in required.items():
     path = java / filename
@@ -26,35 +29,46 @@ for filename, symbols in required.items():
         if symbol not in source:
             raise SystemExit(f'INCOMPATIBLE native scanner dependency: {filename} lacks {symbol}')
 
-scanner = (java / 'NativeScannerActivity.java').read_text(encoding='utf-8')
-verifier = (java / 'PrintingFingerprintVerifier.java').read_text(encoding='utf-8')
-assert 'PhysicalCopyPolicy.needsCopyConfirmation' in scanner
-assert 'CaptureIdentityPolicy.needsIdentityReview' in scanner
-assert 'SymbolShapeMatcher.normalizeInk' in verifier
-
-with TemporaryDirectory(prefix='mv-scanner-contract-') as temp:
-    output = Path(temp)
-    sources = [java / filename for filename in required]
-    sources.extend([
-        tools / 'PhysicalCopyPolicyTest.java',
-        tools / 'CaptureIdentityPolicyTest.java',
-    ])
-    subprocess.run(['javac', '-d', str(output), *(str(s) for s in sources)], check=True)
-    for test in ('PhysicalCopyPolicyTest', 'CaptureIdentityPolicyTest'):
-        subprocess.run(['java', '-cp', str(output), f'com.manavault.app.{test}'], check=True)
-    harness = output / 'com/manavault/app/SymbolContractProbe.java'
-    harness.parent.mkdir(parents=True, exist_ok=True)
-    harness.write_text('''package com.manavault.app;
-class SymbolContractProbe {
+# Run a compiled, self-contained contract probe: no dependence on standalone
+# regression test files. The standalone tests remain in the repository and CI.
+probe_source = '''package com.manavault.app;
+public final class ScannerContractProbe {
+    static void require(boolean condition, String description) {
+        if (!condition) throw new AssertionError(description);
+    }
+    static byte[] rgb(int value) {
+        byte[] bytes = new byte[192];
+        java.util.Arrays.fill(bytes, (byte)value);
+        return bytes;
+    }
     public static void main(String[] args) {
+        require(PhysicalCopyPolicy.needsCopyConfirmation("Wardens of the Cycle", "WARDENS of the CYCLE"),
+            "repeated physical copy requires confirmation");
+        require(!PhysicalCopyPolicy.needsCopyConfirmation("Wardens of the Cycle", "Savannah Lions"),
+            "a different card advances automatically");
+        long art = 0x1122334455667788L;
+        require(!CaptureIdentityPolicy.needsIdentityReview("Stillness in Motion", "Endless Sands",
+            art, art, 0x3333L, 0x9999L, 0x122334455L, 0x955223344L, rgb(10), rgb(95)),
+            "artwork hash collision must not drop a new card");
+        require(CaptureIdentityPolicy.needsIdentityReview("Depraved Harvester", "There // They're // Their",
+            art, art, 0x12345L, 0x12345L, 0x45678L, 0x45678L, rgb(60), rgb(61)),
+            "conflicting OCR over identical frame requires review");
         byte[] ink = new byte[SymbolShapeMatcher.SIZE];
-        for (int y=7;y<17;y++) for (int x=7;x<17;x++) ink[y*24+x]=(byte)255;
+        for (int y=7; y<17; y++) for (int x=7; x<17; x++)
+            ink[y*SymbolShapeMatcher.SIDE+x] = (byte)255;
         byte[] normalized = SymbolShapeMatcher.normalizeInk(ink);
-        if (normalized==null || SymbolShapeMatcher.score(normalized,normalized)<.95)
-            throw new AssertionError("Symbol contract result is invalid");
+        require(normalized != null && SymbolShapeMatcher.score(normalized, normalized) > .95,
+            "symbol normalization contract failed");
+        System.out.println("Native scanner compile contracts PASS: copy, identity, symbol normalization");
     }
 }
-''', encoding='utf-8')
-    subprocess.run(['javac', '-cp', str(output), '-d', str(output), str(harness)], check=True)
-    subprocess.run(['java', '-cp', str(output), 'com.manavault.app.SymbolContractProbe'], check=True)
-print('Native scanner compile contracts PASS: copy safety, capture identity, symbol normalization')
+'''
+with TemporaryDirectory(prefix='mv-scanner-contract-') as temp:
+    output = Path(temp)
+    probe = output / 'ScannerContractProbe.java'
+    probe.write_text(probe_source, encoding='utf-8')
+    production = [java / filename for filename in (
+        'PhysicalCopyPolicy.java', 'CaptureIdentityPolicy.java', 'SymbolShapeMatcher.java'
+    )]
+    subprocess.run(['javac', '-d', str(output), *(str(s) for s in production), str(probe)], check=True)
+    subprocess.run(['java', '-cp', str(output), 'com.manavault.app.ScannerContractProbe'], check=True)
