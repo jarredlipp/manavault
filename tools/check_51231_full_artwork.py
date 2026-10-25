@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Fixture/regression checks for complete, printing-granular artwork indexing."""
+"""Fixture/regression checks for complete, printing-granular artwork indexing.
+
+The release verification commands intentionally use standard-library modules only.
+Image generation and Scryfall downloader dependencies are loaded only by unit_tests,
+so the GitHub release/publish job does not need Pillow or requests to validate.
+"""
 import argparse
 import gzip
 import hashlib
@@ -9,14 +14,11 @@ import sqlite3
 import sys
 import tempfile
 from pathlib import Path
-from PIL import Image, ImageDraw
-
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from build_native_catalog import build as build_catalog
-from full_artwork_index import build,merge,photo_regions,valid_url,make_delta,iter_catalog
 
 
 def fixture_image(label,flavor,collector,*,alternate=False):
+    from PIL import Image, ImageDraw
     im=Image.new('RGB',(744,1040),(229,221,193)); d=ImageDraw.Draw(im)
     d.rectangle((45,140,698,508),fill=(25,80,120) if not alternate else (90,30,115))
     d.ellipse((140,155,580,490),fill=(23,182,125) if not alternate else (208,171,30))
@@ -35,6 +37,9 @@ def sample(pid,name,num,url,art='shared',back=''):
 
 
 def unit_tests():
+    from PIL import Image
+    from build_native_catalog import build as build_catalog
+    from full_artwork_index import build,merge,photo_regions,valid_url,make_delta
     assert valid_url('https://cards.scryfall.io/normal/front/test.png')
     assert not valid_url('https://not-scryfall.example/file.png')
     assert not valid_url('http://cards.scryfall.io/file.jpg')
@@ -119,6 +124,9 @@ def unit_tests():
 
 def verify_complete_catalog(catalog,db_path):
     """Reject a supposedly 'full' index if a shard or available face vanished."""
+    # This iterator imports no third-party packages. In particular do not
+    # import build_native_catalog (requires requests) during publication.
+    from full_artwork_index import iter_catalog
     conn=sqlite3.connect(db_path)
     try:
         indexed={(pid,face) for pid,face in conn.execute('SELECT printingId,face FROM artwork')}

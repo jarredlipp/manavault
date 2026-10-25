@@ -1,0 +1,107 @@
+name: Publish previously built artwork shards
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Numeric ID from the failed full-artwork workflow URL (/actions/runs/123456789)'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download the eight already-built shards
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          pattern: full-artwork-shard-*
+          path: shards
+          merge-multiple: true
+      - name: Download matching catalog from same run
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          name: full-artwork-catalog
+          path: app/src/main/assets/
+      - name: Verify all shard artifacts are present
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sqlite3
+          root=Path('shards')
+          found=sorted(p.name for p in root.glob('artwork-*.sqlite'))
+          expected=[f'artwork-{i}.sqlite' for i in range(8)]
+          if found != expected:
+              raise SystemExit(f'Expected all eight shards: {expected}; found: {found}')
+          catalog=Path('app/src/main/assets/printing-catalog.dat')
+          if not catalog.is_file() or catalog.stat().st_size < 1024:
+              raise SystemExit('Missing matching compressed printing catalog from original run')
+          for name in found:
+              connection=sqlite3.connect(f'file:{(root/name).resolve()}?mode=ro',uri=True)
+              try:
+                  status=connection.execute('PRAGMA quick_check').fetchone()[0]
+                  if status!='ok': raise SystemExit(f'{name}: SQLite integrity failure: {status}')
+              finally: connection.close()
+          print('Validated', len(found), 'existing artwork shards and matching catalog')
+          PY
+      - name: Reuse previously published fingerprints if available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p previous
+          if gh release download artwork-db -R "$GITHUB_REPOSITORY" -p 'manavault-artwork.sqlite.gz' -D previous; then
+            gzip -dc previous/manavault-artwork.sqlite.gz > previous/old.sqlite
+          else
+            echo 'No prior complete index; publishing initial full snapshot.'
+          fi
+      - name: Merge and verify without image dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          ARGS=()
+          if [ -s previous/old.sqlite ]; then
+            ARGS=(--previous previous/old.sqlite --delta release/artwork-delta.sqlite --delta-compressed release/manavault-artwork-delta.sqlite.gz)
+          fi
+          python3 tools/full_artwork_index.py merge \
+            --output release/artwork-index.sqlite \
+            --compressed release/manavault-artwork.sqlite.gz \
+            --manifest release/manavault-artwork-manifest.json \
+            "${ARGS[@]}" shards/artwork-*.sqlite
+          python3 -S tools/check_51231_full_artwork.py --verify-published release/artwork-index.sqlite release/manavault-artwork-manifest.json
+          python3 -S tools/check_51231_full_artwork.py --verify-catalog app/src/main/assets/printing-catalog.dat release/artwork-index.sqlite
+      - name: Publish verified complete artwork release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSETS=(release/manavault-artwork.sqlite.gz)
+          if [ -s release/manavault-artwork-delta.sqlite.gz ]; then
+            ASSETS+=(release/manavault-artwork-delta.sqlite.gz)
+          fi
+          if gh release view artwork-db >/dev/null 2>&1; then
+            gh release upload artwork-db "${ASSETS[@]}" --clobber
+            gh release upload artwork-db release/manavault-artwork-manifest.json --clobber
+          else
+            gh release create artwork-db \
+              --title 'ManaVault complete offline artwork fingerprints' \
+              --notes 'Fingerprint database for all available English paper card printings. Scanner verifies collector and set separately.' \
+              --latest=false \
+              "${ASSETS[@]}" release/manavault-artwork-manifest.json
+          fi
