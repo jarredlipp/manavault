@@ -21,8 +21,10 @@ required = {
     'SplitFacePairPolicy.java': ('resolve', 'key'),
     'TitleRecoveryPolicy.java': ('uniqueCandidate', 'isBadMultiFaceGuess'),
     'CaptureQualityPolicy.java': ('measure', 'glarePercent'),
-    'NativeScannerActivity.java': ('PhysicalCopyPolicy.needsCopyConfirmation', 'CaptureIdentityPolicy.needsIdentityReview', 'TitleRecoveryPolicy.isBadMultiFaceGuess', 'CaptureQualityPolicy.measure', 'readSplitTitlePanels'),
+    'NativeScannerActivity.java': ('PhysicalCopyPolicy.needsCopyConfirmation', 'CaptureIdentityPolicy.needsIdentityReview', 'TitleRecoveryPolicy.isBadMultiFaceGuess', 'CaptureQualityPolicy.measure', 'readSplitTitlePanels', 'readLowerTitlePanel'),
     'NativeNameIndex.java': ('TitleRecoveryPolicy.uniqueCandidate', 'SplitFacePairPolicy.resolve'),
+    'FullArtworkIndex.java': ('ArtworkProbePolicy.twoBitProbes', 'elapsed_ms'),
+    'ArtworkProbePolicy.java': ('twoBitProbes',),
     'PrintingFingerprintVerifier.java': ('SymbolShapeMatcher.normalizeInk', 'SplitCardLayoutPolicy.panels'),
     'MainActivity.java': ('request.optBoolean("footerFirst",false)',),
 }
@@ -77,6 +79,8 @@ public final class ScannerContractProbe {
         require(SplitFacePairPolicy.resolve(pairs,
             java.util.Arrays.asList("Night"),java.util.Arrays.asList("player"))==null,
             "rules-text token may not establish split identity");
+        require(ArtworkProbePolicy.twoBitProbes(0x123456789ABCDEFL).size()==296,
+            "artwork expansion must stay indexed and bounded");
         require(!TitleReadingPolicy.allowAutomaticExactOrientation(false,90),
             "portrait sideways OCR cannot assert an exact title");
         require(TitleRecoveryPolicy.isBadMultiFaceGuess("Who // What // When // Where // Why",false),
@@ -95,7 +99,7 @@ with TemporaryDirectory(prefix='mv-scanner-contract-') as temp:
     production = [java / filename for filename in (
         'PhysicalCopyPolicy.java', 'CaptureIdentityPolicy.java', 'SymbolShapeMatcher.java',
         'SplitCardLayoutPolicy.java', 'SplitFacePairPolicy.java', 'TitleReadingPolicy.java',
-        'TitleRecoveryPolicy.java', 'CaptureQualityPolicy.java'
+        'TitleRecoveryPolicy.java', 'CaptureQualityPolicy.java', 'ArtworkProbePolicy.java'
     )]
     subprocess.run(['javac', '-d', str(output), *(str(s) for s in production), str(probe)], check=True)
     subprocess.run(['java', '-cp', str(output), 'com.manavault.app.ScannerContractProbe'], check=True)

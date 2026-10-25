@@ -1,0 +1,136 @@
+
+name: Build ManaVault Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || true)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Find Android project
+        id: project
+        shell: bash
+        run: |
+          if [ -f settings.gradle ] || [ -f settings.gradle.kts ]; then
+            PROJECT_DIR="."
+          else
+            PROJECT_DIR=""
+
+            while IFS= read -r file; do
+              dir="$(dirname "$file")"
+
+              if [ -f "$dir/app/build.gradle" ] || \
+                 [ -f "$dir/app/build.gradle.kts" ]; then
+                PROJECT_DIR="$dir"
+                break
+              fi
+            done < <(
+              find . -mindepth 2 -maxdepth 2 \
+                \( -name settings.gradle -o \
+                   -name settings.gradle.kts \) \
+                -type f
+            )
+
+            if [ -z "$PROJECT_DIR" ]; then
+              echo "ERROR: Android project not found."
+              exit 1
+            fi
+          fi
+
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Android project found at: $PROJECT_DIR"
+
+      - name: Verify release source layout and WebView security settings
+        run: python3 tools/check_source_hygiene.py
+
+      - name: Run scanner recognition and printing regression checks
+        run: |
+          node tools/check_51220_inverted_title.js
+          node tools/check_51219_ocr_collector_rescue.js
+          node tools/check_non_title_footer_review.js
+          node tools/check_517_evidence_price.js
+          python3 tools/check_title_rescue_guard.py
+          python3 tools/check_name_layout_51211.py
+          node tools/check_51223_visual_fusion.js
+          python3 tools/check_51223_reverse_face.py
+          node tools/check_51224_scan_throughput.js
+          node tools/check_legacy_collector_51225.js
+          node tools/check_51225_copy_controls.js
+          node tools/check_51226_printing_recovery.js
+          node tools/check_51227_capture_safety.js
+          node tools/check_51229_identity_integrity.js
+          node tools/check_51230_layout_groups.js
+          python3 tools/check_51230_artwork_variants.py
+          python3 tools/check_51230_symbols.py
+          python3 tools/check_51231_full_artwork.py
+          node tools/check_51231_printing_accuracy.js
+          python3 tools/check_51232_accuracy.py
+          node tools/check_51232_symbol_gate.js
+          node tools/check_51233_footer_first.js
+          node tools/check_5130_overhaul.js
+          node tools/check_5131_reference_gate.js
+          node tools/check_5132_recognition.js
+          javac -d /tmp/mv132-art-probe app/src/main/java/com/manavault/app/ArtworkProbePolicy.java tools/ArtworkProbePolicyTest.java
+          java -cp /tmp/mv132-art-probe com.manavault.app.ArtworkProbePolicyTest
+          python3 tools/check_5130_benchmark.py
+          javac -d /tmp/mv130-title-test app/src/main/java/com/manavault/app/TitleReadingPolicy.java app/src/main/java/com/manavault/app/TitleRecoveryPolicy.java tools/TitleRecoveryPolicyTest.java
+          java -cp /tmp/mv130-title-test com.manavault.app.TitleRecoveryPolicyTest
+          javac -d /tmp/mv130-quality-test app/src/main/java/com/manavault/app/CaptureQualityPolicy.java tools/CaptureQualityPolicyTest.java
+          java -cp /tmp/mv130-quality-test com.manavault.app.CaptureQualityPolicyTest
+          javac -d /tmp/mv33-split-test app/src/main/java/com/manavault/app/SplitCardLayoutPolicy.java tools/SplitCardLayoutPolicyTest.java
+          java -cp /tmp/mv33-split-test com.manavault.app.SplitCardLayoutPolicyTest
+          javac -d /tmp/mv131-split-test app/src/main/java/com/manavault/app/TitleReadingPolicy.java app/src/main/java/com/manavault/app/SplitFacePairPolicy.java tools/SplitFacePairPolicyTest.java
+          java -cp /tmp/mv131-split-test com.manavault.app.SplitFacePairPolicyTest
+          bash tools/check_title_prefix_51226.sh
+          bash tools/check_stack_gate.sh
+
+      - name: Prepare and verify offline catalog and visual assets
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: bash tools/ensure_offline_assets.sh
+
+      - name: Build ManaVault APK
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ManaVault-Android-debug
+          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

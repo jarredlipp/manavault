@@ -29,6 +29,25 @@ final class ArtworkProbePolicy {
         for(int pair:keys)result.add(new int[]{pair >>> 8,pair & 255});
         return result;
     }
+    /** Last-resort candidate retrieval for off-center/borderless artwork.
+     * The central 64-bit hash is expanded to Hamming distance two within
+     * an eight-bit band. This is an indexed SQLite candidate query, not an
+     * exact-printing or title decision. At most 296 (band,code) pairs. */
+    static List<int[]> twoBitProbes(long hash){
+        LinkedHashSet<Integer> keys=new LinkedHashSet<>();
+        for(int band=0;band<8;band++){
+            int value=(int)((hash >>> (8*band)) & 255);
+            keys.add((band<<8)|value);
+            for(int bit=0;bit<8;bit++){
+                keys.add((band<<8)|(value^(1<<bit)));
+                for(int second=bit+1;second<8;second++)
+                    keys.add((band<<8)|(value^(1<<bit)^(1<<second)));
+            }
+        }
+        ArrayList<int[]> out=new ArrayList<>(keys.size());
+        for(int key:keys)out.add(new int[]{key>>>8,key&255});
+        return out;
+    }
     /** Never allow weak visual evidence to masquerade as an exact name. */
     static boolean strongAdvisoryName(double first,double second){
         return first>=.955 && first-second>=.10;

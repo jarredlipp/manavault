@@ -81,6 +81,9 @@ public final class NativeScannerActivity extends ComponentActivity {
     private static volatile java.lang.ref.WeakReference<NativeScannerActivity> liveScanner = new java.lang.ref.WeakReference<>(null);
     private final java.util.Set<String> resolvedScanIds=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile String lastFullIndexLookup="not attempted";
+    // Provisional global artwork names are shown in review only and cleared
+    // at the next capture; they never become a verified printing ID.
+    private volatile JSONArray pendingArtworkChoices=null;
     static void noteFullIndexLookup(String result){
         NativeScannerActivity active=liveScanner.get();
         if(active!=null)active.runOnUiThread(()->{
@@ -221,6 +224,7 @@ public final class NativeScannerActivity extends ComponentActivity {
         confirmedNewTop=true;
         sceneStartedAt=scanCycle.sceneAt()>0?scanCycle.sceneAt():SystemClock.elapsedRealtime();
         previousOcr="";previousOcrCount=0;
+        pendingArtworkChoices=null;
         lastRecognitionAt=0;
         unresolvedRetryCount=0;unresolvedRetryIdentity="";
         scanCycle.clearPending();
@@ -1238,10 +1242,61 @@ public final class NativeScannerActivity extends ComponentActivity {
                 final int rescueRotation=bestRotation;
                 final boolean rescueTwoLine=bestSuggestedTwoLine;
                 readSplitTitlePanels(card,hash,began,()->
-                    completeUnmatchedTitle(card,hash,began,rescueName,rescueRotation,rescueTwoLine,false));
+                    readLowerTitlePanel(card,hash,began,()->
+                        completeUnmatchedTitle(card,hash,began,rescueName,rescueRotation,rescueTwoLine,false)));
                 return;
             }
-            completeUnmatchedTitle(card,hash,began,bestTentative,bestRotation,bestSuggestedTwoLine,sideways);
+            if(!sideways){
+                final String rescueName=bestTentative;
+                final int rescueRotation=bestRotation;
+                final boolean rescueTwoLine=bestSuggestedTwoLine;
+                readLowerTitlePanel(card,hash,began,()->
+                    completeUnmatchedTitle(card,hash,began,rescueName,rescueRotation,rescueTwoLine,false));
+            }else completeUnmatchedTitle(card,hash,began,bestTentative,bestRotation,bestSuggestedTwoLine,true);
+        });
+    }
+    /** Some showcase/full-art cards, including Endless Sands, put the title
+     * below the illustration rather than in the normal top bar. This probe is
+     * only invoked AFTER ordinary title and split-panel OCR fail. A name found
+     * here is PROVISIONAL: rules/flavor text may resemble a catalog title.
+     * Set/collector evidence and confirmation must decide final identity. */
+    private void readLowerTitlePanel(Bitmap card,long hash,long began,Runnable fallback){
+        Bitmap region=null;
+        try{
+            int x=Math.round(card.getWidth()*.055f);
+            int y=Math.round(card.getHeight()*.53f);
+            int w=Math.min(card.getWidth()-x,Math.round(card.getWidth()*.89f));
+            int h=Math.min(card.getHeight()-y,Math.round(card.getHeight()*.29f));
+            Bitmap crop=Bitmap.createBitmap(card,x,y,w,h);
+            region=Bitmap.createScaledBitmap(crop,w*2,h*2,true);
+            crop.recycle();
+        }catch(Exception e){Log.i(TAG,"Lower-title probe unavailable",e);fallback.run();return;}
+        final Bitmap image=region;
+        recognizer.process(InputImage.fromBitmap(image,0)).addOnCompleteListener(task->{
+            String match=null;
+            try{
+                if(task.isSuccessful() && names!=null){
+                    for(Text.TextBlock block:task.getResult().getTextBlocks())
+                        for(Text.Line line:block.getLines()){
+                            String raw=line.getText().trim();
+                            if(TitleReadingPolicy.isFooterOrRulesNoise(raw))continue;
+                            String exact=names.exact(raw);
+                            if(exact!=null && !exact.contains(" // ")){
+                                // An exact name in the lower band remains
+                                // only a physical candidate until corroborated.
+                                match=exact;break;
+                            }
+                        }
+                }
+            }finally{image.recycle();}
+            if(match!=null && !closing){
+                lastOcrMs=SystemClock.elapsedRealtime()-began;
+                lastSeenTitle=match;
+                Log.i(TAG,"Lower-position printed title candidate: "+match+
+                    " · independent footer verification required");
+                enqueue(match,"ocr-lower-title-provisional",0,null,card,hash,0);
+                recognizing.set(false);
+            }else fallback.run();
         });
     }
     /** A split-pair probe runs only after ordinary title recognition fails.
@@ -1336,34 +1391,58 @@ public final class NativeScannerActivity extends ComponentActivity {
                 if("__unreadable_title__".equals(previousOcr))previousOcrCount++;
                 else{previousOcr="__unreadable_title__";previousOcrCount=1;}
                 if(previousOcrCount>=2){
-                    // Use SQLite's perceptual-hash band index only AFTER OCR
-                    // has exhausted its title passes. This provides an
-                    // ADVISORY name for full-art/alternate-art designs; it
-                    // cannot bypass exact printing evidence in the WebView.
-                    String artName=null;
-                    try{
-                        if(index!=null && FullArtworkIndex.ready(getApplicationContext())){
-                            org.json.JSONObject nearby=FullArtworkIndex.nearest(getApplicationContext(),card,3);
-                            noteFullIndexLookup("name candidates: "+nearby.optInt("examined",0)+
-                                (nearby.optBoolean("expanded",false)?" (expanded search)":" (direct search)"));
-                            org.json.JSONArray alternatives=nearby.optJSONArray("choices");
-                            if(alternatives!=null && alternatives.length()>0){
-                                org.json.JSONObject first=alternatives.optJSONObject(0);
-                                org.json.JSONObject second=alternatives.optJSONObject(1);
-                                double bestArt=first==null?0:first.optDouble("score",0);
-                                double gap=second==null?1:bestArt-second.optDouble("score",0);
-                                if(ArtworkProbePolicy.strongAdvisoryName(bestArt,second==null?0:second.optDouble("score",0)))
-                                    artName=index.exact(first.optString("nameKey",""));
-                            }
-                        }
-                    }catch(Exception e){Log.i(TAG,"Optional complete-art title hint unavailable",e);}
-                    if(artName!=null){
-                        lastSeenTitle=artName;
-                        Log.i(TAG,"Full artwork index supplied unverified name suggestion: "+artName);
-                        enqueue(artName,"art-index-suggestion",0,null,card,hash,0);
-                    }else{
+                    // The full index may examine tens of thousands of band
+                    // postings on a difficult card. Run it off the ML Kit
+                    // callback / camera UI thread to prevent preview stalls.
+                    final Bitmap snapshot=card.copy(Bitmap.Config.ARGB_8888,false);
+                    if(snapshot==null){
                         lastSeenTitle="Unrecognized title";
                         enqueue(lastSeenTitle,"ocr-candidate",0,null,card,hash,0);
+                    }else{
+                        runOnUiThread(()->{if(!closing){
+                            status.setText("Checking complete offline artwork index…");showMetrics();
+                        }});
+                        referenceExecutor.execute(()->{
+                            String artName=null;
+                            JSONArray alternatives=null;
+                            try{
+                                if(index!=null && FullArtworkIndex.ready(getApplicationContext())){
+                                    JSONObject nearby=FullArtworkIndex.nearest(getApplicationContext(),snapshot,4);
+                                    noteFullIndexLookup("name candidates: "+nearby.optInt("candidates",0)+
+                                        " · "+nearby.optString("phase","unknown")+
+                                        " · "+nearby.optLong("elapsed_ms",0)+"ms");
+                                    Log.i(TAG,"Full artwork candidate retrieval: "+nearby.optString("phase","unknown")+
+                                        " · "+nearby.optInt("examined",0)+" ranked faces · "+
+                                        nearby.optInt("candidates",0)+" names · "+nearby.optLong("elapsed_ms",0)+"ms");
+                                    alternatives=nearby.optJSONArray("choices");
+                                    if(alternatives!=null && alternatives.length()>0){
+                                        JSONObject first=alternatives.optJSONObject(0);
+                                        JSONObject second=alternatives.optJSONObject(1);
+                                        double bestArt=first==null?0:first.optDouble("score",0);
+                                        if(ArtworkProbePolicy.strongAdvisoryName(bestArt,
+                                            second==null?0:second.optDouble("score",0)))
+                                            artName=index.exact(first.optString("nameKey",""));
+                                    }
+                                }
+                            }catch(Exception e){
+                                noteFullIndexLookup("candidate retrieval error: "+e.getClass().getSimpleName());
+                                Log.w(TAG,"Complete artwork candidate lookup failed",e);
+                            }finally{snapshot.recycle();}
+                            final String suggestion=artName;
+                            final JSONArray possible=alternatives;
+                            runOnUiThread(()->{
+                                if(!closing && recognizing.get()){
+                                    pendingArtworkChoices=possible;
+                                    lastSeenTitle=suggestion==null?"Unrecognized title":suggestion;
+                                    if(suggestion!=null)
+                                        Log.i(TAG,"Full artwork supplied unverified name suggestion: "+suggestion);
+                                    enqueue(lastSeenTitle,suggestion==null?"ocr-candidate":"art-index-suggestion",
+                                        0,null,card,hash,0);
+                                }
+                                recognizing.set(false);
+                            });
+                        });
+                        return;
                     }
                 }
             }
@@ -1462,6 +1541,10 @@ public final class NativeScannerActivity extends ComponentActivity {
             result.put("quality_shadow_pct",quality.shadowPercent);
             result.put("quality_hint",quality.hint());
             result.put("name",name);result.put("source",source);result.put("artworkId",imageId==null?"":imageId);
+            if("Unrecognized title".equals(name) && pendingArtworkChoices!=null){
+                result.put("art_name_candidates",pendingArtworkChoices);
+            }
+            pendingArtworkChoices=null;
             result.put("identity_conflict",photoConflict);
             if(photoConflict)result.put("identity_conflict_note","Title differs from last saved card but visual regions are nearly identical; confirm title or retry");
             result.put("similarity",Math.round(score*1000)/1000.0);

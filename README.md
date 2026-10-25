@@ -1,3 +1,10 @@
+## v5.13.2 recognition update
+
+See [RECOGNITION-v5.13.2.md](RECOGNITION-v5.13.2.md) for the bounded full-art
+candidate search, lower-title rescue, native set/collector lookup, diagnostics,
+and safety limitations. The already installed complete artwork database is
+reused; no new database build is required for this version.
+
 # ManaVault v5.13.1 — Split-card title recovery and recognition safeguard
 
 This is the complete project, with no collection/deck features or historical tests removed.

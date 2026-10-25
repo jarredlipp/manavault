@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import android.os.SystemClock;
 
 /** Complete printing-level SQLite artwork index. Never silently selects a printing.
  * The UI must cross-check scores against independent collector/set evidence.
@@ -152,35 +153,58 @@ final class FullArtworkIndex {
         if(bitmap==null)return new JSONObject().put("ready",false);
         try{return nearest(context,bitmap,limit);}finally{bitmap.recycle();}
     }
+    private static double bestCandidateScore(List<JSONObject> options){
+        double best=0;
+        for(JSONObject candidate:options)best=Math.max(best,candidate.optDouble("score",0));
+        return best;
+    }
     static synchronized JSONObject nearest(Context context,Bitmap bitmap,int limit)throws Exception {
+        long started=SystemClock.elapsedRealtime();
         JSONObject result=new JSONObject();JSONArray choices=new JSONArray();result.put("choices",choices);
         if(!ready(context)){result.put("ready",false);return result;}
         byte[][] signature=describe(bitmap);
+        byte[][] artOffsets=alignedArtDescriptors(bitmap);
         byte[] photographedColor=colorDescriptor(bitmap);
         long central=Long.parseUnsignedLong(artHash(bitmap),16);
         ArrayList<JSONObject> ranked=searchCandidates(
-            ArtworkProbePolicy.probes(new long[]{central},false),signature,photographedColor,2,240);
-        // No match or a poor one: relax only the candidate GENERATOR, never
-        // any final collector/set verification thresholds. On a clean scan
-        // these extra SQLite queries and image crops are not performed.
-        boolean weak=ranked.isEmpty() || ranked.get(0).optDouble("score",0)<.945;
-        if(weak){
+            ArtworkProbePolicy.probes(new long[]{central},false),signature,artOffsets,photographedColor,2,240);
+        String phase="direct";
+        // An alternate frame can change every exact hash band even when the
+        // same illustration is present. Rescue candidate generation in stages,
+        // keeping expensive two-bit probes restricted to failed-title scans.
+        if(bestCandidateScore(ranked)<.945){
+            phase="shifted";
             long[] shifted={central,
                 Long.parseUnsignedLong(artHash(bitmap,-.013f,0),16),
                 Long.parseUnsignedLong(artHash(bitmap,.013f,0),16),
                 Long.parseUnsignedLong(artHash(bitmap,0,-.012f),16),
                 Long.parseUnsignedLong(artHash(bitmap,0,.012f),16)};
-            ranked=searchCandidates(ArtworkProbePolicy.probes(shifted,true),
-                signature,photographedColor,1,360);
+            ArrayList<JSONObject> expanded=searchCandidates(
+                ArtworkProbePolicy.probes(shifted,true),signature,artOffsets,photographedColor,1,440);
+            if(bestCandidateScore(expanded)>bestCandidateScore(ranked))ranked=expanded;
+            else phase="direct";
         }
-        ranked.sort((a,b)->Double.compare(b.optDouble("score"),a.optDouble("score")));
+        // A broader, indexed Hamming-2 search costs more than exact hash
+        // bands, so it runs ONLY when the shortlist is still missing/weak.
+        // The complete index is already installed; do not fall back to only
+        // the 1,200 starter references merely because one hash band changed.
+        if(bestCandidateScore(ranked)<.86){
+            phase="two-bit";
+            ArrayList<JSONObject> rescued=searchCandidates(
+                ArtworkProbePolicy.twoBitProbes(central),signature,artOffsets,photographedColor,1,960);
+            if(bestCandidateScore(rescued)>bestCandidateScore(ranked))ranked=rescued;
+            else phase="shifted-or-direct";
+        }
+        ranked.sort((a,b)->Double.compare(b.optDouble("score",0),a.optDouble("score",0)));
         HashSet<String> names=new HashSet<>();
         for(JSONObject candidate:ranked){
             if(names.add(candidate.optString("nameKey","")))choices.put(candidate);
             if(choices.length()>=Math.max(1,Math.min(10,limit)))break;
         }
-        result.put("ready",true).put("indexed",true).put("expanded",weak);
-        result.put("examined",ranked.size());
+        result.put("ready",true).put("indexed",true)
+            .put("expanded",!"direct".equals(phase)).put("phase",phase)
+            .put("candidates",choices.length()).put("examined",ranked.size())
+            .put("elapsed_ms",SystemClock.elapsedRealtime()-started);
         return result;
     }
     /** Bounded indexed search: first strict votes, then rare one-bit-neighbor
@@ -188,7 +212,8 @@ final class FullArtworkIndex {
      * The SQL uses the art_band_search index; a row is scored only after
      * it survives candidate generation. */
     private static ArrayList<JSONObject> searchCandidates(List<int[]> probes,
-            byte[][] signature,byte[] photographedColor,int minVotes,int bound) throws Exception{
+            byte[][] signature,byte[][] artOffsets,byte[] photographedColor,
+            int minVotes,int bound) throws Exception{
         ArrayList<JSONObject> found=new ArrayList<>();
         if(probes.isEmpty())return found;
         StringBuilder slots=new StringBuilder();ArrayList<String> args=new ArrayList<>();
@@ -209,16 +234,17 @@ final class FullArtworkIndex {
             "a.printingId=hits.printingId AND a.face=hits.face ORDER BY hits.votes DESC";
         try(Cursor c=db.rawQuery(sql,args.toArray(new String[0]))){
             while(c.moveToNext()){
-                float score=0;boolean valid=true;
-                for(int part=0;part<6;part++){
-                    float sim=similarity(signature[part],c.getBlob(part==0?6:part+7));
-                    if(sim<0){valid=false;break;}
-                    score+=WEIGHTS[part]*sim;
-                }
-                if(!valid)continue;
+                // Global NAME retrieval must not compare unrelated text boxes,
+                // title placements or footers. Those regions belong to the
+                // later printing-level verifier and can differ completely for
+                // borderless/showcase variants sharing a real illustration.
+                float art=similarity(signature[0],c.getBlob(6));
+                float wide=similarity(signature[1],c.getBlob(8));
                 float color=similarity(photographedColor,c.getBlob(7));
-                if(color<0)continue;
-                score+=.13f*color;
+                if(art<0||wide<0||color<0)continue;
+                if(art<.96f)for(byte[] shifted:artOffsets)
+                    art=Math.max(art,similarity(shifted,c.getBlob(6))-.012f);
+                float score=.56f*art+.18f*wide+.26f*color;
                 found.add(new JSONObject().put("id",c.getString(0))
                     .put("face",c.getInt(1)).put("nameKey",c.getString(2))
                     .put("set",c.getString(3)).put("collector",c.getString(4))
@@ -226,7 +252,7 @@ final class FullArtworkIndex {
                     .put("score",Math.round(score*10000)/10000.0)
                     .put("bands",c.getInt(13)));
             }
-        }catch(Exception e){Log.w(TAG,"Indexed artwork search failed",e);}
+        }catch(Exception e){Log.w(TAG,"Indexed artwork search failed",e);throw e;}
         return found;
     }
     static float similarity(byte[] captured,byte[] reference){
