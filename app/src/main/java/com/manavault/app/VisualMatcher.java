@@ -51,7 +51,7 @@ final class VisualMatcher {
         }
     }
     private static final class Entry {
-        String name,id,illustrationId; byte[] f,e;
+        String name,id,illustrationId,treatment="standard"; byte[] f,e; byte[][] regionsF,regionsE;
         Entry(String name,String id,byte[] values){this(name,id,"",values);}
         Entry(String name,String id,String illustrationId,byte[] values){this.name=name;this.id=id;this.illustrationId=illustrationId;this.f=values;}
     }
@@ -100,6 +100,20 @@ final class VisualMatcher {
                 entry.e=new byte[128];
                 for(int k=0;k<128;k++)entry.e[k]=(byte)Math.max(0,Math.min(255,extra.optInt(k)));
             }
+            entry.treatment=j.optString("treatment","standard");
+            JSONArray regions=j.optJSONArray("r");
+            if(regions!=null&&regions.length()==2){
+                entry.regionsF=new byte[2][];entry.regionsE=new byte[2][];
+                for(int region=0;region<2;region++){
+                    JSONObject sub=regions.optJSONObject(region);
+                    if(sub==null)continue;
+                    JSONArray rgb=sub.optJSONArray("f"),luma=sub.optJSONArray("e");
+                    if(rgb==null||rgb.length()!=192||luma==null||luma.length()!=128)continue;
+                    entry.regionsF[region]=new byte[192];entry.regionsE[region]=new byte[128];
+                    for(int k=0;k<192;k++)entry.regionsF[region][k]=(byte)Math.max(0,Math.min(255,rgb.optInt(k)));
+                    for(int k=0;k<128;k++)entry.regionsE[region][k]=(byte)Math.max(0,Math.min(255,luma.optInt(k)));
+                }
+            }
             target.add(entry);
         }
     }
@@ -112,18 +126,37 @@ final class VisualMatcher {
         if(candidates==null||candidates.length()==0||candidates.length()>24){out.put("error","Unsupported candidate count");return out;}
         Bitmap bitmap=BitmapFactory.decodeFile(photograph.getAbsolutePath());
         if(bitmap==null){out.put("error","Captured photograph unavailable");return out;}
-        byte[] feature,perceptual;
-        try{Bitmap crop=artRegion(bitmap);try{feature=fingerprint(crop);perceptual=perceptualDescriptor(crop);}finally{crop.recycle();}}
+        byte[] feature,perceptual;byte[][] regionsF=new byte[2][],regionsE=new byte[2][];
+        try{
+            Bitmap crop=artRegion(bitmap);
+            try{feature=fingerprint(crop);perceptual=perceptualDescriptor(crop);}finally{crop.recycle();}
+            for(int region=0;region<2;region++){
+                Bitmap extra=artRegionVariant(bitmap,region);
+                try{regionsF[region]=fingerprint(extra);regionsE[region]=perceptualDescriptor(extra);}
+                finally{extra.recycle();}
+            }
+        }
         finally{bitmap.recycle();}
         JSONArray scores=new JSONArray();int missing=0;
         for(int i=0;i<candidates.length();i++){
             JSONObject choice=candidates.optJSONObject(i);if(choice==null){missing++;continue;}
             String id=choice.optString("id",""),illustration=choice.optString("illustration_id","");
+            String treatment=choice.optString("treatment","standard");
             float top=-1;
             for(Entry entry:entries){
                 // Reprints with identical art can share an illustration ID.
-                if(!entry.id.equals(id) && (illustration.isEmpty()||!illustration.equals(entry.illustrationId)))continue;
-                top=Math.max(top,imageScore(feature,perceptual,entry));
+                if(!entry.id.equals(id) && (illustration.isEmpty()||!illustration.equals(entry.illustrationId)
+                    ||!treatment.equals(entry.treatment)))continue;
+                float base=imageScore(feature,perceptual,entry);
+                float score=base;
+                if(entry.regionsF!=null&&entry.regionsF[0]!=null&&entry.regionsF[1]!=null){
+                    float upper=imageScore(regionsF[0],regionsE[0],entry.regionsF[0],entry.regionsE[0]);
+                    float wide=imageScore(regionsF[1],regionsE[1],entry.regionsF[1],entry.regionsE[1]);
+                    // Different photo geometry and glare can hurt individual
+                    // regions. All three must contribute; no best-of guessing.
+                    score=.5f*base+.20f*upper+.30f*wide;
+                }
+                top=Math.max(top,score);
             }
             if(top<0){missing++;continue;}
             JSONObject row=new JSONObject();row.put("id",id);row.put("score",top);scores.put(row);
@@ -159,16 +192,30 @@ final class VisualMatcher {
         if(scaled!=image)scaled.recycle();return result;
     }
     private static float imageScore(byte[] rgb,byte[] p,Entry entry){
-        int color=0;for(int k=0;k<192;k++)color+=Math.abs((rgb[k]&255)-(entry.f[k]&255));
+        return imageScore(rgb,p,entry.f,entry.e);
+    }
+    private static float imageScore(byte[] rgb,byte[] p,byte[] referenceRgb,byte[] referenceP){
+        int color=0;for(int k=0;k<192;k++)color+=Math.abs((rgb[k]&255)-(referenceRgb[k]&255));
         float colorScore=1f-color/(192f*255f);
-        if(entry.e==null||p==null)return colorScore;
-        int shape=0;for(int k=0;k<128;k++)shape+=Math.abs((p[k]&255)-(entry.e[k]&255));
+        if(referenceP==null||p==null)return colorScore;
+        int shape=0;for(int k=0;k<128;k++)shape+=Math.abs((p[k]&255)-(referenceP[k]&255));
         return .55f*colorScore+.45f*(1f-shape/(128f*255f));
     }
     /** Standard MTG portrait art window; title and text box are intentionally excluded. */
     static Bitmap artRegion(Bitmap card){
         int x=Math.round(card.getWidth()*.09f),y=Math.round(card.getHeight()*.15f);
         int w=Math.max(1,Math.round(card.getWidth()*.82f)),h=Math.max(1,Math.round(card.getHeight()*.34f));
+        return Bitmap.createBitmap(card,x,y,Math.min(w,card.getWidth()-x),Math.min(h,card.getHeight()-y));
+    }
+    /** Enlarged/alternate-art frames can place the art across most of a card.
+     * These positions mirror tools/build_artwork_index.py REGIONS. */
+    static Bitmap artRegionVariant(Bitmap card,int region){
+        float[] r=region==0 ? new float[]{.12f,.12f,.88f,.37f}:
+                                new float[]{.07f,.13f,.93f,.73f};
+        int x=Math.max(0,Math.round(card.getWidth()*r[0]));
+        int y=Math.max(0,Math.round(card.getHeight()*r[1]));
+        int w=Math.max(1,Math.round(card.getWidth()*r[2])-x);
+        int h=Math.max(1,Math.round(card.getHeight()*r[3])-y);
         return Bitmap.createBitmap(card,x,y,Math.min(w,card.getWidth()-x),Math.min(h,card.getHeight()-y));
     }
     /** A separate title-band hash helps distinguish two stacked cards with

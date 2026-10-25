@@ -13,7 +13,7 @@ stubs={
  'com/manavault/app/NameTokenSmoke.java': '''package com.manavault.app; public class NameTokenSmoke {public static void main(String[] args){NativeNameIndex x=new NativeNameIndex(new android.content.Context());if(!"Jace".equals(x.exact("JACE")))throw new AssertionError("Jace token not recovered");if(!"Jace".equals(x.exact("Jace")))throw new AssertionError("Jace token not cached");System.out.println("Native name index: token-only Jace fallback compiled and passed.");} }'''
 }
 with tempfile.TemporaryDirectory(prefix='mv-token-java-') as d:
- base=Path(d);files=[source,root/'app/src/main/java/com/manavault/app/TitleReadingPolicy.java',root/'app/src/main/java/com/manavault/app/TitlePrefixMatcher.java']
+ base=Path(d);files=[source,root/'app/src/main/java/com/manavault/app/TitleReadingPolicy.java',root/'app/src/main/java/com/manavault/app/TitlePrefixMatcher.java',root/'app/src/main/java/com/manavault/app/TitleRecoveryPolicy.java',root/'app/src/main/java/com/manavault/app/FaceAliasPolicy.java']
  for name,code in stubs.items():
   dest=base/name;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(code);files.append(dest)
  cls=base/'classes';cls.mkdir()

@@ -9,6 +9,8 @@ import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -17,6 +19,7 @@ import java.util.Map;
 final class NativeNameIndex {
     private final Map<String,String> names=new HashMap<>();
     private final Map<String,String> distinctiveFirstWords=new HashMap<>();
+    private final Map<String,List<String>> correctionBuckets=new HashMap<>();
     static String norm(String value){
         return Normalizer.normalize(value==null?"":value,Normalizer.Form.NFKD)
             .replace("Æ","Ae").replace("æ","ae").replace("Œ","Oe").replace("œ","oe")
@@ -35,8 +38,10 @@ final class NativeNameIndex {
                 String full=list.optString(i,"");
                 if(full.isEmpty())continue;
                 put(full,full,true);
+                String bucket=TitleRecoveryPolicy.keyPrefix(norm(full));
+                if(!bucket.isEmpty())correctionBuckets.computeIfAbsent(bucket,k->new ArrayList<>()).add(full);
                 for(String face:full.split(" // ")){
-                    put(face,full,false);
+                    if(FaceAliasPolicy.safeFaceAlias(face))put(face,full,false);
                     String[] words=norm(face).split(" ");
                     if(words.length>=2 && words[0].length()>=7){
                         String prior=distinctiveFirstWords.get(words[0]);
@@ -45,7 +50,7 @@ final class NativeNameIndex {
                     }
                 }
             }
-        }catch(Exception e){Log.w("ManaVaultNames","Native name index unavailable; OCR repetition fallback",e);names.clear();distinctiveFirstWords.clear();}
+        }catch(Exception e){Log.w("ManaVaultNames","Native name index unavailable; OCR repetition fallback",e);names.clear();distinctiveFirstWords.clear();correctionBuckets.clear();}
     }
     private void put(String alias,String canonical,boolean whole){String key=norm(alias);if(!key.isEmpty()&&(whole||!names.containsKey(key)))names.put(key,canonical);}
     int size(){return names.size();}
@@ -61,6 +66,19 @@ final class NativeNameIndex {
         // be returned, and it remains an OCR CANDIDATE requiring another read
         // and independent physical printing evidence before saving.
         return TitlePrefixMatcher.uniqueOneSubstitution(key,distinctiveFirstWords);
+    }
+    /** Conservative OCR repair, always an unverified name suggestion. */
+    String suggestTitle(String observed){
+        String key=norm(observed);
+        if(key.length()<9 || TitleReadingPolicy.isFooterOrRulesNoise(observed))return null;
+        // Try literal catalog title with a stray isolated OCR digit removed.
+        String stripped=TitleRecoveryPolicy.withoutTrailingArtifact(observed);
+        if(!stripped.equals(key)){
+            String exact=names.get(stripped);
+            if(exact!=null && !exact.contains(" // "))return exact;
+        }
+        List<String> bucket=correctionBuckets.get(TitleRecoveryPolicy.keyPrefix(key));
+        return bucket==null?null:TitleRecoveryPolicy.uniqueCandidate(observed,bucket);
     }
     String exact(String text){
         final String key=norm(text);

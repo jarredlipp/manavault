@@ -18,7 +18,10 @@ required = {
     'CaptureIdentityPolicy.java': ('needsIdentityReview',),
     'SymbolShapeMatcher.java': ('normalizeInk', 'extractInk', 'score'),
     'SplitCardLayoutPolicy.java': ('panels', 'titleRotation', 'zones'),
-    'NativeScannerActivity.java': ('PhysicalCopyPolicy.needsCopyConfirmation', 'CaptureIdentityPolicy.needsIdentityReview'),
+    'TitleRecoveryPolicy.java': ('uniqueCandidate', 'isBadMultiFaceGuess'),
+    'CaptureQualityPolicy.java': ('measure', 'glarePercent'),
+    'NativeScannerActivity.java': ('PhysicalCopyPolicy.needsCopyConfirmation', 'CaptureIdentityPolicy.needsIdentityReview', 'TitleRecoveryPolicy.isBadMultiFaceGuess', 'CaptureQualityPolicy.measure'),
+    'NativeNameIndex.java': ('TitleRecoveryPolicy.uniqueCandidate',),
     'PrintingFingerprintVerifier.java': ('SymbolShapeMatcher.normalizeInk', 'SplitCardLayoutPolicy.panels'),
     'MainActivity.java': ('request.optBoolean("footerFirst",false)',),
 }
@@ -65,6 +68,13 @@ public final class ScannerContractProbe {
             "portrait split title panels should be upper/lower");
         require(SplitCardLayoutPolicy.titleRotation(820,1145) == 90,
             "portrait split title must be rotated upright");
+        require(!TitleReadingPolicy.allowAutomaticExactOrientation(false,90),
+            "portrait sideways OCR cannot assert an exact title");
+        require(TitleRecoveryPolicy.isBadMultiFaceGuess("Who // What // When // Where // Why",false),
+            "unsupported multi-face OCR must not assert exact identity");
+        int[] flat=new int[48*64];java.util.Arrays.fill(flat,0xffffffff);
+        require(CaptureQualityPolicy.measure(flat,48,64).glarePercent==100,
+            "quality diagnostics must report clipping without discarding image");
         System.out.println("Native scanner compile contracts PASS: copy, identity, symbol normalization");
     }
 }
@@ -75,7 +85,8 @@ with TemporaryDirectory(prefix='mv-scanner-contract-') as temp:
     probe.write_text(probe_source, encoding='utf-8')
     production = [java / filename for filename in (
         'PhysicalCopyPolicy.java', 'CaptureIdentityPolicy.java', 'SymbolShapeMatcher.java',
-        'SplitCardLayoutPolicy.java'
+        'SplitCardLayoutPolicy.java', 'TitleReadingPolicy.java',
+        'TitleRecoveryPolicy.java', 'CaptureQualityPolicy.java'
     )]
     subprocess.run(['javac', '-d', str(output), *(str(s) for s in production), str(probe)], check=True)
     subprocess.run(['java', '-cp', str(output), 'com.manavault.app.ScannerContractProbe'], check=True)

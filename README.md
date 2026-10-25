@@ -1,3 +1,14 @@
+# ManaVault v5.13.0 — Scanner engine accuracy and recovery overhaul
+
+This is the complete project, with no collection/deck features or historical tests removed.
+The recognition update introduces conservative rotated-title gates, catalog-based
+OCR correction, offline rules-text review suggestions, captured-photo quality
+metrics, adaptive footer OCR, and an honest physical-card throughput benchmark.
+See [SCANNER-OVERHAUL-v5.13.0.md](SCANNER-OVERHAUL-v5.13.0.md).
+
+**The full artwork index must still be generated and installed separately**, and
+an APK/phone test is required before treating source tests as performance claims.
+
 ## v5.12.33 — Physical-footer-first title integrity and split-card OCR
 
 * When native OCR produces a *tentative* title, the resolver reads the photographed set/collector footer **before** looking up printings for the guessed title. Contradicting title/footer evidence produces a visible review choice, not an automatic collection mutation. The precise collector/set is still cross-checked against the offline Scryfall printing catalog.

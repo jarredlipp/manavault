@@ -1088,6 +1088,22 @@ public final class NativeScannerActivity extends ComponentActivity {
         }
         return null;
     }
+    /** A battle card prints its title sideways on a portrait cardboard frame.
+     * This is a *catalog hint*, not permission to save based on rotated OCR. */
+    private static boolean rotatedBattleCandidate(String canonical){
+        if(canonical==null || canonical.contains(" // ") ||
+           !NativePrintingIndex.status().startsWith("Ready:"))return false;
+        try{
+            JSONObject results=new JSONObject(NativePrintingIndex.lookup("name",NativeNameIndex.norm(canonical),6));
+            JSONArray rows=results.optJSONArray("rows");
+            if(rows!=null)for(int i=0;i<rows.length();i++){
+                JSONObject card=rows.optJSONObject(i);
+                if(card!=null && card.optString("type_line","").toLowerCase(Locale.ROOT)
+                    .contains("battle"))return true;
+            }
+        }catch(Exception e){Log.i(TAG,"Optional battle title lookup unavailable",e);}
+        return false;
+    }
     static int[] titleRotationOrder(int width,int height){
         return width>height*1.12f ? new int[]{90,270,0,180} : new int[]{0,180,90,270};
     }
@@ -1132,9 +1148,25 @@ public final class NativeScannerActivity extends ComponentActivity {
             // "Light of Day") is NOT evidence that it was the card's title.
             // Sideways cards instead require a perpendicular title rotation.
             // Leave inverted portrait cards for user review rather than auto-save.
-            if(canonical!=null && !TitleReadingPolicy.allowAutomaticExactOrientation(sideways,rotations[rotationIndex])){
-                canonical=null;
-                name="";
+            // A portrait card rotated sideways can expose rules/flavor words
+            // that happen to be *another* real card name. Only genuine TWO
+            // face split candidates are allowed through as provisional; both
+            // physical title panels must be independently OCR-verified later.
+            boolean perpendicularPortrait=!sideways &&
+                (rotations[rotationIndex]==90 || rotations[rotationIndex]==270);
+            boolean provisionalSplit=canonical!=null && perpendicularPortrait &&
+                canonical.split(" // ",-1).length==2;
+            boolean provisionalBattle=canonical!=null && perpendicularPortrait &&
+                rotatedBattleCandidate(canonical);
+            if(canonical!=null && !provisionalSplit && !provisionalBattle &&
+                    !TitleReadingPolicy.allowAutomaticExactOrientation(sideways,rotations[rotationIndex])){
+                canonical=null; name="";
+            }
+            // Three-or-more-face guesses (Who/What/When/Where/Why etc.) may
+            // NEVER use an unverified OCR-only identity, even if ML Kit
+            // spuriously returned an exact catalog string.
+            if(canonical!=null && TitleRecoveryPolicy.isBadMultiFaceGuess(canonical,false)){
+                canonical=null; name="";
             }
             if(canonical!=null){
                 lastOcrMs=SystemClock.elapsedRealtime()-began;
@@ -1150,7 +1182,10 @@ public final class NativeScannerActivity extends ComponentActivity {
                     final String observedName=canonical;
                     referenceExecutor.execute(()->matcher.learnObservedName(observedName,features));
                 }
-                enqueue(canonical,"ocr-exact",1f,null,card,hash,rotations[rotationIndex]);
+                enqueue(canonical,provisionalSplit?"ocr-split-provisional":
+                    provisionalBattle?"ocr-orientation-provisional":"ocr-exact",
+                    (provisionalSplit||provisionalBattle)?0f:1f,
+                    null,card,hash,rotations[rotationIndex]);
                 recognizing.set(false);return;
             }
             // Prefer a plausible title from the first orientation, but don't
@@ -1161,6 +1196,12 @@ public final class NativeScannerActivity extends ComponentActivity {
             // The WebView will still require independent printing evidence.
             String partial=index==null?null:index.distinctiveTitlePrefix(current);
             if(partial!=null)current=partial;
+            // Catalog-bucket correction is provisional, NEVER OCR-exact. It
+            // repairs Cameo/Camco and a stray numeral on a promo title,
+            // but a physical footer must still corroborate the printing.
+            String corrected=index==null?null:index.suggestTitle(current);
+            boolean correctedTitle=corrected!=null && !corrected.equalsIgnoreCase(current);
+            if(correctedTitle)current=corrected;
             String bestTentative=tentative;
             int bestRotation=tentativeRotation;
             boolean bestSuggestedTwoLine=tentativeTwoLine;
@@ -1209,7 +1250,8 @@ public final class NativeScannerActivity extends ComponentActivity {
                         NativeNameIndex.norm(bestTentative).contains(" ") && normalized.length()>=10;
                 if((previousOcrCount>=2 || printingFirstTitleRescue) && normalized.length()>=3 &&
                         !normalized.matches(".*(.)\\1{4,}.*"))
-                    enqueue(bestTentative,printingFirstTitleRescue?"ocr-two-line-suggested":"ocr-candidate",
+                    enqueue(bestTentative,printingFirstTitleRescue?"ocr-two-line-suggested":
+                        "ocr-candidate",
                             0,null,card,hash,rotations[bestRotation]);
             }else{
                 // No title in any orientation, including the RAW color
@@ -1333,7 +1375,18 @@ public final class NativeScannerActivity extends ComponentActivity {
             try(FileOutputStream out=new FileOutputStream(photo)){
                 printingPhoto.compress(Bitmap.CompressFormat.JPEG,93,out);
             }finally{if(printingPhoto!=card)printingPhoto.recycle();}
+            // Record reproducible quality evidence with every resolved/failed
+            // capture. This is diagnostic only: a foil/card with a bright
+            // treatment must not be silently rejected for glare or low detail.
+            Bitmap thumb=Bitmap.createScaledBitmap(card,48,64,true);
+            int[] rgb=new int[48*64];thumb.getPixels(rgb,0,48,0,0,48,64);thumb.recycle();
+            CaptureQualityPolicy.Metrics quality=CaptureQualityPolicy.measure(rgb,48,64);
             JSONObject result=new JSONObject();
+            result.put("quality_brightness",quality.mean);
+            result.put("quality_edge",quality.edgeScore);
+            result.put("quality_glare_pct",quality.glarePercent);
+            result.put("quality_shadow_pct",quality.shadowPercent);
+            result.put("quality_hint",quality.hint());
             result.put("name",name);result.put("source",source);result.put("artworkId",imageId==null?"":imageId);
             result.put("identity_conflict",photoConflict);
             if(photoConflict)result.put("identity_conflict_note","Title differs from last saved card but visual regions are nearly identical; confirm title or retry");
@@ -1381,7 +1434,10 @@ public final class NativeScannerActivity extends ComponentActivity {
             Log.i(TAG,"Scan cycle capture "+scanId+" · gap_ms="+scanCycle.captureGapMs()+
                 " · scene_to_capture_ms="+result.optLong("scene_to_capture_ms",-1)+
                 " · edge_ms="+lastEdgeMs+" · warp_ms="+lastWarpMs+
-                " · artwork_ms="+lastArtMs+" · ocr_ms="+lastOcrMs);
+                " · artwork_ms="+lastArtMs+" · ocr_ms="+lastOcrMs+
+                " · photo_quality="+result.optString("quality_hint","")+
+                " · glare="+result.optInt("quality_glare_pct",0)+"%"+
+                " · edge="+result.optInt("quality_edge",0));
             final String watchdogId=result.optString("scan_id","");
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->{
                 if(closing||!resolutionPending||reviewDialogOpen||captured.isEmpty()||

@@ -180,7 +180,8 @@ final class PrintingFingerprintVerifier {
                 int w=Math.max(1,Math.min(card.getWidth()-x,Math.round(card.getWidth()*.78f)));
                 int h=Math.max(1,Math.min(card.getHeight()-y,Math.round(card.getHeight()*.086f)));
                 Bitmap strip=Bitmap.createBitmap(card,x,y,w,h);
-                Bitmap scaled=Bitmap.createScaledBitmap(strip,w*4,h*4,true);
+                int scale=Math.max(1,Math.min(4,Math.min(260/Math.max(1,h),2200/Math.max(1,w))));
+                Bitmap scaled=Bitmap.createScaledBitmap(strip,w*scale,h*scale,true);
                 strip.recycle();
                 try{
                     Bitmap enhanced=CardQuadDetector.enhanceTitle(scaled);

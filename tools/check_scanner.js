@@ -56,7 +56,7 @@ const versionName=(fs.readFileSync(path.join(root,'app/build.gradle'),'utf8').ma
 assert.ok(versionName,'Gradle versionName missing');
 assert.ok(mainActivity.includes('ManaVault '+versionName), 'Android launcher version label out of sync');
 assert.match(mainActivity,/launchNativeScanner\(\)/, 'Missing native Android launch handler');
-assert.match(html,/id="mv591NativeShortcut"/, 'Missing shortcut beside legacy camera');
+assert.doesNotMatch(html,/id="liveVideo"/, 'Legacy browser camera was reintroduced');
 assert.match(html,/window\.mvNativeLaunchNow/, 'Missing native button bridge');
 assert.ok(html.includes('ManaVault v'+versionName), 'App footer version label out of sync');
 console.log('ManaVault v5.9.2 native entry checks passed.');

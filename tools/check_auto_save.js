@@ -60,7 +60,14 @@ context.window.ManaVaultNativeScanner={
  }
 };
 context.ManaVaultNativeScanner=context.window.ManaVaultNativeScanner;
-vm.createContext(context);vm.runInContext(code,context,{filename:'auto-save.js'});
+vm.createContext(context);
+// The production name/face alias helpers live before the historical v5.10
+// source slice. Load their real definitions instead of inventing a stub.
+const aliasStart=html.indexOf('function mv129SafeFaceAlias(');
+const aliasEnd=html.indexOf('function mvHybridIndex(',aliasStart);
+if(aliasStart<0||aliasEnd<aliasStart)throw Error('Canonical alias helpers missing');
+vm.runInContext(html.slice(aliasStart,aliasEnd),context,{filename:'alias-functions.js'});
+vm.runInContext(code,context,{filename:'auto-save.js'});
 async function run(expr){return vm.runInContext(expr,context)}
 (async()=>{
  assert.equal(await run('mv60CanonicalMatches("Tuinvale Treefolk // Oaken Boon","Oaken Boon")'),true);
@@ -188,8 +195,8 @@ async function run(expr){return vm.runInContext(expr,context)}
  printedToken=false;
  assert.equal(await run('mv60CanSaveNameOnly({name:"Test Card",source:"ocr-candidate",ocr_reads:1})'),null,
   'One fuzzy OCR reading cannot create a provisional card');
- assert.equal(await run('mv60CanSaveNameOnly({name:"Test Card",source:"ocr-candidate",ocr_reads:2})'),'Test Card',
-  'Two matching OCR reads can save a recognized name without inventing an edition');
+ assert.equal(await run('mv60CanSaveNameOnly({name:"Test Card",source:"ocr-candidate",ocr_reads:2})'),null,
+  'Two OCR candidate readings alone cannot create a collection entry');
  // A printed fraction such as 049/280 contains only one collector number.
  localCards=printings;
  const fractionLines=[{zone:'bottom-left',text:'049 / 280 TWO EN',confidence:.92}];
@@ -211,7 +218,7 @@ async function run(expr){return vm.runInContext(expr,context)}
  const oldCandidates=context.mvHybridCandidates;
  context.mvHybridCandidates=(name)=>name==='WEPSTRIRT'?[]:oldCandidates(name);
  let rescued=await run('mv60DecideCapture({name:"WEPSTRIRT",source:"ocr-candidate",ocr_reads:2},0)');
- assert.equal(rescued.printing?.id,'webstrike','Set code + number should rescue a stylized title');
+ assert.equal(rescued.printing,undefined,'Wrong or unrecognized title must not auto-save even with footer marks');
  rescued=await run('mv60DecideCapture({name:"WEPSTRIRT",source:"ocr-candidate",ocr_reads:1},0)');
  assert.equal(!!rescued.printing,false,'One damaged title reading is not sufficient');
  rescued=await run('mv67ResolveFromPrintedMarks("ANOTHER TITLE",{lines:[{zone:"bottom-left",text:"0345 DFT EN"}]})');
