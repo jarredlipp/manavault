@@ -1,3 +1,11 @@
+## v5.12.32 — Accuracy-first indexed artwork and printing OCR
+
+* Preserves the full v5.12.31 feature set, native CameraX scanner, existing decks/collection, all tests, and complete artwork database architecture.
+* A weak artwork name search now uses indexed one-bit hash-neighbor/offset-crop probes rather than abandoning the correct card after small framing changes. Candidate-specific artwork rescoring compares adjusted artwork crops **without moving text-box or footer evidence**.
+* Known collector numbers of the already identified card enable a single extra enlarged/contrast footer OCR attempt when rapid OCR fails. Similar-looking set symbols must compete at the same photographed location; ambiguous icons remain manual-review cases. Same-art printings are ranked for review but not auto-verified by artwork.
+* The enlarged complete artwork index must be installed using the separate workflow and in-app download to enable its advanced lookup; until then the smaller bundled image library remains.
+* Regression checks are provided in `tools/check_51232_accuracy.py` and `tools/check_51232_symbol_gate.js`. **APK build and real-device speed/accuracy are still unverified.** See [RECOGNITION-v5.12.32.md](RECOGNITION-v5.12.32.md).
+
 ## v5.12.31 — Complete, printing-level offline artwork database
 
 The native scanner can use a separate compressed SQLite visual index for **all available English paper printings and both card faces**. Each printing remains distinct even when Scryfall illustration IDs and artwork are identical. Candidate comparisons use artwork color, full-frame layout, title, rules/text box and footer, with independently observed set/collector marks required when the artwork is shared. No collection-format change. This release adds a dedicated GitHub Actions **Build full printing artwork database** workflow, a SHA-256-verified app download button, and subsequent delta updates. **Run that GitHub workflow and publish its release first; the full index is not in the source ZIP or ordinary APK.** See [FULL-ARTWORK-v5.12.31.md](FULL-ARTWORK-v5.12.31.md). The camera remains native-only. Source tests passed; full APK compilation and 120k-image index generation remain to be verified.
@@ -71,7 +79,7 @@ The GitHub workflow builds the offline Scryfall catalog, SVG symbol reference at
 
 **Important:** This project was tested locally using JavaScript/Java smoke tests, not a complete Android SDK build or a physical-camera session. Real-device OCR, symbol detection, offline asset generation and APK compilation require the next GitHub test build. Don't treat automatic verification as infallible; confirm representative printings, especially older editions and basic lands.
 
-App ID: `com.manavault.app`. Version code: **111**. Collection storage key remains `manavault-v1`.
+App ID: `com.manavault.app`. Version code: **112**. Collection storage key remains `manavault-v1`.
 
 
 ## v5.12.27 scanner duplicate safety

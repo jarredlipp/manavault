@@ -1223,7 +1223,7 @@ public final class NativeScannerActivity extends ComponentActivity {
                                 org.json.JSONObject second=alternatives.optJSONObject(1);
                                 double bestArt=first==null?0:first.optDouble("score",0);
                                 double gap=second==null?1:bestArt-second.optDouble("score",0);
-                                if(bestArt>=.955 && gap>=.10)
+                                if(ArtworkProbePolicy.strongAdvisoryName(bestArt,second==null?0:second.optDouble("score",0)))
                                     artName=index.exact(first.optString("nameKey",""));
                             }
                         }

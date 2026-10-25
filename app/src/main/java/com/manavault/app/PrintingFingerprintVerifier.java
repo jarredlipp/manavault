@@ -64,6 +64,10 @@ final class PrintingFingerprintVerifier {
         return readMarks(photo,requestId,verifySplit,fast,false);
     }
     static JSONObject readMarks(File photo, String requestId, boolean verifySplit, boolean fast, boolean verifyToken) throws Exception {
+        return readMarks(photo,requestId,verifySplit,fast,verifyToken,null);
+    }
+    static JSONObject readMarks(File photo,String requestId,boolean verifySplit,boolean fast,
+            boolean verifyToken,JSONArray expectedCollectors) throws Exception {
         JSONObject out=new JSONObject();out.put("requestId",requestId);
         JSONArray lines=new JSONArray();out.put("lines",lines);
         Bitmap card=BitmapFactory.decodeFile(photo.getAbsolutePath());
@@ -146,6 +150,43 @@ final class PrintingFingerprintVerifier {
                     }
                 }finally{enlarged.recycle();}
             }
+            // Exact-title printings give us a small set of POSSIBLE collector
+            // numbers. If rapid OCR missed all of them, spend one additional
+            // focused read on the lower-left / old-frame footer. A recognized
+            // number remains just OCR evidence: the JS resolver must still
+            // check unique printing, set, contradictions and title confidence.
+            if(expectedCollectors!=null && expectedCollectors.length()>0 &&
+                    expectedCollectors.length()<=256 &&
+                    android.os.SystemClock.elapsedRealtime()-started<1750){
+                java.util.Set<String> expected=new java.util.HashSet<>();
+                for(int j=0;j<expectedCollectors.length();j++){
+                    String normalized=CollectorOcrPolicy.normalize(expectedCollectors.optString(j,""));
+                    if(!normalized.isEmpty())expected.add(normalized);
+                }
+                boolean found=false;
+                for(int j=0;j<lines.length() && !found;j++){
+                    JSONObject line=lines.optJSONObject(j);
+                    if(line!=null && CollectorOcrPolicy.hasCandidateNumber(line.optString("text",""),expected))
+                        found=true;
+                }
+                if(!found && !expected.isEmpty()){
+                    int left=Math.round(card.getWidth()*.015f);
+                    int top=Math.round(card.getHeight()*.835f);
+                    int width=Math.max(1,Math.min(card.getWidth()-left,Math.round(card.getWidth()*.72f)));
+                    int height=Math.max(1,Math.min(card.getHeight()-top,Math.round(card.getHeight()*.155f)));
+                    Bitmap footer=Bitmap.createBitmap(card,left,top,width,height);
+                    Bitmap scaled=Bitmap.createScaledBitmap(footer,width*3,height*3,true);
+                    footer.recycle();
+                    try{
+                        // Adaptive contrast improves small white text printed
+                        // directly over full-art and extended-art backgrounds.
+                        Bitmap contrast=CardQuadDetector.enhanceTitle(scaled);
+                        try{readRegion(reader,contrast,"footer-deep","candidate-focused",lines,out,fast?1000:1400);}
+                        finally{contrast.recycle();}
+                    }finally{scaled.recycle();}
+                    out.put("collectorRescueAttempted",true);
+                }
+            }
         }finally{reader.close();card.recycle();}
         return out;
     }
@@ -215,12 +256,20 @@ final class PrintingFingerprintVerifier {
             // Still search ONLY the right-hand type-line neighborhood, not
             // arbitrary art pixels; score all plausible sets against the same
             // crop collection and require a clearly separated winning shape.
-            float[] xs={.755f,.805f,.855f,.905f,.945f};
-            float[] ys={.495f,.535f,.575f,.615f,.655f,.695f};
-            float[][] sizes={{.060f,.048f},{.077f,.063f},{.092f,.077f}};
+            // Alternate, borderless and extended-art frames may move the
+            // logo down or slightly farther left than a regular type line.
+            // Keep scan time bounded: fewer crop windows, with an extra
+            // normalized form of each window for shifted premium-frame icons.
+            float[] xs={.735f,.805f,.875f,.94f};
+            float[] ys={.49f,.545f,.60f,.655f,.71f,.765f};
+            float[][] sizes={{.065f,.052f},{.085f,.072f}};
             for(float x:xs)for(float y:ys)for(float[] size:sizes){
                 byte[] mask=readSymbolMask(card,x,y,size[0],size[1]);
-                if(mask!=null)observed.add(mask);
+                if(mask!=null){
+                    observed.add(mask);
+                    byte[] normalized=SymbolShapeMatcher.normalizeInk(mask);
+                    if(normalized!=null)observed.add(normalized);
+                }
             }
         }finally{card.recycle();}
         JSONArray ranked=new JSONArray();
@@ -229,7 +278,8 @@ final class PrintingFingerprintVerifier {
             out.put("attempted",choices.length());out.put("error","Set icon not distinguishable in captured type bar");
             return out;
         }
-        Map<String,Double> scored=new LinkedHashMap<>();int unavailable=0;
+        Map<String,Double> scored=new LinkedHashMap<>();
+        Map<String,byte[]> templates=new LinkedHashMap<>();int unavailable=0;
         for(int i=0;i<choices.length();i++){
             JSONObject item=choices.optJSONObject(i);
             if(item==null){unavailable++;continue;}
@@ -239,7 +289,7 @@ final class PrintingFingerprintVerifier {
             if(icon==null){unavailable++;continue;}
             double best=0;
             for(byte[] mask:observed)best=Math.max(best,SymbolShapeMatcher.score(icon,mask));
-            scored.put(set,best);
+            scored.put(set,best);templates.put(set,icon);
         }
         List<Map.Entry<String,Double>> sorted=new ArrayList<>(scored.entrySet());
         sorted.sort((a,b)->Double.compare(b.getValue(),a.getValue()));
@@ -247,6 +297,31 @@ final class PrintingFingerprintVerifier {
             JSONObject row=new JSONObject();row.put("set",item.getKey());
             row.put("score",Math.round(item.getValue()*10000.)/10000.);ranked.put(row);
         }
+        // A contender scoring well on another unrelated textured crop must
+        // not be treated as proof that the photographed set icon is distinct.
+        // Compare BOTH candidate silhouettes within the SAME crop that gave
+        // the top set its highest score. If its peer is too close in that
+        // crop, the web resolver treats the symbol as ambiguous.
+        double colocated=0;boolean coLocatedAmbiguous=true;
+        if(sorted.size()>=2){
+            String leader=sorted.get(0).getKey();double strongest=-1;
+            byte[] winnerCrop=null;
+            for(byte[] mask:observed){
+                double quality=SymbolShapeMatcher.score(templates.get(leader),mask);
+                if(quality>strongest){strongest=quality;winnerCrop=mask;}
+            }
+            if(winnerCrop!=null){
+                double second=0;
+                for(Map.Entry<String,byte[]> candidate:templates.entrySet()){
+                    if(candidate.getKey().equals(leader))continue;
+                    second=Math.max(second,SymbolShapeMatcher.score(candidate.getValue(),winnerCrop));
+                }
+                colocated=Math.max(0,strongest-second);
+                coLocatedAmbiguous=strongest<.82 || colocated<.085;
+            }
+        }
+        out.put("coLocatedMargin",Math.round(colocated*10000.)/10000.);
+        out.put("coLocatedAmbiguous",coLocatedAmbiguous);
         out.put("matches",ranked);out.put("failed",unavailable);
         out.put("attempted",scored.size());out.put("reference","scryfall-svg-icon-v3");
         out.put("atlasSets",BundledSetSymbols.count());

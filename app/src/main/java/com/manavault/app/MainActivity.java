@@ -245,7 +245,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.12.31"; }
+            @JavascriptInterface public String version() { return "5.12.32"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
             @JavascriptInterface public void scanProgress(String payload){
                 try{NativeScannerActivity.receiveLiveProgress(new JSONObject(payload));}
@@ -315,7 +315,7 @@ public class MainActivity extends Activity {
                     org.json.JSONObject result;
                     try{
                         if(snapshot==null||!snapshot.isFile())throw new java.io.IOException("Captured scan not available");
-                        result=PrintingFingerprintVerifier.readMarks(snapshot,request.optString("requestId",""),request.optBoolean("verifySplit",false),request.optBoolean("fast",false),request.optBoolean("verifyToken",false));
+                        result=PrintingFingerprintVerifier.readMarks(snapshot,request.optString("requestId",""),request.optBoolean("verifySplit",false),request.optBoolean("fast",false),request.optBoolean("verifyToken",false),request.optJSONArray("expectedCollectors"));
                     }catch(Exception e){
                         result=new org.json.JSONObject();
                         try{result.put("requestId",request.optString("requestId",""));
@@ -471,7 +471,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.12.31 · CameraX");
+        versionLabel.setText("ManaVault 5.12.32 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
