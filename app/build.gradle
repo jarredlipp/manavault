@@ -26,7 +26,16 @@ dependencies {
 // Guard against stale GitHub workflows which call only :app:assembleDebug.
 // Generation is a build dependency, so missing assets are prepared BEFORE
 // any Android packaging step instead of failing at the old artwork check.
+// Catch missing or stale native scanner Java helpers BEFORE downloading
+// the large offline catalog and artwork assets. This is not a replacement
+// for Android Javac; it gives a fast, actionable failure for source mismatch.
+tasks.register('verifyScannerSource', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'tools/check_scanner_compile_contract.py'
+}
+
 tasks.register('prepareOfflineAssets', Exec) {
+    dependsOn tasks.named('verifyScannerSource')
     workingDir rootProject.projectDir
     commandLine 'bash', 'tools/ensure_offline_assets.sh'
 }

@@ -32,7 +32,36 @@ final class SymbolShapeMatcher {
         for(int i=0;i<SIZE;i++)if(delta[i]>=threshold){mask[i]=(byte)255;pixels++;}
         // A huge textured patch or near-empty frame detail isn't a symbol.
         if(pixels<28||pixels>SIZE*.67)return null;
+        // The downloaded Scryfall SVG is fitted to a centered 20x20 box.
+        // Physical symbols vary in size/position inside the sampled type bar.
+        // rankSymbols also tries a normalized mask when an icon is shifted
+        // within the sampled region. Preserve this raw mask for small icons.
         return mask;
+    }
+
+    /** Scale and center a foreground glyph without changing its shape.
+     * Deliberately reject crops dominated by a frame line or single stroke. */
+    static byte[] normalizeInk(byte[] source){
+        if(source==null||source.length!=SIZE)return null;
+        int minX=SIDE,minY=SIDE,maxX=-1,maxY=-1;
+        for(int y=0;y<SIDE;y++)for(int x=0;x<SIDE;x++){
+            if((source[y*SIDE+x]&255)<100)continue;
+            minX=Math.min(minX,x);maxX=Math.max(maxX,x);
+            minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+        }
+        int w=maxX-minX+1,h=maxY-minY+1;
+        if(w<4||h<4)return null;
+        double scale=Math.min(20.0/w,20.0/h);
+        int targetW=Math.max(1,(int)Math.round(w*scale));
+        int targetH=Math.max(1,(int)Math.round(h*scale));
+        int left=(SIDE-targetW)/2,top=(SIDE-targetH)/2;
+        byte[] output=new byte[SIZE];
+        for(int y=0;y<targetH;y++)for(int x=0;x<targetW;x++){
+            int srcX=minX+Math.min(w-1,(int)((x+.5)*w/targetW));
+            int srcY=minY+Math.min(h-1,(int)((y+.5)*h/targetH));
+            output[(top+y)*SIDE+left+x]=source[srcY*SIDE+srcX];
+        }
+        return output;
     }
 
     static double score(byte[] template, byte[] observed) {
