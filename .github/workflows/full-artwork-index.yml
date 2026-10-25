@@ -1,0 +1,137 @@
+name: Build full printing artwork database
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  catalog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install catalog dependencies
+        run: python -m pip install --disable-pip-version-check requests ijson
+      - name: Download official Scryfall bulk catalog
+        run: python tools/build_native_catalog.py
+      - name: Upload catalog for parallel shards
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-artwork-catalog
+          path: app/src/main/assets/printing-catalog.dat
+          retention-days: 3
+
+  shard:
+    needs: catalog
+    strategy:
+      fail-fast: false
+      matrix:
+        number: [0, 1, 2, 3, 4, 5, 6, 7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: full-artwork-catalog
+          path: app/src/main/assets/
+      - name: Install artwork dependencies
+        run: python -m pip install --disable-pip-version-check requests pillow
+      - name: Reuse previously published fingerprints when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p seed
+          if gh release download artwork-db -R "$GITHUB_REPOSITORY" -p 'manavault-artwork.sqlite.gz' -D seed; then
+            gzip -dc seed/manavault-artwork.sqlite.gz > seed/previous.sqlite
+            echo 'Previous SQLite index will be reused for unchanged art URLs.'
+          else
+            echo 'First full artwork index build.'
+          fi
+      - name: Build complete shard (checkpointed, no printing cap)
+        run: |
+          EXTRA=()
+          if [ -s seed/previous.sqlite ]; then EXTRA=(--seed seed/previous.sqlite); fi
+          python tools/full_artwork_index.py build \
+            --catalog app/src/main/assets/printing-catalog.dat \
+            --output "artwork-${{ matrix.number }}.sqlite" \
+            --shard "${{ matrix.number }}" --shards 8 --workers 4 \
+            "${EXTRA[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: full-artwork-shard-${{ matrix.number }}
+          path: artwork-${{ matrix.number }}.sqlite
+          retention-days: 3
+
+  publish:
+    needs: shard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: full-artwork-shard-*
+          path: shards
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: full-artwork-catalog
+          path: app/src/main/assets/
+      - name: Fetch prior index for incremental phone update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous
+          if gh release download artwork-db -R "$GITHUB_REPOSITORY" -p 'manavault-artwork.sqlite.gz' -D previous; then
+            gzip -dc previous/manavault-artwork.sqlite.gz > previous/old.sqlite
+          else
+            echo 'No prior index; first release includes full snapshot only.'
+          fi
+      - name: Merge, index, compress and SHA-256 verify
+        run: |
+          mkdir -p release
+          ARGS=()
+          if [ -s previous/old.sqlite ]; then
+            ARGS=(--previous previous/old.sqlite --delta release/artwork-delta.sqlite --delta-compressed release/manavault-artwork-delta.sqlite.gz)
+          fi
+          python tools/full_artwork_index.py merge \
+            --output release/artwork-index.sqlite \
+            --compressed release/manavault-artwork.sqlite.gz \
+            --manifest release/manavault-artwork-manifest.json \
+            "${ARGS[@]}" shards/artwork-*.sqlite
+          python tools/check_51231_full_artwork.py --verify-published release/artwork-index.sqlite release/manavault-artwork-manifest.json
+          python tools/check_51231_full_artwork.py --verify-catalog app/src/main/assets/printing-catalog.dat release/artwork-index.sqlite
+      - name: Publish verified release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSETS=(release/manavault-artwork.sqlite.gz)
+          if [ -s release/manavault-artwork-delta.sqlite.gz ]; then
+            ASSETS+=(release/manavault-artwork-delta.sqlite.gz)
+          fi
+          if gh release view artwork-db >/dev/null 2>&1; then
+            gh release upload artwork-db "${ASSETS[@]}" --clobber
+            gh release upload artwork-db release/manavault-artwork-manifest.json --clobber
+          else
+            gh release create artwork-db \
+              --title 'ManaVault complete offline artwork fingerprints' \
+              --notes 'Fingerprint database for all available English paper card printings. Scanner verifies collector and set separately.' \
+              --latest=false \
+              "${ASSETS[@]}" release/manavault-artwork-manifest.json
+          fi
