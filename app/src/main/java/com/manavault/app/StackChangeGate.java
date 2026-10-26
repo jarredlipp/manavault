@@ -35,6 +35,8 @@ final class StackChangeGate {
     }
     synchronized void clear(){active=false;covered=false;coveredReads=0;changedReads=0;identicalReads=0;}
     synchronized String lastEvent(){return event;}
+    /** Time of the first stable candidate frame, or zero if no candidate. */
+    synchronized long changedCandidateAt(){return changedAt>0?changedAt:identicalAt;}
     /** Detection dropout alone is not enough: require a materially changed
      * whole-camera image over several frames while a hand covers the stack. */
     synchronized void coverFrame(boolean sceneObscured){

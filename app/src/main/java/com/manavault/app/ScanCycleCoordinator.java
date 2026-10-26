@@ -35,6 +35,7 @@ final class ScanCycleCoordinator {
     synchronized boolean awaitingReceipt(){return !pendingId.isEmpty()&&!receiptReady;}
     synchronized String pendingId(){return pendingId;}
     synchronized long captureGapMs(){return captureGapMs;}
+    synchronized long lastCaptureAtMs(){return previousCaptureAt;}
     synchronized long persistLatencyMs(){return receiptAt==0?-1:Math.max(0,receiptAt-captureAt);}
     /** Positive value indicates idle time after persistence; zero indicates
      * the next scene was already recognized while saving the previous card. */

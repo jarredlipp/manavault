@@ -33,9 +33,12 @@ public class MainActivity extends Activity {
     private static final int FILE_REQUEST = 41;
     private static final int NATIVE_SCANNER_REQUEST = 42;
     private static final int BACKUP_DOCUMENT_REQUEST = 43;
+    private static final int DIAGNOSTIC_EXPORT_REQUEST = 44;
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private final ExecutorService backupExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService diagnosticExecutor = Executors.newSingleThreadExecutor();
+    private ScannerDiagnosticArchive diagnosticArchive;
     private String pendingBackupJson;
     private boolean backupInProgress;
     private final ExecutorService artworkExecutor = Executors.newSingleThreadExecutor();
@@ -131,6 +134,11 @@ public class MainActivity extends Activity {
     }
 
     private void openNativeScannerReady(){
+        // A new explicit CameraX opening starts a distinct retained log group.
+        diagnosticExecutor.execute(()->{
+            try{diagnosticArchive.beginSession("CameraX · ManaVault 5.13.4");}
+            catch(Exception e){Log.e("ManaVaultDiagnostics","Could not begin scanner log session",e);}
+        });
         nativeScannerOpen=true;
         synchronized(lastNativeBatchPhotos){lastNativeBatchPhotos.clear();}
         startActivityForResult(new Intent(this,NativeScannerActivity.class),NATIVE_SCANNER_REQUEST);
@@ -204,6 +212,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         liveHost=new java.lang.ref.WeakReference<>(this);
+        diagnosticArchive=new ScannerDiagnosticArchive(new File(getFilesDir(),"scanner-diagnostics"));
         ReferenceFingerprintCache.configure(getApplicationContext());
         NativePrintingIndex.start(getApplicationContext());
         // The large all-printings visual index is optional, installed separately
@@ -226,6 +235,47 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface public void exportBackup(String json, String filename) {
                 runOnUiThread(() -> exportBackupWithPicker(json, filename));
+            }
+            /** Best-effort preservation of the old 150-message preview. Older
+             * lines already discarded by prior app releases are unrecoverable. */
+            @JavascriptInterface public void importLegacyDiagnosticPreview(String serialized) {
+                if(serialized==null||serialized.length()>180000)return;
+                diagnosticExecutor.execute(()->{
+                    try{
+                        org.json.JSONArray entries=new org.json.JSONArray(serialized);
+                        if(entries.length()>150)return;
+                        diagnosticArchive.beginSession("PARTIAL legacy preview imported during v5.13.4 upgrade");
+                        for(int i=0;i<entries.length();i++){
+                            org.json.JSONObject entry=entries.optJSONObject(i);
+                            if(entry==null)continue;
+                            diagnosticArchive.append(entry.optString("at","")+" ["+
+                                entry.optString("level","info")+"] "+entry.optString("message",""));
+                        }
+                    }catch(Exception e){Log.w("ManaVaultDiagnostics","Legacy preview import failed",e);}
+                });
+            }
+            /** Append in a dedicated thread, independent of camera/OCR and WebView storage. */
+            @JavascriptInterface public void appendDiagnosticLine(String line) {
+                if(line==null || line.length()>8192)return;
+                diagnosticExecutor.execute(()->{
+                    try{diagnosticArchive.append(line);}
+                    catch(Exception e){Log.w("ManaVaultDiagnostics","Could not append diagnostic line",e);}
+                });
+            }
+            @JavascriptInterface public String diagnosticCoverage() {
+                return diagnosticArchive.countSessions()+" saved scanner session(s) (each exported in full; up to 20 recent sessions)";
+            }
+            @JavascriptInterface public void exportCompleteDiagnosticArchive() {
+                runOnUiThread(()->{
+                    try{
+                        Intent create=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                        create.addCategory(Intent.CATEGORY_OPENABLE);
+                        create.setType("application/zip");
+                        create.putExtra(Intent.EXTRA_TITLE,"ManaVault-complete-scanner-diagnostics.zip");
+                        startActivityForResult(create,DIAGNOSTIC_EXPORT_REQUEST);
+                    }catch(Exception e){Toast.makeText(MainActivity.this,
+                        "Could not open diagnostic export: "+e.getMessage(),Toast.LENGTH_LONG).show();}
+                });
             }
             @JavascriptInterface public void shareLog(String text) {
                 runOnUiThread(() -> {
@@ -258,7 +308,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.13.3"; }
+            @JavascriptInterface public String version() { return "5.13.4"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
             @JavascriptInterface public void scanProgress(String payload){
                 try{NativeScannerActivity.receiveLiveProgress(new JSONObject(payload));}
@@ -489,7 +539,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.13.3 · CameraX");
+        versionLabel.setText("ManaVault 5.13.4 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
@@ -581,9 +631,7 @@ public class MainActivity extends Activity {
         if (requestCode == CAMERA_REQUEST && pendingNativeOpen) {
             pendingNativeOpen=false;
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                nativeScannerOpen=true;
-                synchronized(lastNativeBatchPhotos){lastNativeBatchPhotos.clear();}
-                startActivityForResult(new Intent(this, NativeScannerActivity.class), NATIVE_SCANNER_REQUEST);
+                openNativeScannerReady();
             }
             return;
         }
@@ -592,6 +640,25 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if(requestCode==DIAGNOSTIC_EXPORT_REQUEST){
+            if(resultCode==RESULT_OK && data!=null && data.getData()!=null){
+                final Uri target=data.getData();
+                // All prior JS logging tasks complete first on this same executor.
+                diagnosticExecutor.execute(()->{
+                    try(java.io.OutputStream output=getContentResolver().openOutputStream(target,"wt")){
+                        if(output==null)throw new java.io.IOException("Document provider refused output");
+                        int count=diagnosticArchive.writeZip(output);
+                        runOnUiThread(()->Toast.makeText(MainActivity.this,
+                            "Complete diagnostic archive exported: "+count+" scanner session(s).",Toast.LENGTH_LONG).show());
+                    }catch(Exception e){
+                        Log.e("ManaVaultDiagnostics","Complete export failed",e);
+                        runOnUiThread(()->Toast.makeText(MainActivity.this,
+                            "Diagnostic export failed: "+e.getMessage(),Toast.LENGTH_LONG).show());
+                    }
+                });
+            }
+            return;
+        }
         if (requestCode == BACKUP_DOCUMENT_REQUEST) {
             final String snapshot = pendingBackupJson;
             pendingBackupJson = null;
@@ -653,6 +720,8 @@ public class MainActivity extends Activity {
         metadataExecutor.shutdownNow();
         indexExecutor.shutdownNow();
         backupExecutor.shutdownNow();
+        // Finish queued diagnostic writes rather than discarding the last captured cards.
+        diagnosticExecutor.shutdown();
         webView.destroy();webView=null;
         super.onDestroy();
     }

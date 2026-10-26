@@ -225,6 +225,36 @@ final class PrintingFingerprintVerifier {
                         finally{contrast.recycle();}
                     }finally{scaled.recycle();}
                     out.put("collectorRescueAttempted",true);
+                    // Older printed frames often put 254/350 or 314/350 at
+                    // the extreme RIGHT end of the illustrator/copyright line.
+                    // Try this only when expected collector digits were still
+                    // absent, so common modern printings keep their fast path.
+                    boolean recovered=false;
+                    for(int j=0;j<lines.length()&&!recovered;j++){
+                        JSONObject line=lines.optJSONObject(j);
+                        recovered=line!=null && CollectorOcrPolicy.hasCandidateNumber(
+                            line.optString("text",""),expected);
+                    }
+                    if(!recovered && android.os.SystemClock.elapsedRealtime()-started<(fast?2350:4100)){
+                        int endX=Math.round(card.getWidth()*.47f);
+                        int endY=Math.round(card.getHeight()*.935f);
+                        int endWidth=Math.max(1,card.getWidth()-endX);
+                        int endHeight=Math.max(1,Math.min(card.getHeight()-endY,
+                            Math.round(card.getHeight()*.06f)));
+                        Bitmap right=Bitmap.createBitmap(card,endX,endY,endWidth,endHeight);
+                        Bitmap scaledRight=Bitmap.createScaledBitmap(right,endWidth*3,endHeight*3,true);
+                        right.recycle();
+                        try{
+                            readRegion(reader,scaledRight,"footer-terminal","old-frame-right",lines,out,
+                                fast?950:1300);
+                            if(!hasFooterIdentifier(lines)){
+                                Bitmap high=CardQuadDetector.enhanceTitle(scaledRight);
+                                try{readRegion(reader,high,"footer-terminal","old-frame-contrast",lines,out,
+                                    fast?950:1300);}finally{high.recycle();}
+                            }
+                        }finally{scaledRight.recycle();}
+                        out.put("oldFrameTerminalRescueAttempted",true);
+                    }
                 }
             }
         }finally{reader.close();card.recycle();}

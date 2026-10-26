@@ -71,6 +71,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class NativeScannerActivity extends ComponentActivity {
     private static final String TAG="ManaVaultNative";
     private static final int PERMISSION_REQUEST=302;
+    // Supports scanning 186+ cards in one uninterrupted session; keeps the
+    // end-of-session Activity result comfortably below Android Binder limits.
+    private static final int MAX_SESSION_CAPTURES=300;
+    private volatile boolean sessionLimitNotified=false;
     private final ExecutorService analysisExecutor=Executors.newSingleThreadExecutor();
     private final ExecutorService referenceExecutor=Executors.newSingleThreadExecutor();
     private final CardQuadDetector detector=new CardQuadDetector();
@@ -331,6 +335,7 @@ public final class NativeScannerActivity extends ComponentActivity {
     private volatile long lastCapturedTitleHash=0,lastCapturedFullHash=0;
     private volatile byte[] lastCapturedColor=null;
     private long sceneStartedAt=0;
+    private long sceneCandidateAt=0,sceneConfirmedAt=0;
     private long missingSince=0;
     private int changedEmptyFrames=0;
     private volatile long currentFrameSceneHash=0;
@@ -949,6 +954,8 @@ public final class NativeScannerActivity extends ComponentActivity {
                 boolean newTop=stackGate.observe(hash,fullHash,VisualMatcher.titleHash(corrected),now);
                 corrected.recycle();
                 if(newTop){
+                    sceneCandidateAt=stackGate.changedCandidateAt();
+                    sceneConfirmedAt=now;
                     final String reason=stackGate.lastEvent();
                     // A cover/reveal with the SAME photographed artwork can
                     // also be a hand, shadow, or camera exposure transient.
@@ -1461,7 +1468,17 @@ public final class NativeScannerActivity extends ComponentActivity {
     /** Save the card with the SAME orientation that produced the OCR title.
      * Keep the original frame orientation for stack-change fingerprinting. */
     private synchronized void enqueue(String name,String source,float score,String imageId,Bitmap card,long hash,int rotationDegrees){
-        if(closing||finishRequested||waitingForNext||captured.size()>=150)return;
+        if(closing||finishRequested||waitingForNext)return;
+        if(captured.size()>=MAX_SESSION_CAPTURES){
+            if(!sessionLimitNotified){
+             sessionLimitNotified=true;
+             runOnUiThread(()->{if(!closing){
+                status.setText("Session reached "+MAX_SESSION_CAPTURES+" captures. Finish to save diagnostics and start another session.");
+                reviewButton.setText("Finish (session full)");
+            }});
+            }
+            return;
+        }
         // The StackChangeGate / ScanCycleCoordinator handshake, not elapsed
         // wall time or card name, decides whether a physical new top exists.
         // This allows legitimate back-to-back identical copies (e.g. Shining
@@ -1561,11 +1578,20 @@ public final class NativeScannerActivity extends ComponentActivity {
             result.put("scan_id",scanId);
             result.put("scan_index",number-1);
             // Real capture-to-capture throughput, not only OCR callback time.
+            long priorCapture=scanCycle.lastCaptureAtMs();
+            result.put("previous_capture_to_scene_candidate_ms",
+                    priorCapture>0&&sceneCandidateAt>=priorCapture?
+                    sceneCandidateAt-priorCapture:-1);
             scanCycle.captured(scanId,SystemClock.elapsedRealtime());
             result.put("capture_gap_ms",scanCycle.captureGapMs());
             result.put("previous_receipt_latency_ms",lastResolvedReceiptLatencyMs);
             result.put("previous_receipt_to_capture_ms",lastResolvedReceiptAt>0?
                     Math.max(0,SystemClock.elapsedRealtime()-lastResolvedReceiptAt):-1);
+            result.put("scene_candidate_to_confirm_ms",
+                    sceneCandidateAt>0&&sceneConfirmedAt>=sceneCandidateAt?
+                    sceneConfirmedAt-sceneCandidateAt:-1);
+            result.put("scene_confirm_to_capture_ms",sceneConfirmedAt>0?
+                    Math.max(0,SystemClock.elapsedRealtime()-sceneConfirmedAt):-1);
             result.put("scene_to_capture_ms",sceneStartedAt>0?
                     Math.max(0,SystemClock.elapsedRealtime()-sceneStartedAt):-1);
             result.put("photo_rotation_degrees",rotationDegrees);

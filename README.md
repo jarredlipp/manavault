@@ -1,3 +1,12 @@
+## v5.13.4 complete diagnostic history and selective OCR recovery
+
+See [RECOGNITION-v5.13.4.md](RECOGNITION-v5.13.4.md). Every new diagnostic
+message is now written to an Android-private per-session archive; the full
+ZIP export covers all recent sessions instead of copying the last 150 lines.
+CameraX can accept up to 300 captures per session, selective traditional-frame
+footer OCR is added, and physical audit retention is expanded to 1,200 records.
+No previous source features or full printing artwork database are removed.
+
 ## v5.13.3 accuracy-and-throughput refinement
 
 See [RECOGNITION-v5.13.3.md](RECOGNITION-v5.13.3.md) for review-only
@@ -112,7 +121,7 @@ The GitHub workflow builds the offline Scryfall catalog, SVG symbol reference at
 
 **Important:** This project was tested locally using JavaScript/Java smoke tests, not a complete Android SDK build or a physical-camera session. Real-device OCR, symbol detection, offline asset generation and APK compilation require the next GitHub test build. Don't treat automatic verification as infallible; confirm representative printings, especially older editions and basic lands.
 
-App ID: `com.manavault.app`. Version code: **112**. Collection storage key remains `manavault-v1`.
+App ID: `com.manavault.app`. Current version code: **118**. Collection storage key remains `manavault-v1`.
 
 
 ## v5.12.27 scanner duplicate safety
