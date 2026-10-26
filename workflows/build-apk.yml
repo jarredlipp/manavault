@@ -108,6 +108,7 @@ jobs:
           node tools/check_5132_recognition.js
           node tools/check_5133_accuracy_audit.js
           node tools/check_5134_complete_sessions.js
+          node tools/check_5135_saga_title.js
           javac -d /tmp/mv514-log app/src/main/java/com/manavault/app/ScannerDiagnosticArchive.java tools/ScannerDiagnosticArchiveTest.java
           java -cp /tmp/mv514-log com.manavault.app.ScannerDiagnosticArchiveTest
           javac -d /tmp/mv132-art-probe app/src/main/java/com/manavault/app/ArtworkProbePolicy.java tools/ArtworkProbePolicyTest.java

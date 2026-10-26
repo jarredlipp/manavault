@@ -85,6 +85,15 @@ final class NativeNameIndex {
     String suggestTitle(String observed){
         String key=norm(observed);
         if(key.length()<9 || TitleReadingPolicy.isFooterOrRulesNoise(observed))return null;
+        // Saga / showcase title bars can OCR their decorative emblem as an
+        // isolated "O" and merge a mana-cost numeral with the final word.
+        // Fix BOTH only when the resulting name exists verbatim in the index.
+        // suggestTitle is a tentative candidate, never automatic verification.
+        String ornamentRepair=TitleRecoveryPolicy.strayEmblemAndJoinedDigit(observed);
+        if(!ornamentRepair.isEmpty()){
+            String known=names.get(ornamentRepair);
+            if(known!=null && !TitleRecoveryPolicy.isBadMultiFaceGuess(known,false))return known;
+        }
         // Try literal catalog title with a stray isolated OCR digit removed.
         String stripped=TitleRecoveryPolicy.withoutTrailingArtifact(observed);
         if(!stripped.equals(key)){

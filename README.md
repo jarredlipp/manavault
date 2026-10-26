@@ -1,3 +1,11 @@
+## v5.13.5 targeted Saga title-bar OCR repair
+
+See [RECOGNITION-v5.13.5.md](RECOGNITION-v5.13.5.md). A decorative Saga
+emblem + joined mana digit can cause `O The Long Reach of Night3` to miss the
+name catalog entirely. Only a unique exact catalog identity is proposed, and
+printing still requires independent set/collector verification or manual review.
+The existing v5.13.4 complete multi-session diagnostic archive is unchanged.
+
 ## v5.13.4 complete diagnostic history and selective OCR recovery
 
 See [RECOGNITION-v5.13.4.md](RECOGNITION-v5.13.4.md). Every new diagnostic
