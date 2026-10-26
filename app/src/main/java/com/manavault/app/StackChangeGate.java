@@ -23,6 +23,9 @@ final class StackChangeGate {
     private boolean active=false,covered=false;
     private int coveredReads=0,changedReads=0,identicalReads=0;
     private long changedAt=0,identicalAt=0,previousArt=0,previousFull=0;
+    private int noisyStrongReads=0;
+    private long noisyStrongAt=0;
+    private int lastArtDistance=0,lastFullDistance=0,lastTitleDistance=0;
     private String event="";
 
     synchronized void captured(long artHash,long fullHash,long now){
@@ -31,10 +34,17 @@ final class StackChangeGate {
     synchronized void captured(long artHash,long fullHash,long titleHash,long now){
         baselineArt=artHash;baselineFull=fullHash;baselineTitle=titleHash;capturedAt=now;
         active=true;covered=false;coveredReads=0;changedReads=0;identicalReads=0;
-        changedAt=0;identicalAt=0;event="";
+        changedAt=0;identicalAt=0;noisyStrongAt=0;noisyStrongReads=0;event="";
     }
-    synchronized void clear(){active=false;covered=false;coveredReads=0;changedReads=0;identicalReads=0;}
+    synchronized void clear(){active=false;covered=false;coveredReads=0;changedReads=0;identicalReads=0;
+        noisyStrongReads=0;noisyStrongAt=0;}
     synchronized String lastEvent(){return event;}
+    /** Bounded diagnostic: never logs card photographs or card titles. */
+    synchronized String evidenceState(){
+        return "art="+lastArtDistance+" full="+lastFullDistance+
+            " title="+lastTitleDistance+" changedReads="+changedReads+
+            " strongReads="+noisyStrongReads+" covered="+covered;
+    }
     /** Time of the first stable candidate frame, or zero if no candidate. */
     synchronized long changedCandidateAt(){return changedAt>0?changedAt:identicalAt;}
     /** Detection dropout alone is not enough: require a materially changed
@@ -46,7 +56,7 @@ final class StackChangeGate {
     }
     synchronized void unstable(){
         changedReads=0;changedAt=0;
-        identicalReads=0;identicalAt=0;
+        identicalReads=0;identicalAt=0;noisyStrongReads=0;noisyStrongAt=0;
     }
     /** Call only on geometrically stable, unobstructed card crops. */
     synchronized boolean observe(long artHash,long fullHash,long now){
@@ -57,6 +67,7 @@ final class StackChangeGate {
         int art=Long.bitCount(artHash^baselineArt);
         int full=Long.bitCount(fullHash^baselineFull);
         int title=Long.bitCount(titleHash^baselineTitle);
+        lastArtDistance=art;lastFullDistance=full;lastTitleDistance=title;
         // Two independent regions must agree before a visually distinct card
         // is accepted. A single glare/reflection should not rearm the scanner.
         boolean changed=(art>=17&&full>=10)||(art>=26&&full>=7)||
@@ -67,6 +78,19 @@ final class StackChangeGate {
                         (title>=17&&(art>=9||full>=9));
         if(changed){
             identicalReads=0;identicalAt=0;
+            // A new physical card may flicker during autofocus or glossy
+            // artwork reflection. The normal 3-frame path resets on jitter.
+            // Keep a slower HIGH-EVIDENCE alternative that only advances if
+            // all THREE independent image regions remain very different from
+            // the captured card for >= 480ms over >=5 stable readings.
+            // Without these stronger requirements, duplicates remain gated.
+            if(art>=23 && full>=18 && title>=19){
+                if(noisyStrongReads==0)noisyStrongAt=now;
+                noisyStrongReads++;
+            }else{noisyStrongReads=0;noisyStrongAt=0;}
+            if(noisyStrongReads>=5 && now-noisyStrongAt>=480){
+                event="new top artwork (persistent high evidence)";clear();return true;
+            }
             if(changedReads==0 || Long.bitCount(artHash^previousArt)>14 ||
                     Long.bitCount(fullHash^previousFull)>15){
                 changedReads=1;changedAt=now;
@@ -77,7 +101,7 @@ final class StackChangeGate {
             }
             return false;
         }
-        changedReads=0;changedAt=0;
+        changedReads=0;changedAt=0;noisyStrongReads=0;noisyStrongAt=0;
         // For identical copies the camera cannot tell whether a new physical
         // card was added from the final appearance alone. A strong intervening
         // cover/reveal sequence is mandatory; brief OCR glitches never count.

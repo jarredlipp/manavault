@@ -355,6 +355,7 @@ public final class NativeScannerActivity extends ComponentActivity {
     // authorizes the next save even if the card name is identical.
     private volatile boolean confirmedNewTop=false;
     private long previewHash=0;
+    private long lastGateDiagnosticAt=0;
     private volatile Bitmap availableCard;
     private long lastEdgeMs=0,lastWarpMs=0,lastArtMs=0,lastOcrMs=0;
     private int sourceWidth=1,sourceHeight=1;
@@ -953,6 +954,14 @@ public final class NativeScannerActivity extends ComponentActivity {
                 long fullHash=wholeFrameHash(corrected);
                 boolean newTop=stackGate.observe(hash,fullHash,VisualMatcher.titleHash(corrected),now);
                 corrected.recycle();
+                if(!newTop && !resolutionPending && !reviewDialogOpen &&
+                        now-lastGateDiagnosticAt>=5000 && scanCycle.lastCaptureAtMs()>0 &&
+                        now-scanCycle.lastCaptureAtMs()>=4500){
+                    lastGateDiagnosticAt=now;
+                    Log.i(TAG,"Stack transition pending · "+stackGate.evidenceState()+
+                        " · since_capture_ms="+(now-scanCycle.lastCaptureAtMs())+
+                        " · geometrically_stable="+goodFrames);
+                }
                 if(newTop){
                     sceneCandidateAt=stackGate.changedCandidateAt();
                     sceneConfirmedAt=now;

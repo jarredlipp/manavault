@@ -40,6 +40,22 @@ public final class StackChangeGateTest {
         // A title-only lighting flare is not an independent scene change.
         gate.captured(0,0,0,18500);
         for(int i=0;i<7;i++)require(!gate.observe(0,0,bits(30),19500+i*200),"Title glare falsely rearmed scanner");
+        // Autofocus jitter can change perceptual hashes between otherwise
+        // clearly different frames. Strong persistent three-region evidence
+        // must eventually release the gate, but never on a short burst.
+        gate.captured(0,0,0,22000);
+        long first=23000;
+        for(int i=0;i<4;i++){
+            long a=i%2==0?bits(30):bits(25) << 8;
+            long f=i%2==0?bits(25):bits(23) << 11;
+            long t=i%2==0?bits(27):bits(23) << 9;
+            require(!gate.observe(a,f,t,first+i*130),"Short noisy series caused premature rearm");
+        }
+        require(gate.observe(bits(30),bits(25),bits(27),first+520),
+            "Persistent corroborated new card was blocked by inter-frame jitter");
+        gate.captured(0,0,0,25000);
+        for(int i=0;i<8;i++)require(!gate.observe(bits(8),bits(4),bits(24),
+            26100+i*180),"Strong art/title but no full-card evidence rearmed scanner");
         System.out.println("StackChangeGate JVM tests passed: stationary, glare, transient, changed art, repeated, occlusion, identical copy.");
     }
 }

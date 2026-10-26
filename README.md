@@ -1,3 +1,18 @@
+## v5.13.6 — Candidate-aware printing OCR, set symbols, artwork review, stack pacing
+
+See [RECOGNITION-v5.13.6.md](RECOGNITION-v5.13.6.md). A new
+candidate-aware footer OCR crop is used only when the already identified
+card’s collector number remains unreadable. Colored expansion symbols now
+have a second, chromatic comparison path and lower specialty-frame search
+positions. The full 111k-face artwork index preserves visual ranking when
+its scores are too ambiguous to justify automatic saving, improving review
+order without allowing an artwork-only guess to overwrite a real collector.
+The scene-change gate gets a slow, strongly corroborated recovery for
+unstable perceptual hashes and diagnostic snapshots of stalled transitions.
+The existing database format, 100-card deck features, and all previous
+scanner safety checks remain unchanged. GitHub Android APK compilation and
+real-phone benchmarks are still required.
+
 ## v5.13.5 targeted Saga title-bar OCR repair
 
 See [RECOGNITION-v5.13.5.md](RECOGNITION-v5.13.5.md). A decorative Saga

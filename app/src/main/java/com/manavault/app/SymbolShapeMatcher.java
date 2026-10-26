@@ -39,6 +39,47 @@ final class SymbolShapeMatcher {
         return mask;
     }
 
+    /** Complementary color-contrast mask for rarity-colored expansion symbols.
+     * Grayscale can erase a red/gold icon against a similarly bright bar.
+     * Sample perimeter RGB as the LOCAL background and require chroma and/or
+     * luminance separation. Never treat texture alone as verified identity. */
+    static byte[] extractColorInk(int[] rgb){
+        if(rgb==null||rgb.length!=SIZE)return null;
+        int[] r=new int[SIZE],g=new int[SIZE],b=new int[SIZE];int n=0;
+        for(int y=0;y<SIDE;y++)for(int x=0;x<SIDE;x++){
+            if(x>=3&&x<SIDE-3&&y>=3&&y<SIDE-3)continue;
+            int pixel=rgb[y*SIDE+x];
+            r[n]=(pixel>>16)&255;g[n]=(pixel>>8)&255;b[n]=pixel&255;n++;
+        }
+        Arrays.sort(r,0,n);Arrays.sort(g,0,n);Arrays.sort(b,0,n);
+        int br=r[n/2],bg=g[n/2],bb=b[n/2];
+        int[] contrast=new int[SIZE];int max=0;
+        for(int i=0;i<SIZE;i++){
+            int pixel=rgb[i];int dr=Math.abs(((pixel>>16)&255)-br);
+            int dg=Math.abs(((pixel>>8)&255)-bg);int db=Math.abs((pixel&255)-bb);
+            // Mean RGB distance avoids promoting isolated compression noise.
+            contrast[i]=(dr+dg+db)/3;
+            max=Math.max(max,contrast[i]);
+        }
+        if(max<37)return null;
+        int cutoff=Math.max(30,(int)(max*.40));
+        byte[] mask=new byte[SIZE];int ink=0;
+        for(int i=0;i<SIZE;i++)if(contrast[i]>=cutoff){mask[i]=(byte)255;ink++;}
+        if(ink<28||ink>SIZE*.58)return null;
+        // Compression artefacts, fine foil glitter and checkerboard textures
+        // can have contrast without forming a coherent expansion glyph.
+        int cohesive=0;
+        for(int y=1;y<SIDE-1;y++)for(int x=1;x<SIDE-1;x++){
+            int pos=y*SIDE+x;if((mask[pos]&255)<100)continue;
+            int nearby=0;
+            for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)
+                if((mask[pos+dy*SIDE+dx]&255)>=100)nearby++;
+            if(nearby>=6)cohesive++;
+        }
+        if(cohesive<ink*.28)return null;
+        return mask;
+    }
+
     /** Scale and center a foreground glyph without changing its shape.
      * Deliberately reject crops dominated by a frame line or single stroke. */
     static byte[] normalizeInk(byte[] source){

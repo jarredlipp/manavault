@@ -170,6 +170,41 @@ final class PrintingFingerprintVerifier {
                     }
                 }finally{enlarged.recycle();}
             }
+            // v5.13.6: candidate-aware footer rescue. A plausible generic
+            // fraction (often a set TOTAL or an incidental footer numeral)
+            // is not enough to abandon a known card's collector read. This
+            // EXTRA crop runs only when none of the card's catalog collectors
+            // is actually observed; the ordinary fast path remains unchanged.
+            if(expectedCollectors!=null && expectedCollectors.length()>0 &&
+                    expectedCollectors.length()<=256 &&
+                    android.os.SystemClock.elapsedRealtime()-started<(fast?1550:4100)){
+                java.util.Set<String> wanted=new java.util.HashSet<>();
+                for(int j=0;j<expectedCollectors.length();j++){
+                    String key=CollectorOcrPolicy.normalize(expectedCollectors.optString(j,""));
+                    if(!key.isEmpty())wanted.add(key);
+                }
+                boolean hasExpected=false;
+                for(int j=0;j<lines.length()&&!hasExpected;j++){
+                    JSONObject line=lines.optJSONObject(j);
+                    hasExpected=line!=null && CollectorOcrPolicy.hasCandidateNumber(
+                        line.optString("text",""),wanted);
+                }
+                if(!hasExpected && !wanted.isEmpty()){
+                    int x=Math.round(card.getWidth()*.012f);
+                    int y=Math.round(card.getHeight()*.905f);
+                    int w=Math.max(1,Math.min(card.getWidth()-x,Math.round(card.getWidth()*.965f)));
+                    int h=Math.max(1,Math.min(card.getHeight()-y,Math.round(card.getHeight()*.09f)));
+                    Bitmap strip=Bitmap.createBitmap(card,x,y,w,h);
+                    Bitmap up=Bitmap.createScaledBitmap(strip,w*3,h*3,true);
+                    strip.recycle();
+                    try{
+                        Bitmap contrast=CardQuadDetector.enhanceTitle(up);
+                        try{readRegion(reader,contrast,"footer-wide","candidate-contrast",lines,out,
+                            fast?850:1100);}finally{contrast.recycle();}
+                    }finally{up.recycle();}
+                    out.put("candidateWideRescueAttempted",true);
+                }
+            }
             // If title OCR is uncertain, spend one limited, high-contrast
             // footer pass BEFORE querying by guessed name. This must include
             // the tiny set + collector row (e.g. DFT R 0345, FIN U 0214,
@@ -331,11 +366,11 @@ final class PrintingFingerprintVerifier {
             // Keep scan time bounded: fewer crop windows, with an extra
             // normalized form of each window for shifted premium-frame icons.
             float[] xs={.735f,.805f,.875f,.94f};
-            float[] ys={.49f,.545f,.60f,.655f,.71f,.765f};
+            float[] ys={.49f,.545f,.60f,.655f,.71f,.765f,.825f,.885f};
             float[][] sizes={{.065f,.052f},{.085f,.072f}};
             for(float x:xs)for(float y:ys)for(float[] size:sizes){
-                byte[] mask=readSymbolMask(card,x,y,size[0],size[1]);
-                if(mask!=null){
+                byte[][] variants=readSymbolMasks(card,x,y,size[0],size[1]);
+                for(byte[] mask:variants)if(mask!=null){
                     observed.add(mask);
                     byte[] normalized=SymbolShapeMatcher.normalizeInk(mask);
                     if(normalized!=null)observed.add(normalized);
@@ -401,7 +436,7 @@ final class PrintingFingerprintVerifier {
     /** A small centered symbol window. Photo grayscale is classified into ink
      * relative to the type-bar background, so rarity-colored icons remain usable.
      */
-    private static byte[] readSymbolMask(Bitmap card,float centerX,float centerY,float width,float height){
+    private static byte[][] readSymbolMasks(Bitmap card,float centerX,float centerY,float width,float height){
         int w=Math.max(1,Math.round(card.getWidth()*width));
         int h=Math.max(1,Math.round(card.getHeight()*height));
         int x=Math.max(0,Math.min(card.getWidth()-w,Math.round(card.getWidth()*centerX-w/2f)));
@@ -410,13 +445,15 @@ final class PrintingFingerprintVerifier {
         try{
             part=Bitmap.createBitmap(card,x,y,w,h);
             scaled=Bitmap.createScaledBitmap(part,24,24,true);
-            int[] gray=new int[576];
+            int[] gray=new int[576],rgb=new int[576];
             for(int i=0;i<576;i++){
                 int pixel=scaled.getPixel(i%24,i/24);
+                rgb[i]=pixel;
                 gray[i]=(Color.red(pixel)*299+Color.green(pixel)*587+Color.blue(pixel)*114)/1000;
             }
-            return SymbolShapeMatcher.extractInk(gray);
-        }catch(Exception ignored){return null;}
+            return new byte[][]{SymbolShapeMatcher.extractInk(gray),
+                SymbolShapeMatcher.extractColorInk(rgb)};
+        }catch(Exception ignored){return new byte[0][];}
         finally{if(scaled!=null)scaled.recycle();if(part!=null)part.recycle();}
     }
 
