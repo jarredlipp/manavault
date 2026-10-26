@@ -1,3 +1,10 @@
+## v5.13.3 accuracy-and-throughput refinement
+
+See [RECOGNITION-v5.13.3.md](RECOGNITION-v5.13.3.md) for review-only
+collector OCR corrections, categorized slow-scan telemetry, physical printing
+accuracy audit, and regression tests. Existing core scanner features and
+installed artwork database remain unchanged.
+
 ## v5.13.2 recognition update
 
 See [RECOGNITION-v5.13.2.md](RECOGNITION-v5.13.2.md) for the bounded full-art

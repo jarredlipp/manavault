@@ -106,6 +106,7 @@ jobs:
           node tools/check_5130_overhaul.js
           node tools/check_5131_reference_gate.js
           node tools/check_5132_recognition.js
+          node tools/check_5133_accuracy_audit.js
           javac -d /tmp/mv132-art-probe app/src/main/java/com/manavault/app/ArtworkProbePolicy.java tools/ArtworkProbePolicyTest.java
           java -cp /tmp/mv132-art-probe com.manavault.app.ArtworkProbePolicyTest
           python3 tools/check_5130_benchmark.py

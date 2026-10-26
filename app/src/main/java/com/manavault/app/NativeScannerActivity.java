@@ -90,6 +90,9 @@ public final class NativeScannerActivity extends ComponentActivity {
             if(!active.closing){active.lastFullIndexLookup=result;active.showMetrics();}
         });
     }
+    // Last durable receipt timestamps separate user/scene idle time from
+    // prior manual review. These values are diagnostic and never gate saving.
+    private volatile long lastResolvedReceiptAt=0,lastResolvedReceiptLatencyMs=-1;
     private int verifiedCount=0,unverifiedCount=0,reviewCount=0;
     private boolean finishRequested=false,forceFinishEnabled=false;
     // The top card cannot be rearmed until the WebView has persisted or the
@@ -131,6 +134,8 @@ public final class NativeScannerActivity extends ComponentActivity {
         // until the exact previous capture receives this final receipt.
         boolean readyScene=scanCycle.receivedFinalReceipt(id,SystemClock.elapsedRealtime());
         long persistMs=scanCycle.persistLatencyMs();
+        lastResolvedReceiptAt=SystemClock.elapsedRealtime();
+        lastResolvedReceiptLatencyMs=persistMs;
         long postSaveSceneMs=scanCycle.postSaveSceneWaitMs();
         Log.i(TAG,"Scan cycle receipt "+id+" · status="+result+
             " · persistence_ms="+persistMs+" · post_save_scene_wait_ms="+postSaveSceneMs+
@@ -1558,6 +1563,9 @@ public final class NativeScannerActivity extends ComponentActivity {
             // Real capture-to-capture throughput, not only OCR callback time.
             scanCycle.captured(scanId,SystemClock.elapsedRealtime());
             result.put("capture_gap_ms",scanCycle.captureGapMs());
+            result.put("previous_receipt_latency_ms",lastResolvedReceiptLatencyMs);
+            result.put("previous_receipt_to_capture_ms",lastResolvedReceiptAt>0?
+                    Math.max(0,SystemClock.elapsedRealtime()-lastResolvedReceiptAt):-1);
             result.put("scene_to_capture_ms",sceneStartedAt>0?
                     Math.max(0,SystemClock.elapsedRealtime()-sceneStartedAt):-1);
             result.put("photo_rotation_degrees",rotationDegrees);
