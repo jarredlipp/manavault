@@ -347,6 +347,20 @@ final class PrintingFingerprintVerifier {
         Bitmap card=BitmapFactory.decodeFile(photo.getAbsolutePath());
         if(card==null){out.put("error","Captured card image unavailable");return out;}
         List<byte[]> observed=new ArrayList<>();
+        // The SVG silhouette library is deliberately conservative, but Core Set
+        // logos such as M11/M19 contain readable LETTERS. The dedicated type-bar
+        // OCR fallback below uses the real printed logo, not an approximate
+        // symbol silhouette or guessed release year.
+        String coreWordmark="";
+        int coreWordmarkReads=0;
+        java.util.Set<String> namedCoreSets=new java.util.LinkedHashSet<>();
+        for(int i=0;i<choices.length();i++){
+            JSONObject item=choices.optJSONObject(i);
+            if(item!=null){
+                String set=item.optString("set","").toLowerCase(Locale.ROOT);
+                if(SetWordmarkPolicy.supported(set))namedCoreSets.add(set);
+            }
+        }
         try {
             // The printed symbol normally sits toward the right end of the
             // type line. Search a small bounded neighborhood for frames where
@@ -365,8 +379,12 @@ final class PrintingFingerprintVerifier {
             // logo down or slightly farther left than a regular type line.
             // Keep scan time bounded: fewer crop windows, with an extra
             // normalized form of each window for shifted premium-frame icons.
+            // Sample the type bar across conventional, retro, specialty,
+            // split and Saga treatments.  The final lower band includes
+            // layouts whose type bar is below the artwork/rules treatment.
+            // Never scan the whole art panel as a presumed set symbol.
             float[] xs={.735f,.805f,.875f,.94f};
-            float[] ys={.49f,.545f,.60f,.655f,.71f,.765f,.825f,.885f};
+            float[] ys={.49f,.545f,.60f,.655f,.71f,.765f,.825f,.885f,.935f};
             float[][] sizes={{.065f,.052f},{.085f,.072f}};
             for(float x:xs)for(float y:ys)for(float[] size:sizes){
                 byte[][] variants=readSymbolMasks(card,x,y,size[0],size[1]);
@@ -379,6 +397,17 @@ final class PrintingFingerprintVerifier {
         }finally{card.recycle();}
         JSONArray ranked=new JSONArray();
         if(observed.isEmpty()){
+            // Ink thresholding can fail on low-contrast printed lettering.
+            // The independently cropped Core Set wordmark may still be legible.
+            if(!namedCoreSets.isEmpty()){
+                Bitmap wordmarkPhoto=BitmapFactory.decodeFile(photo.getAbsolutePath());
+                if(wordmarkPhoto!=null)try{
+                    JSONObject wordmark=readCoreSetWordmark(wordmarkPhoto,namedCoreSets);
+                    out.put("wordmarkSet",wordmark.optString("set",""));
+                    out.put("wordmarkReads",wordmark.optInt("reads",0));
+                    out.put("wordmarkAttempted",true);
+                }finally{wordmarkPhoto.recycle();}
+            }
             out.put("matches",ranked);out.put("failed",choices.length());
             out.put("attempted",choices.length());out.put("error","Set icon not distinguishable in captured type bar");
             return out;
@@ -425,12 +454,81 @@ final class PrintingFingerprintVerifier {
                 coLocatedAmbiguous=strongest<.82 || colocated<.085;
             }
         }
+        // v5.13.7: If physical icon shapes are ambiguous, independently OCR
+        // ONLY the small right end of the type bar for lettered Core Set marks.
+        // The common, easy-to-verify path never pays for this extra ML Kit pass.
+        double bestShape=sorted.isEmpty()?0:sorted.get(0).getValue();
+        double gapShape=sorted.size()>1?bestShape-sorted.get(1).getValue():0;
+        if(!namedCoreSets.isEmpty() &&
+                (coLocatedAmbiguous||bestShape<.92||gapShape<.12)){
+            Bitmap wordmarkPhoto=BitmapFactory.decodeFile(photo.getAbsolutePath());
+            if(wordmarkPhoto!=null){
+                try{
+                    JSONObject wordmark=readCoreSetWordmark(wordmarkPhoto,namedCoreSets);
+                    coreWordmark=wordmark.optString("set","");
+                    coreWordmarkReads=wordmark.optInt("reads",0);
+                    out.put("wordmarkAttempted",true);
+                }finally{wordmarkPhoto.recycle();}
+            }
+        }
+        out.put("wordmarkSet",coreWordmark);
+        out.put("wordmarkReads",coreWordmarkReads);
         out.put("coLocatedMargin",Math.round(colocated*10000.)/10000.);
         out.put("coLocatedAmbiguous",coLocatedAmbiguous);
         out.put("matches",ranked);out.put("failed",unavailable);
         out.put("attempted",scored.size());out.put("reference","scryfall-svg-icon-v3");
         out.put("atlasSets",BundledSetSymbols.count());
+        out.put("region","physical type-bar/right-side glyph windows");
         return out;
+    }
+
+    /** Two short, differently enhanced OCR observations of the printing's
+     * RIGHT type-bar symbol. Never OCR artwork/rules or the copyright line
+     * for a set logo: a random M19 elsewhere must not be printing evidence.
+     * A single match is advisory only; two agreeing reads are required to
+     * promote it to a wordmark-set observation in the JavaScript resolver.
+     */
+    private static JSONObject readCoreSetWordmark(Bitmap card,
+            java.util.Set<String> candidates) throws Exception {
+        JSONObject answer=new JSONObject();
+        if(card==null||candidates==null||candidates.isEmpty())return answer;
+        TextRecognizer reader=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        String first="";int agreeing=0;
+        try {
+            // Core 2010–2021 set logos are printed at the right end of the
+            // type line around 55–65% card height. Two shifted, tight probes
+            // allow small perspective changes without reading the rules box.
+            float[][] rois={{.755f,.515f,.223f,.158f},{.785f,.555f,.195f,.151f}};
+            for(int probe=0;probe<rois.length;probe++){
+                float[] q=rois[probe];
+                int x=Math.round(card.getWidth()*q[0]),y=Math.round(card.getHeight()*q[1]);
+                int w=Math.min(card.getWidth()-x,Math.max(1,Math.round(card.getWidth()*q[2])));
+                int h=Math.min(card.getHeight()-y,Math.max(1,Math.round(card.getHeight()*q[3])));
+                Bitmap crop=Bitmap.createBitmap(card,x,y,w,h);
+                Bitmap upscale=Bitmap.createScaledBitmap(crop,w*3,h*3,true);
+                crop.recycle();
+                Bitmap image=upscale;
+                if(probe==1){image=CardQuadDetector.enhanceTitle(upscale);upscale.recycle();}
+                try{
+                    Text text=Tasks.await(reader.process(InputImage.fromBitmap(image,0)),
+                        900,TimeUnit.MILLISECONDS);
+                    java.util.Set<String> seen=new java.util.HashSet<>();
+                    for(Text.TextBlock block:text.getTextBlocks())for(Text.Line line:block.getLines()){
+                        String mark=SetWordmarkPolicy.read(line.getText(),candidates);
+                        if(!mark.isEmpty())seen.add(mark);
+                    }
+                    if(seen.size()!=1)continue;
+                    String found=seen.iterator().next();
+                    if(!first.isEmpty()&&!first.equals(found)){
+                        answer.put("reads",0);return answer; // contradictory wordmarks
+                    }
+                    first=found;agreeing++;
+                }catch(Exception ignored){/* a weak logo goes to review */}
+                finally{image.recycle();}
+            }
+        }finally{reader.close();}
+        answer.put("set",first);answer.put("reads",agreeing);
+        return answer;
     }
 
     /** A small centered symbol window. Photo grayscale is classified into ink

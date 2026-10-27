@@ -136,7 +136,7 @@ public class MainActivity extends Activity {
     private void openNativeScannerReady(){
         // A new explicit CameraX opening starts a distinct retained log group.
         diagnosticExecutor.execute(()->{
-            try{diagnosticArchive.beginSession("CameraX · ManaVault 5.13.6");}
+            try{diagnosticArchive.beginSession("CameraX · ManaVault 5.13.8");}
             catch(Exception e){Log.e("ManaVaultDiagnostics","Could not begin scanner log session",e);}
         });
         nativeScannerOpen=true;
@@ -308,7 +308,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public void open() {
                 runOnUiThread(() -> launchNativeScanner());
             }
-            @JavascriptInterface public String version() { return "5.13.6"; }
+            @JavascriptInterface public String version() { return "5.13.8"; }
             /** Receipt means the collection mutation was persisted, not merely recognized. */
             @JavascriptInterface public void scanProgress(String payload){
                 try{NativeScannerActivity.receiveLiveProgress(new JSONObject(payload));}
@@ -539,7 +539,7 @@ public class MainActivity extends Activity {
         nativeBar.setPadding(dp(12), dp(2), dp(8), dp(2));
         nativeBar.setBackgroundColor(0xFF171E2B);
         TextView versionLabel = new TextView(this);
-        versionLabel.setText("ManaVault 5.13.6 · CameraX");
+        versionLabel.setText("ManaVault 5.13.8 · CameraX");
         versionLabel.setTextColor(0xFFEAF2EF);
         versionLabel.setTextSize(12);
         nativeBar.addView(versionLabel, new LinearLayout.LayoutParams(0, -2, 1));
