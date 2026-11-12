@@ -1,0 +1,45 @@
+{
+  "saved": 27,
+  "retried_or_skipped": 4,
+  "verified_auto": 19,
+  "manual_review_positive_count": 15,
+  "unresolved_edition_count": 6,
+  "slow_cycle_count": 7,
+  "footer_pair_failures": 11,
+  "unrecognized_title": 5,
+  "too_dark": 2,
+  "download_started": 1,
+  "camera_sessions": 9,
+  "samples": {
+    "capture_gap": {
+      "count": 26,
+      "mean_ms": 4108.5,
+      "p50_ms": 3695.5,
+      "p95_ms": 9154.8
+    },
+    "verification": {
+      "count": 35,
+      "mean_ms": 319.8,
+      "p50_ms": 247.0,
+      "p95_ms": 740.4
+    },
+    "manual_review": {
+      "count": 31,
+      "mean_ms": 1941.2,
+      "p50_ms": 0.0,
+      "p95_ms": 8280.0
+    },
+    "end_to_end_finalize": {
+      "count": 31,
+      "mean_ms": 2257.2,
+      "p50_ms": 354.0,
+      "p95_ms": 8741.0
+    },
+    "camera_start_to_native_ready": {
+      "count": 8,
+      "mean_ms": 14910.8,
+      "p50_ms": 11511.0,
+      "p95_ms": 26413.1
+    }
+  }
+}
