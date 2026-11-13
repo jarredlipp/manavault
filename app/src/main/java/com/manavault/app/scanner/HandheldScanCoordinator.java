@@ -10,9 +10,24 @@ public final class HandheldScanCoordinator {
     public static final class Frame {
         public final long timestampMs, sceneSignature;
         public final double sharpness, exposure, cardCoverage, boundaryConfidence, motion;
+        public final boolean hasRegionHashes;
+        public final long titleSignature, artworkSignature;
         public Frame(long ms, long signature, double sharpness, double exposure,
                      double coverage, double confidence, double motion) {
+            this(ms,signature,sharpness,exposure,coverage,confidence,motion,0,0,false);
+        }
+        public Frame(long ms, long signature, double sharpness, double exposure,
+                     double coverage, double confidence, double motion,
+                     long titleSignature,long artworkSignature) {
+            this(ms,signature,sharpness,exposure,coverage,confidence,motion,
+                 titleSignature,artworkSignature,true);
+        }
+        private Frame(long ms,long signature,double sharpness,double exposure,
+                      double coverage,double confidence,double motion,
+                      long titleSignature,long artworkSignature,boolean hasRegionHashes) {
             timestampMs=ms; sceneSignature=signature;
+            this.titleSignature=titleSignature;this.artworkSignature=artworkSignature;
+            this.hasRegionHashes=hasRegionHashes;
             this.sharpness=clamp(sharpness); this.exposure=clamp(exposure);
             cardCoverage=clamp(coverage); boundaryConfidence=clamp(confidence);
             this.motion=clamp(motion);
@@ -28,12 +43,14 @@ public final class HandheldScanCoordinator {
     }
 
     private static final long ABSENCE_MS=160;
-    private static final long SCENE_CONFIRM_MS=180;
+    private static final long SCENE_CONFIRM_MS=140;
     private static final long REFOCUS_COOLDOWN_MS=850;
     private static final long MAX_INFLIGHT_MS=1550;
     private static final long QUALITY_FALLBACK_MS=850;
     private static final long REVIEW_RECAPTURE_MS=1050;
     private long generation,sceneSignature=Long.MIN_VALUE,proposedSignature=Long.MIN_VALUE;
+    private long sceneTitleSignature,sceneArtworkSignature,proposedTitleSignature,proposedArtworkSignature;
+    private boolean sceneHasRegions,proposedHasRegions;
     private long proposedSinceMs,missingSinceMs=-1,startedMs,lastTimestampMs=-1;
     private long lastFocusMs=Long.MIN_VALUE/2,poorQualitySinceMs=-1;
     private long nextAllowedMs,firstReviewAtMs=-1;
@@ -49,23 +66,28 @@ public final class HandheldScanCoordinator {
             if (missingSinceMs < 0) missingSinceMs=f.timestampMs;
             if (f.timestampMs-missingSinceMs >= ABSENCE_MS && sceneSignature!=Long.MIN_VALUE) {
                 generation++; sceneSignature=Long.MIN_VALUE; proposedSignature=Long.MIN_VALUE;
+                sceneHasRegions=false;proposedHasRegions=false;
                 proposedFrames=0; clearCurrent();
             }
             discardedFrames++;
             return decision(Action.WAIT,"card absent");
         }
         missingSinceMs=-1;
-        if (sceneSignature==Long.MIN_VALUE) newScene(f.sceneSignature);
-        else if (distinct(f.sceneSignature,sceneSignature,saved?26:12)) {
-            if (proposedSignature==Long.MIN_VALUE || distinct(f.sceneSignature,proposedSignature,12)) {
-                proposedSignature=f.sceneSignature;proposedSinceMs=f.timestampMs;proposedFrames=1;
+        if (sceneSignature==Long.MIN_VALUE) newScene(f);
+        else if (newCardEvidence(f) && f.motion<=.38) {
+            if (proposedSignature==Long.MIN_VALUE || !sameProposedCard(f)) {
+                proposedSignature=f.sceneSignature;
+                proposedTitleSignature=f.titleSignature;
+                proposedArtworkSignature=f.artworkSignature;
+                proposedHasRegions=f.hasRegionHashes;
+                proposedSinceMs=f.timestampMs;proposedFrames=1;
                 return decision(Action.WAIT,"possible new card");
             }
             proposedFrames++;
             if (proposedFrames>=3 && f.timestampMs-proposedSinceMs>=SCENE_CONFIRM_MS) {
-                newScene(f.sceneSignature);
+                newScene(f);
             } else return decision(Action.WAIT,"confirm card change");
-        } else { proposedSignature=Long.MIN_VALUE;proposedFrames=0; }
+        } else { proposedSignature=Long.MIN_VALUE;proposedHasRegions=false;proposedFrames=0; }
 
         if (saved) return decision(Action.WAIT,"already saved; present next card");
         if (reviewPending) return decision(Action.WAIT,"review pending");
@@ -150,6 +172,7 @@ public final class HandheldScanCoordinator {
     }
     public void reset() {
         generation++;sceneSignature=Long.MIN_VALUE;proposedSignature=Long.MIN_VALUE;
+        sceneHasRegions=false;proposedHasRegions=false;
         proposedFrames=0;lastTimestampMs=-1;missingSinceMs=-1;clearCurrent();
     }
     public long currentGeneration(){return generation;}
@@ -160,9 +183,35 @@ public final class HandheldScanCoordinator {
     public boolean isWaitingForRemoval(){return saved;}
 
     private Decision decision(Action a,String why){return new Decision(a,generation,why);}
-    private void newScene(long signature) {
-        generation++;sceneSignature=signature;proposedSignature=Long.MIN_VALUE;
+    private void newScene(Frame f) {
+        generation++;sceneSignature=f.sceneSignature;
+        sceneTitleSignature=f.titleSignature;sceneArtworkSignature=f.artworkSignature;
+        sceneHasRegions=f.hasRegionHashes;
+        proposedSignature=Long.MIN_VALUE;proposedHasRegions=false;
         proposedFrames=0;clearCurrent();
+    }
+    private boolean newCardEvidence(Frame f) {
+        int full=Long.bitCount(f.sceneSignature^sceneSignature);
+        if(!f.hasRegionHashes || !sceneHasRegions)
+            return full >= (saved?26:12); // older adapter remains compatible
+        int title=Long.bitCount(f.titleSignature^sceneTitleSignature);
+        int art=Long.bitCount(f.artworkSignature^sceneArtworkSignature);
+        if(saved) {
+            // Do not interpret a shifting camera angle as another physical card.
+            // A lower global difference must be accompanied by independently
+            // different title AND artwork regions, confirmed on successive frames.
+            return (full>=23 && title>=10 && art>=10)
+                || (full>=12 && title>=15 && art>=14);
+        }
+        return (full>=12 && (title>=7 || art>=9))
+            || (full>=9 && title>=12 && art>=12);
+    }
+    private boolean sameProposedCard(Frame f) {
+        if(Long.bitCount(f.sceneSignature^proposedSignature)>11)return false;
+        if(f.hasRegionHashes&&proposedHasRegions)
+            return Long.bitCount(f.titleSignature^proposedTitleSignature)<=10
+                && Long.bitCount(f.artworkSignature^proposedArtworkSignature)<=10;
+        return true;
     }
     private void clearCurrent() {
         inFlight=false;saved=false;reviewPending=false;retryCount=0;reviewAttempts=0;

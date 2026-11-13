@@ -1,0 +1,52 @@
+{
+  "saved": 118,
+  "retried_or_skipped": 13,
+  "verified_auto": 99,
+  "manual_review_positive_count": 35,
+  "unresolved_edition_count": 6,
+  "slow_cycle_count": 35,
+  "footer_pair_failures": 19,
+  "unrecognized_title": 6,
+  "too_dark": 3,
+  "download_started": 1,
+  "slow_before_scene_gate": 25,
+  "slow_scene_to_capture": 6,
+  "slow_previous_review": 4,
+  "verified_with_manual_wait": 22,
+  "automatic_retry_with_manual_wait": 12,
+  "symbol_not_attempted": 2,
+  "artwork_candidate_cap": 1,
+  "camera_sessions": 6,
+  "samples": {
+    "capture_gap": {
+      "count": 142,
+      "mean_ms": 4135.7,
+      "p50_ms": 3242.0,
+      "p95_ms": 9146.0
+    },
+    "verification": {
+      "count": 148,
+      "mean_ms": 286.6,
+      "p50_ms": 244.5,
+      "p95_ms": 569.1
+    },
+    "manual_review": {
+      "count": 131,
+      "mean_ms": 606.4,
+      "p50_ms": 0.0,
+      "p95_ms": 2120.0
+    },
+    "end_to_end_finalize": {
+      "count": 131,
+      "mean_ms": 907.8,
+      "p50_ms": 257.0,
+      "p95_ms": 2770.0
+    },
+    "camera_start_to_native_ready": {
+      "count": 1,
+      "mean_ms": 9076,
+      "p50_ms": 9076.0,
+      "p95_ms": 9076.0
+    }
+  }
+}

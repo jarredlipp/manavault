@@ -13,6 +13,14 @@ import sys
 
 ROOT=Path(__file__).resolve().parent.parent
 SOURCE=Path('app/src/main/java/com/manavault/app/scanner')
+# Only known, unmodified files from the November 12 recovery package are upgradable.
+PRIOR_RECOVERY={
+  'app/src/main/java/com/manavault/app/scanner/HandheldCameraXAnalyzer.java':'2cb9f352ebfe3d754078b43f4bd37695c90c11c5a815326439bcd6371f2426da',
+  'app/src/main/java/com/manavault/app/scanner/HandheldScanCoordinator.java':'12d93e072a3e0a358ccffb06b3b2f0627a1ed694145f89408c4f69c5dd1e0a68',
+  'tests/run-core-tests.sh':'d91c477c86cb0aa9d78282ad74b27ac02122087595dbbc31e9f6bbcda8bd29b4',
+  'tools/diagnostics_report.py':'df36fd68a064e7fe9057302911eb68ab0fc9396ca2d6abbf299f24d79f7028da'
+}
+
 # Exact hashes from the user's Nov 8 patch, never a wildcard permission to overwrite.
 PRIOR={
     'HandheldCameraXAnalyzer.java':'0c1c9f288bce4bffb9ff2d3d22e3c7f00f436e7bfaa79145531e47710dfa409f',
@@ -56,7 +64,8 @@ def main():
         rel=src.relative_to(ROOT);dest=repo/rel
         if not dest.exists():action='ADD'
         elif sha(dest)==sha(src):action='UNCHANGED'
-        elif PRIOR.get(str(rel),PRIOR.get(rel.name))==sha(dest):action='UPGRADE_WITH_BACKUP'
+        elif (PRIOR.get(str(rel),PRIOR.get(rel.name))==sha(dest)
+              or PRIOR_RECOVERY.get(str(rel))==sha(dest)):action='UPGRADE_WITH_BACKUP'
         else:
             action='CONFLICT';conflicts.append(str(rel))
         changes.append((action,src,dest,rel))
@@ -66,7 +75,7 @@ def main():
     if args.dry_run:
         print('DRY RUN: no files changed. NativeScannerActivity still requires integration.')
         return
-    backup=repo/'tools/scanner_patch_backups/2026-11-12'
+    backup=repo/'tools/scanner_patch_backups/2026-11-12-scene-gate'
     for action,src,dest,rel in changes:
         if action=='UNCHANGED':continue
         if action=='UPGRADE_WITH_BACKUP':

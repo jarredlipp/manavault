@@ -35,7 +35,10 @@ def analyze(sessions):
     counts=dict(saved=0,retried_or_skipped=0,verified_auto=0,
                 manual_review_positive_count=0,unresolved_edition_count=0,
                 slow_cycle_count=0,footer_pair_failures=0,unrecognized_title=0,
-                too_dark=0,download_started=0)
+                too_dark=0,download_started=0,slow_before_scene_gate=0,
+                slow_scene_to_capture=0,slow_previous_review=0,
+                verified_with_manual_wait=0,automatic_retry_with_manual_wait=0,
+                symbol_not_attempted=0,artwork_candidate_cap=0)
     camera_sessions=0
     for name,content in sessions:
         capture+=values(content,r'capture gap (\d+)ms')
@@ -53,6 +56,22 @@ def analyze(sessions):
         counts['unrecognized_title']+=content.count('Footer-first unable to establish set/# for Unrecognized title:')
         counts['too_dark']+=content.count('Photo quality: Image too dark')
         counts['download_started']+=content.count('Card database: Downloading complete Scryfall printing database')
+        counts['symbol_not_attempted']+=content.count('symbol not attempted')
+        counts['artwork_candidate_cap']+=content.count('Candidate printing count exceeds local artwork comparison limit')
+        counts['slow_before_scene_gate']+=content.count('category before scene / handling or scene gating')
+        counts['slow_scene_to_capture']+=content.count('category scene detected to OCR capture')
+        counts['slow_previous_review']+=content.count('category previous receipt / review')
+        receipt_status=None
+        for line in content.splitlines():
+            if 'SCAN RECEIPT ' in line:
+                status=re.search(r'SCAN RECEIPT [^\n]* · (verified|retry|skipped) · ',line)
+                receipt_status=status.group(1) if status else None
+            elif 'Scan timing:' in line:
+                wait=re.search(r'\bmanual review (\d+)ms',line)
+                if wait and int(wait.group(1))>0:
+                    if receipt_status=='verified':counts['verified_with_manual_wait']+=1
+                    elif receipt_status=='retry':counts['automatic_retry_with_manual_wait']+=1
+                receipt_status=None
         if 'CameraX · ManaVault' in content.split('\n',1)[0]:
             camera_sessions+=1
             match=FILENAME.search(name)

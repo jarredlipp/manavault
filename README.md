@@ -175,3 +175,48 @@ not verified performance results**.
 
 This patch is a meaningful source-level correction but does **not** fix the
 installed 5.13.8 APK until the true native activity is wired, built and tested.
+
+---
+
+## Additional November 12 evening diagnostics: scene-gate fix
+
+The newer ZIP `ManaVault-complete-scanner-diagnostics.zip` contains seven session logs
+(six CameraX sessions) from 17:49–18:03 EST. **They still identify the running
+app as 5.13.8, not this helper update.** They show 118 saved of 131 handled
+attempts, but that is a save rate, not proof every exact printing was correct.
+
+- 142 logged capture gaps: mean **4,136 ms**, p95 **9,146 ms**.
+- 148 logged verification samples: mean **287 ms**. The primary bottleneck
+  remains outside the actual printing-verification step.
+- 35 slow-cycle warnings: **25 before new scene recognition/gating**, six after
+  scene recognition but before OCR capture, four linked to previous reviews.
+- 35 manual-review waits, including **12 retry outcomes with unnecessary manual
+  waiting**; 22 verified outcomes also had nonzero review waiting.
+- 19 footer-first failures, six unresolved-edition messages, three low-light
+  warnings, two `symbol not attempted` messages, one artwork-comparison cap.
+- One session explicitly logged full artwork coverage of 112,192 faces, but
+  that index loaded after initial scanning had already started. The packaged
+  1,200-reference fallback is not proof of full index availability.
+
+**New standalone code in this iteration:** `SceneFingerprint.java` adds distinct
+low-resolution fingerprints of the card's title and artwork, derived from the
+already rectified quality preview (no extra OCR or network operation).
+`HandheldScanCoordinator` now uses stable, confirmed title+art changes alongside
+the whole-card signature, so changes between visually similar cards need not
+wait for complete removal or a very large global-hash difference. At least
+three consecutive stable observations are required, and high-motion frames
+cannot commit a transition. Identical images remain suppressed until physical
+card removal to prevent a duplicate auto-save. The previous API remains intact.
+
+`ScannerSceneGateTest.java` adds 17 assertions for stable card transitions,
+handheld angle changes, same-image duplicate prevention, and independent
+regional fingerprints. Both supplied Java test scripts pass. These are only
+**simulations**: do not assume they prove the 4-second average capture gap is
+fixed on a phone. The full source, which contains the actual legacy scene-gate
+logic, is still needed to wire and validate this path in `NativeScannerActivity`.
+The installer can now safely upgrade exact unmodified November 8 or November 12
+helper versions; customized files are never overwritten automatically.
+
+**Build gate:** `python3 tools/verify_integration.py /path/to/current/manavault`
+will still fail until the real production CameraX adapter is wired. Do not
+ship an APK solely because stub compilation passes.

@@ -132,8 +132,10 @@ public final class HandheldCameraXAnalyzer implements ImageAnalysis.Analyzer {
             FrameQualityEstimator.Stats stats=FrameQualityEstimator.estimate(
                 tiny,PREVIEW_W,PREVIEW_H,PREVIEW_W,previousHash);
             previousHash=stats.dHash;
+            SceneFingerprint fingerprints=SceneFingerprint.fromPreview(tiny,PREVIEW_W,PREVIEW_H);
             decision=state.onFrame(new HandheldScanCoordinator.Frame(time,stats.dHash,
-                stats.sharpness,stats.exposure,geometry.cardCoverage,geometry.confidence,stats.motion));
+                stats.sharpness,stats.exposure,geometry.cardCoverage,geometry.confidence,stats.motion,
+                fingerprints.titleHash,fingerprints.artworkHash));
             // Only frames actually submitted to OCR need color planes.
             if(decision.action==HandheldScanCoordinator.Action.ANALYZE
                     && image.getPlanes().length>=3) {
