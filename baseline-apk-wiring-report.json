@@ -1,0 +1,33 @@
+{
+  "native_activity_present": true,
+  "activity_direct_analyzer_calls": [],
+  "activity_direct_startup_calls": [],
+  "analyzer_direct_resolver_calls": [
+    "resolve"
+  ],
+  "analyzer_direct_lighting_calls": [
+    "<init>",
+    "close",
+    "onFrame",
+    "setMode"
+  ],
+  "eligible_singleton_fields": {
+    "authoritativePrintingCount": true,
+    "completeCatalog": true
+  },
+  "helper_classes_present": {
+    "HandheldCameraXAnalyzer": true,
+    "ScannerStartupCoordinator": true,
+    "PrintingEvidenceResolver": true,
+    "CameraXLightingController": true
+  },
+  "dex_files": [
+    "classes.dex",
+    "classes2.dex",
+    "classes3.dex",
+    "classes4.dex",
+    "classes5.dex"
+  ],
+  "checks_passed": false,
+  "input": "manavault-new-app-debug.apk"
+}

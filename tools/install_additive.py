@@ -22,6 +22,9 @@ PRIOR_AUDIT={
         '1d1ea4b378b45d369585c6ded2d6f419d34565250c8cc3b5a6465f58165e789f',
     'tests/run-android-adapter-compile.sh':
         '5e5ab07c6217d6e6268b79dd96ffbca27a86620987330e184e921b37577fc4e3',
+    'tools/check_camera_wiring.py': '6d4bf0c24fb9332c5538e1c0ef267c71a3ef7d6029db99e0b92baf1ef309d5a5',
+    'tools/verify_scanner_wiring.py': 'f2f712682b5f301cf0605aaedffdb0e0cb166d18de0af7edaa160e1a92dcb403',
+    'tests/run-android-adapter-compile.sh': 'cb49e5ab47898e890168db95dc2ce0fe0926820841e31389c72c9725afa21e00',
 }
 PRIOR_RECOVERY={
   'app/src/main/java/com/manavault/app/scanner/HandheldCameraXAnalyzer.java':'2cb9f352ebfe3d754078b43f4bd37695c90c11c5a815326439bcd6371f2426da',
@@ -54,9 +57,11 @@ def collect():
     paths=list((ROOT/SOURCE).glob('*.java'))
     paths+=list((ROOT/'tests').rglob('*.java'))
     paths+=list((ROOT/'tests').glob('*.sh'))
+    paths+=list((ROOT/'tests').glob('*.py'))
     paths+=[ROOT/'.github/workflows/handheld-scanner-core-tests.yml']
     paths+=[ROOT/'tools/diagnostics_report.py',ROOT/'tools/check_camera_wiring.py',
-            ROOT/'tools/validate_scanner_release.sh']
+            ROOT/'tools/validate_scanner_release.sh',
+            ROOT/'tools/verify_scanner_wiring.py']
     return sorted(paths)
 def main():
     ap=argparse.ArgumentParser()
@@ -86,7 +91,7 @@ def main():
     if args.dry_run:
         print('DRY RUN: no files changed. NativeScannerActivity still requires integration.')
         return
-    backup=repo/'tools/scanner_patch_backups/2026-11-13-camera-recovery'
+    backup=repo/'tools/scanner_patch_backups/2026-11-14-native-session-gate'
     for action,src,dest,rel in changes:
         if action=='UNCHANGED':continue
         if action=='UPGRADE_WITH_BACKUP':
@@ -95,5 +100,5 @@ def main():
         dest.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(src,dest)
     print('Core helper files installed. Existing app files and collections preserved.')
-    print('NOT DONE: wire NativeScannerActivity and startup adapters, build APK, test device.')
+    print('BLOCKED: NativeScannerActivity and its OCR/catalog/save adapters still need source-level wiring and a real Android build.')
 if __name__=='__main__':main()

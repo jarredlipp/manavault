@@ -230,3 +230,7 @@ helper versions; customized files are never overwritten automatically.
 **Build gate:** `python3 tools/verify_integration.py /path/to/current/manavault`
 will still fail until the real production CameraX adapter is wired. Do not
 ship an APK solely because stub compilation passes.
+
+---
+
+**November 14 live-session integration revision:** See `START-HERE.md` and `README-INTEGRATION-2026-11-14.md` first. This revision adds `NativeScanCameraSession.java` and stronger release checks. It still needs integration into the actual `NativeScannerActivity.java` source before it can affect a phone installation.
