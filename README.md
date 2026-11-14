@@ -1,3 +1,7 @@
+# November 12 verified singleton printing update
+
+See **ONE-PRINTING-FIX-2026-11-12.md** for new authoritative catalog uniqueness handling, diagnostics findings, production integration steps, and regression tests. The source patch is not the installed Android APK.
+
 # ManaVault handheld recognition recovery — 2026-11-12
 
 ## Status and scope

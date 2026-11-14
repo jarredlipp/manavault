@@ -30,6 +30,62 @@ public final class ScannerCoreTest {
             == PrintingEvidenceResolver.Verdict.RETRY,"contradictory number must retry");
         check(PrintingEvidenceResolver.resolve(e("","",false,true),Collections.singletonList(unique.get(0))).verdict
             == PrintingEvidenceResolver.Verdict.REVIEW,"one catalog result is not proof");
+        // Unlike a filtered OCR/image candidate, a true singleton is proven by
+        // an *independent exhaustive* count against the complete paper catalog.
+        PrintingEvidenceResolver.Evidence uniqueCatalog=new PrintingEvidenceResolver.Evidence(
+            "Raggadragga, Goreguts Boss","","",.99,0,0,false,false,
+            false,true,1,true);
+        PrintingEvidenceResolver.Result singleton=PrintingEvidenceResolver.resolve(
+            uniqueCatalog,Collections.singletonList(unique.get(0)));
+        check(singleton.verdict==PrintingEvidenceResolver.Verdict.AUTO_SAVE,
+            "complete catalog singleton with exact title must bypass edition picker");
+        check(singleton.reason.contains("unique eligible printing"),
+            "single-printing auto save must be distinguishable in diagnostics");
+        PrintingEvidenceResolver.Evidence incompleteCatalog=new PrintingEvidenceResolver.Evidence(
+            "Raggadragga, Goreguts Boss","","",.99,0,0,false,false,
+            false,true,1,false);
+        check(PrintingEvidenceResolver.resolve(incompleteCatalog,
+            Collections.singletonList(unique.get(0))).verdict==PrintingEvidenceResolver.Verdict.REVIEW,
+            "incomplete catalog may not invent uniqueness");
+        PrintingEvidenceResolver.Evidence unenumerated=new PrintingEvidenceResolver.Evidence(
+            "Raggadragga, Goreguts Boss","","",.99,0,0,false,false,
+            false,false,1,true);
+        check(PrintingEvidenceResolver.resolve(unenumerated,
+            Collections.singletonList(unique.get(0))).verdict==PrintingEvidenceResolver.Verdict.REVIEW,
+            "candidate filtering is not an exhaustive query");
+        PrintingEvidenceResolver.Evidence multiplePrintings=new PrintingEvidenceResolver.Evidence(
+            "Raggadragga, Goreguts Boss","","",.99,0,0,false,false,
+            false,true,8,true);
+        check(PrintingEvidenceResolver.resolve(multiplePrintings,
+            Collections.singletonList(unique.get(0))).verdict==PrintingEvidenceResolver.Verdict.REVIEW,
+            "only one plausible artwork while eight printings exist is NOT a singleton");
+        PrintingEvidenceResolver.Evidence weakTitle=new PrintingEvidenceResolver.Evidence(
+            "Raggadragga, Goreguts Boss","","",.74,0,0,false,false,
+            false,true,1,true);
+        check(PrintingEvidenceResolver.resolve(weakTitle,
+            Collections.singletonList(unique.get(0))).verdict==PrintingEvidenceResolver.Verdict.REVIEW,
+            "single printing cannot bypass a weak title match");
+        PrintingEvidenceResolver.Evidence badTitle=new PrintingEvidenceResolver.Evidence(
+            "Wrong card","","",.99,0,0,false,false,
+            false,true,1,true);
+        check(PrintingEvidenceResolver.resolve(badTitle,
+            Collections.singletonList(unique.get(0))).verdict==PrintingEvidenceResolver.Verdict.RETRY,
+            "single printing cannot override a contradictory title");
+        PrintingEvidenceResolver.Evidence conflictSet=new PrintingEvidenceResolver.Evidence(
+            "Raggadragga, Goreguts Boss","wrong","",.99,.99,0,false,false,
+            false,true,1,true);
+        check(PrintingEvidenceResolver.resolve(conflictSet,
+            Collections.singletonList(unique.get(0))).verdict==PrintingEvidenceResolver.Verdict.RETRY,
+            "known contradictory set requires recapture, even for singleton");
+        PrintingEvidenceResolver.Evidence conflictCollector=new PrintingEvidenceResolver.Evidence(
+            "Raggadragga, Goreguts Boss","","999",.99,0,.99,false,false,
+            false,true,1,true);
+        check(PrintingEvidenceResolver.resolve(conflictCollector,
+            Collections.singletonList(unique.get(0))).verdict==PrintingEvidenceResolver.Verdict.RETRY,
+            "known contradictory collector requires recapture, even for singleton");
+        check(PrintingEvidenceResolver.resolve(uniqueCatalog,
+            Arrays.asList(unique.get(0),unique.get(1))).verdict==PrintingEvidenceResolver.Verdict.REVIEW,
+            "catalog count and candidate list contradiction must not auto-save");
         check(PrintingEvidenceResolver.resolve(e("invalid","437",true,true),unique).verdict
             == PrintingEvidenceResolver.Verdict.RETRY,"strong contradictory set fails");
         PrintingEvidenceResolver.Evidence completeVisual=new PrintingEvidenceResolver.Evidence(

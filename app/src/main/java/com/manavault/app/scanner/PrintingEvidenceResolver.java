@@ -8,8 +8,10 @@ import java.util.Locale;
 
 /**
  * Conservative exact-printing identity resolver. Combines independent footer,
- * type-bar symbol, and cropped-artwork evidence. Does not infer a printing from
- * a card name alone or from a single remaining candidate.
+ * type-bar symbol, and cropped-artwork evidence. A sole *filtered* candidate is
+ * NOT proof of a sole catalog printing. A true, complete catalog singleton is
+ * eligible for automatic saving only with strong exact-title evidence and no
+ * conflicting printed marks.
  */
 public final class PrintingEvidenceResolver {
     public enum Verdict { AUTO_SAVE, REVIEW, RETRY }
@@ -30,19 +32,40 @@ public final class PrintingEvidenceResolver {
         public final boolean symbolObserved, artworkObserved;
         /** True only after full index coverage and full name-printing enumeration are checked. */
         public final boolean fullVisualCoverage, allNamePrintingsConsidered;
+        /** Count from a separate, exhaustive query of eligible paper printings for
+         * the exact card name; -1 means unverified. Never use artwork top-K or
+         * candidates remaining after OCR filtering as this count. */
+        public final int authoritativePrintingCount;
+        /** True only after the offline catalog is fully loaded and its completeness
+         * check has passed. Prevents truncated catalogs from appearing unique. */
+        public final boolean completeCatalog;
         public Evidence(String name, String footerSet, String footerNumber,
                 double titleConfidence, double setConfidence, double collectorConfidence,
                 boolean symbolObserved, boolean artworkObserved) {
             this(name,footerSet,footerNumber,titleConfidence,setConfidence,
-                collectorConfidence,symbolObserved,artworkObserved,false,false);
+                collectorConfidence,symbolObserved,artworkObserved,false,false,-1,false);
         }
         public Evidence(String name,String footerSet,String footerNumber,
                 double titleConfidence,double setConfidence,double collectorConfidence,
                 boolean symbolObserved,boolean artworkObserved,
                 boolean fullVisualCoverage,boolean allNamePrintingsConsidered) {
+            this(name,footerSet,footerNumber,titleConfidence,setConfidence,
+                collectorConfidence,symbolObserved,artworkObserved,
+                fullVisualCoverage,allNamePrintingsConsidered,-1,false);
+        }
+        /** Use this constructor ONLY with a verified, unfiltered full catalog
+         * printing count. Callers must not derive the count from OCR candidate
+         * lists, visual similarity matches, or a catalog still being imported. */
+        public Evidence(String name,String footerSet,String footerNumber,
+                double titleConfidence,double setConfidence,double collectorConfidence,
+                boolean symbolObserved,boolean artworkObserved,
+                boolean fullVisualCoverage,boolean allNamePrintingsConsidered,
+                int authoritativePrintingCount,boolean completeCatalog) {
             this.name = name == null ? "" : name.trim();
             this.fullVisualCoverage=fullVisualCoverage;
             this.allNamePrintingsConsidered=allNamePrintingsConsidered;
+            this.authoritativePrintingCount=authoritativePrintingCount;
+            this.completeCatalog=completeCatalog;
             this.footerSet = normalizeSet(footerSet); this.footerNumber = normalizeNumber(footerNumber);
             this.titleConfidence = clamp(titleConfidence); this.setConfidence = clamp(setConfidence);
             this.collectorConfidence = clamp(collectorConfidence);
@@ -106,6 +129,24 @@ public final class PrintingEvidenceResolver {
         double next = ranked.size() < 2 ? 0 : ranked.get(1).score;
         if (best.independent && best.score >= 0.59 && (ranked.size() == 1 || best.score - next >= 0.095)) {
             return new Result(Verdict.AUTO_SAVE, best.c, sorted, "independent exact-printing evidence", best.score);
+        }
+        // Do not demand a footer/symbol for a truly unique paper printing: it
+        // does not carry any edition-selection uncertainty. This is intentionally
+        // DIFFERENT from "only one plausible artwork/candidate survived".
+        // Require a complete, independently enumerated catalog and a clear
+        // title on an actually observed frame. Strong contradictory footers
+        // were already removed above and result in RETRY.
+        boolean authoritativeSingleton = evidence.completeCatalog
+            && evidence.allNamePrintingsConsidered
+            && evidence.authoritativePrintingCount == 1
+            && candidates.size() == 1 && ranked.size() == 1
+            && !evidence.name.isEmpty()
+            && normalizeTitle(evidence.name).equals(normalizeTitle(best.c.name))
+            && evidence.titleConfidence >= 0.96
+            && best.c.titleScore >= 0.96;
+        if (authoritativeSingleton) {
+            return new Result(Verdict.AUTO_SAVE, best.c, sorted,
+                "unique eligible printing in verified complete catalog + exact title", best.score);
         }
         // Image-only identification is permitted ONLY with explicit full
         // reference coverage, the complete same-title printing list, AND

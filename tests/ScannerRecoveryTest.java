@@ -159,8 +159,38 @@ public final class ScannerRecoveryTest {
         check(reviews[0]==0,"no manual intervention in retry and success");
         analyzer.close();
     }
+    static void cameraSinglePrintingWithoutFooter() {
+        final int[] saves={0},reviews={0},captures={0};
+        final String[] reason={""};
+        HandheldCameraXAnalyzer analyzer=new HandheldCameraXAnalyzer(
+            (a,w,h,stride)->null,
+            (capture,callback)->{
+                captures[0]++;
+                callback.onCompleted(new PrintingEvidenceResolver.Evidence(
+                    "Test Single Printing","","",.995,0,0,false,false,
+                    false,true,1,true),
+                    Collections.singletonList(new PrintingEvidenceResolver.Candidate(
+                        "single-1","Test Single Printing","set","123",.99,0,0)));
+            },new HandheldCameraXAnalyzer.ResultSink(){
+                public boolean save(PrintingEvidenceResolver.Candidate p,HandheldCameraXAnalyzer.Capture c){
+                    saves[0]++;check("single-1".equals(p.printingId),"saved authoritative singleton id");return true;
+                }
+                public void review(PrintingEvidenceResolver.Result r,HandheldCameraXAnalyzer.Capture c){reviews[0]++;}
+                public void error(String msg){throw new AssertionError(msg);}
+                public void telemetry(String step,long ms,String detail){
+                    if("verification".equals(step))reason[0]=detail;
+                }
+            },Runnable::run,null);
+        byte[] sensor=FrameRotation.rotate(card(200,280),200,280,270);
+        Proxy frame=new Proxy(sensor);analyzer.analyze(frame);
+        check(frame.closed,"frame released after singleton scan");
+        check(captures[0]==1 && saves[0]==1 && reviews[0]==0,
+            "verified catalog singleton saves immediately without printing picker");
+        check(reason[0].contains("unique eligible printing"),"diagnostic records single-printing auto-save");
+        analyzer.close();
+    }
     public static void main(String[] args) throws Exception {
-        geometry();color();rotation();retries();poorLighting();noDuplicateOnLightingOrPhoneMovement();cameraRetries();
+        geometry();color();rotation();retries();poorLighting();noDuplicateOnLightingOrPhoneMovement();cameraRetries();cameraSinglePrintingWithoutFooter();
         System.out.println("PASS: "+checks+" handheld recovery / exact-save assertions");
     }
 }
