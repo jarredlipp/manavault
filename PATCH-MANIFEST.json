@@ -1,0 +1,231 @@
+{
+  "patch": "ManaVault camera autofocus/foil/recognition 2026-11-13",
+  "type": "additive scanner source patch, not an APK",
+  "files": [
+    {
+      "path": ".github/workflows/handheld-scanner-core-tests.yml",
+      "sha256": "68ef9aca6de2dd42a34d14bb17c7462ca888711ae84f0416c1b903b4862abeff",
+      "bytes": 779
+    },
+    {
+      "path": "APK-INTEGRATION-AUDIT-2026-11-13.md",
+      "sha256": "14887f739ff64a0485dc248b463f0c793f3c987caf461039cbca2d588aff3172",
+      "bytes": 6174
+    },
+    {
+      "path": "CAMERA-RECOVERY-2026-11-13.md",
+      "sha256": "3aaf51ff42247bde3d4e8bdfc4d04342008274187b2c9ff465a2fa9b0d047550",
+      "bytes": 7868
+    },
+    {
+      "path": "ONE-PRINTING-FIX-2026-11-12.md",
+      "sha256": "5d44119eaf0eb16faf900b9cc03a7aad1e5a3ece1466dff476bc7f738cc808ad",
+      "bytes": 6771
+    },
+    {
+      "path": "README-APK-AUDIT.txt",
+      "sha256": "e88192acee1fd9ee267a92985ccbb452001ab5665b95546dc0daf4b0d6b994cb",
+      "bytes": 583
+    },
+    {
+      "path": "README.md",
+      "sha256": "27215bd603a1d273ad9fa9c2375ac855035131ac0d905c2a7389c18c328b781e",
+      "bytes": 13471
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/AdaptiveCardGeometryDetector.java",
+      "sha256": "f5a17bf315df08b366b04c525bb267901f6d6f05f4dee8975fe1de27a3634473",
+      "bytes": 7997
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/AdaptiveLightingPolicy.java",
+      "sha256": "97e9e9a3260688443b357897b5a488f399425dde92ffed3f3ac7dc588cd20d93",
+      "bytes": 3203
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/CameraXLightingController.java",
+      "sha256": "6f2b91516fe48e85e3d65442a3809bd6b29e167a89a18aba8c3440f882c3338b",
+      "bytes": 3208
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/CardTextRegions.java",
+      "sha256": "338a07e47606ee3dacaaca255088b7e49572bda0a1a734bef64deaddbfbcde5f",
+      "bytes": 2507
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/ColorCardRectifier.java",
+      "sha256": "6809cc0148f96cf9d2f90364aa75b6ef16a8d5dc61cedcd6b6712e50c413e17f",
+      "bytes": 2904
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/FrameIlluminationMetrics.java",
+      "sha256": "72c80d1bcc8b0dfd9929320a0f70a33812681dedcca55a25175496257b17df88",
+      "bytes": 1774
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/FrameQualityEstimator.java",
+      "sha256": "be317d1e5540c9397f699b07a6cc6f89015098d17b2dd4ce3168ab10060b33da",
+      "bytes": 3180
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/FrameRotation.java",
+      "sha256": "9212755a634e886a2111bbc9d947a0eeaa811cac4627c0599a2f82d9193ed83e",
+      "bytes": 2207
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/HandheldCameraXAnalyzer.java",
+      "sha256": "e0a5b939e8c4ab0aa8c1eae2038b68e6db8d2cdb80863c9e7f44b5655bfaa042",
+      "bytes": 16311
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/HandheldScanCoordinator.java",
+      "sha256": "b793d189f764ece561e651c57c858f852cc44111daabf0ce9e35e40fead1cdca",
+      "bytes": 12123
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/PerspectiveRectifier.java",
+      "sha256": "7b993a5510ebdb2576358a7e7eb2b8c98a4c4d1499f253ac752b744f674a5c48",
+      "bytes": 3638
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/PrintingEvidenceResolver.java",
+      "sha256": "c9cc499937da138c12bd439de97f94d9c2b9724038c9b2e343b72945c1f56c09",
+      "bytes": 11447
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/ScannerStartupCoordinator.java",
+      "sha256": "09b85d7973dd2184afe73174841b1a14b67054d17f60d693736d811ccd87858a",
+      "bytes": 3412
+    },
+    {
+      "path": "app/src/main/java/com/manavault/app/scanner/SceneFingerprint.java",
+      "sha256": "7c0ef486c6ae2909333596264bd699ab8b1d00c261e2f059749687e6ca893354",
+      "bytes": 2063
+    },
+    {
+      "path": "diagnostics-summary-2026-11-12-later.json",
+      "sha256": "ef238c406af852e832f95f09ea155556923d2fc70467638e86d2eb058f95f7b2",
+      "bytes": 1151
+    },
+    {
+      "path": "diagnostics-summary-2026-11-12.json",
+      "sha256": "519b043f476cc3c5b16891787580dd6e89934cf3b37e7335fa9b042fd547379a",
+      "bytes": 924
+    },
+    {
+      "path": "tests/CameraAdapterTest.java",
+      "sha256": "ab51e280fd181926c1fb91ec2853a446754679f7c5416399bd7a1aeed9d506ad",
+      "bytes": 3055
+    },
+    {
+      "path": "tests/CameraFocusLightingTest.java",
+      "sha256": "ce2cf229b9f12b5cd86551a3a1f90f4fb89c11d35a0adc498750bfd0c59380b6",
+      "bytes": 8713
+    },
+    {
+      "path": "tests/ScannerCoreTest.java",
+      "sha256": "3cd2713efe70fa45c63b6f51ae8736527b98ae2fd79582c64fde0b22fef6b484",
+      "bytes": 11903
+    },
+    {
+      "path": "tests/ScannerRecoveryTest.java",
+      "sha256": "715383a87cb39368dd47bae2c62aeb604736b887c23e8379119f1882670047a9",
+      "bytes": 12508
+    },
+    {
+      "path": "tests/ScannerSceneGateTest.java",
+      "sha256": "e95042068b43b1a396333a88426289c353dd901267bf90dcd12bc251a0c4bfc6",
+      "bytes": 3895
+    },
+    {
+      "path": "tests/ScannerStartupTest.java",
+      "sha256": "78b4ce29593a2074dbe42b2ae6b20d7fc87c16ec35640968fc01e2537a9fa658",
+      "bytes": 2139
+    },
+    {
+      "path": "tests/run-android-adapter-compile.sh",
+      "sha256": "cb49e5ab47898e890168db95dc2ce0fe0926820841e31389c72c9725afa21e00",
+      "bytes": 608
+    },
+    {
+      "path": "tests/run-core-tests.sh",
+      "sha256": "97e795dddf68674e4fb89aa98fbda2f67d6e0daf459578736fece9aec1383278",
+      "bytes": 866
+    },
+    {
+      "path": "tests/stubs/androidx/annotation/NonNull.java",
+      "sha256": "264db10b7fe8909ea432a314ca4635c149ac0edc40b9b42c55bc5604c8ddd611",
+      "bytes": 58
+    },
+    {
+      "path": "tests/stubs/androidx/camera/core/CameraControl.java",
+      "sha256": "fd7e77ae793dab620ca63806d8c8e85f855b35ad66771a5ca8a515714879c646",
+      "bytes": 211
+    },
+    {
+      "path": "tests/stubs/androidx/camera/core/CameraInfo.java",
+      "sha256": "acd1ce8086f218779df8099bf7182f3d8e03fe878cfd7382cc6d0e8b31c206fd",
+      "bytes": 122
+    },
+    {
+      "path": "tests/stubs/androidx/camera/core/ExposureState.java",
+      "sha256": "6b5a911ca174d77d53718c43774b92d56d4d847f17627593fd2b0791d1a3a72c",
+      "bytes": 235
+    },
+    {
+      "path": "tests/stubs/androidx/camera/core/FocusMeteringAction.java",
+      "sha256": "b6e11abe45c7130fcd72f3867c21e38c24c4add7064e8b178bc22412321b80c8",
+      "bytes": 379
+    },
+    {
+      "path": "tests/stubs/androidx/camera/core/ImageAnalysis.java",
+      "sha256": "ad6a330fb2e1187a3550b8c81b960107f30fcca59b1004f12ff1a7e8db76dfcf",
+      "bytes": 497
+    },
+    {
+      "path": "tests/stubs/androidx/camera/core/ImageProxy.java",
+      "sha256": "65cc3754f25427f3ee97978e94c3008527757d9b5374f0a3fcf83a8ecde98e70",
+      "bytes": 326
+    },
+    {
+      "path": "tests/stubs/androidx/camera/core/SurfaceOrientedMeteringPointFactory.java",
+      "sha256": "683af61de285afcbb29556429ab1ea46fd78f1f8730a064b678633eb94588f6f",
+      "bytes": 212
+    },
+    {
+      "path": "tools/check_camera_wiring.py",
+      "sha256": "6d4bf0c24fb9332c5538e1c0ef267c71a3ef7d6029db99e0b92baf1ef309d5a5",
+      "bytes": 1968
+    },
+    {
+      "path": "tools/check_catalog_eligibility.py",
+      "sha256": "900b7fecee5a1815e323be30f56d332f59bcb5307da0aa7b6aeec08d992d6c87",
+      "bytes": 2880
+    },
+    {
+      "path": "tools/diagnostics_report.py",
+      "sha256": "ab9207acb6e065c06633faa53ea6b98f6ded50f8164e9da5c2b18e88134d8f1c",
+      "bytes": 5933
+    },
+    {
+      "path": "tools/install_additive.py",
+      "sha256": "16bbed80fc637a427a453c347e7b099360af15af2fbe2dfd05ca357e6bf56f7d",
+      "bytes": 6148
+    },
+    {
+      "path": "tools/validate_scanner_release.sh",
+      "sha256": "98dbcfad6e9b9b91ae966cbccb77e1dcc24bddd6391ae1dfcb048fa19fccdb6d",
+      "bytes": 570
+    },
+    {
+      "path": "tools/verify_integration.py",
+      "sha256": "1892192eaa38e6685203f1827211c782b58857cf5d71eb62f105746359b3bb91",
+      "bytes": 1199
+    },
+    {
+      "path": "tools/verify_scanner_wiring.py",
+      "sha256": "f2f712682b5f301cf0605aaedffdb0e0cb166d18de0af7edaa160e1a92dcb403",
+      "bytes": 5735
+    }
+  ]
+}

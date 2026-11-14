@@ -22,6 +22,29 @@ public final class AdaptiveCardGeometryDetector implements HandheldCameraXAnalyz
                 a[y*w+x]=luma[sy*stride+sx];
             }
         }
+        HandheldCameraXAnalyzer.Geometry normal=detectSample(a,w,h,width,height,false);
+        if(normal!=null)return normal;
+        // Low-contrast black borders on dark playmats often disappear in the
+        // raw Y plane. Retry once with bounded percentile stretch at only
+        // ~56k pixels; do NOT modify the original camera frame for artwork.
+        return detectSample(enhanceEdges(a),w,h,width,height,true);
+    }
+    private static byte[] enhanceEdges(byte[] src) {
+        int[] bins=new int[256];for(byte b:src)bins[b&255]++;
+        int lo=percentile(bins,src.length/40),hi=percentile(bins,src.length*39/40);
+        if(hi-lo<3)return src.clone();
+        double stretch=Math.min(4.2,220.0/Math.max(1,hi-lo));
+        byte[] dst=new byte[src.length];
+        for(int i=0;i<src.length;i++)dst[i]=(byte)Math.max(0,Math.min(255,
+            Math.round(((src[i]&255)-lo)*stretch+12)));
+        return dst;
+    }
+    private static int percentile(int[] bins,int target){
+        int n=0;for(int v=0;v<bins.length;v++){n+=bins[v];if(n>target)return v;}
+        return 255;
+    }
+    private static HandheldCameraXAnalyzer.Geometry detectSample(
+            byte[] a,int w,int h,int width,int height,boolean lowContrastRecovery) {
         double[] xEdge=new double[w],yEdge=new double[h];
         int minY=(int)(.13*h),maxY=(int)(.87*h),minX=(int)(.13*w),maxX=(int)(.87*w);
         for(int x=2;x<w-2;x++) {
@@ -61,7 +84,7 @@ public final class AdaptiveCardGeometryDetector implements HandheldCameraXAnalyz
         double cardW=(length(tl,tr)+length(bl,br))*.5;
         double cardH=(length(tl,bl)+length(tr,br))*.5;
         if(cardH<1||cardW/cardH<.46||cardW/cardH>1.09)return null;
-        double confidence=Math.max(.36,Math.min(.92,grad/32));
+        double confidence=Math.max(.36,Math.min(lowContrastRecovery?.72:.92,grad/32));
         return new HandheldCameraXAnalyzer.Geometry(
             point(tl,width/(double)w,height/(double)h),
             point(tr,width/(double)w,height/(double)h),

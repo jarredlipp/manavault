@@ -53,7 +53,7 @@ public final class HandheldScanCoordinator {
     private boolean sceneHasRegions,proposedHasRegions;
     private long proposedSinceMs,missingSinceMs=-1,startedMs,lastTimestampMs=-1;
     private long lastFocusMs=Long.MIN_VALUE/2,poorQualitySinceMs=-1;
-    private long nextAllowedMs,firstReviewAtMs=-1;
+    private long nextAllowedMs,firstReviewAtMs=-1,lightingSettlingUntilMs;
     private int proposedFrames,retryCount,reviewAttempts,acceptedFrames,discardedFrames;
     private boolean inFlight,saved,reviewPending;
 
@@ -73,6 +73,10 @@ public final class HandheldScanCoordinator {
             return decision(Action.WAIT,"card absent");
         }
         missingSinceMs=-1;
+        // AE/torch steps alter visual hashes. Do not treat the same physical
+        // card as a fresh card while the camera is settling.
+        if(f.timestampMs<lightingSettlingUntilMs)
+            return decision(Action.WAIT,"lighting stabilization");
         if (sceneSignature==Long.MIN_VALUE) newScene(f);
         else if (newCardEvidence(f) && f.motion<=.38) {
             if (proposedSignature==Long.MIN_VALUE || !sameProposedCard(f)) {
@@ -173,7 +177,11 @@ public final class HandheldScanCoordinator {
     public void reset() {
         generation++;sceneSignature=Long.MIN_VALUE;proposedSignature=Long.MIN_VALUE;
         sceneHasRegions=false;proposedHasRegions=false;
-        proposedFrames=0;lastTimestampMs=-1;missingSinceMs=-1;clearCurrent();
+        proposedFrames=0;lastTimestampMs=-1;missingSinceMs=-1;lightingSettlingUntilMs=0;clearCurrent();
+    }
+    public void noteLightingChange(long timestampMs) {
+        lightingSettlingUntilMs=Math.max(lightingSettlingUntilMs,timestampMs+340);
+        poorQualitySinceMs=-1;
     }
     public long currentGeneration(){return generation;}
     public int getAcceptedFrames(){return acceptedFrames;}

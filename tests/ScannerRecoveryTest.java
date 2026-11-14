@@ -135,6 +135,8 @@ public final class ScannerRecoveryTest {
                 attempts[0]++;
                 check(capture.rotationDegrees==0 && capture.sourceRotationDegrees==90,
                     "perspective-corrected crop is not rotated again");
+                check(capture.textRegions!=null && capture.textRegions.footer.enhanced.length>0,
+                    "recognition receives both main crop and enhanced footer OCR region");
                 if(attempts[0]==1)callback.onCompleted(null,Collections.emptyList());
                 else callback.onCompleted(new PrintingEvidenceResolver.Evidence(
                     "Arbor Elf","wwk","95",.99,.98,.99,false,false),

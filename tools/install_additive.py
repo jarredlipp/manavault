@@ -14,6 +14,15 @@ import sys
 ROOT=Path(__file__).resolve().parent.parent
 SOURCE=Path('app/src/main/java/com/manavault/app/scanner')
 # Only known, unmodified files from the November 12 recovery package are upgradable.
+PRIOR_AUDIT={
+    # Exact unmodified helper hashes from the Nov 13 APK audit source kit.
+    'app/src/main/java/com/manavault/app/scanner/HandheldCameraXAnalyzer.java':
+        'cf630ffeea0dcb1b8a53959dca6dd60ebe6e90bf3b5202b06c5a688a0a8310e4',
+    'app/src/main/java/com/manavault/app/scanner/HandheldScanCoordinator.java':
+        '1d1ea4b378b45d369585c6ded2d6f419d34565250c8cc3b5a6465f58165e789f',
+    'tests/run-android-adapter-compile.sh':
+        '5e5ab07c6217d6e6268b79dd96ffbca27a86620987330e184e921b37577fc4e3',
+}
 PRIOR_RECOVERY={
   'app/src/main/java/com/manavault/app/scanner/HandheldCameraXAnalyzer.java':'2cb9f352ebfe3d754078b43f4bd37695c90c11c5a815326439bcd6371f2426da',
   'app/src/main/java/com/manavault/app/scanner/HandheldScanCoordinator.java':'12d93e072a3e0a358ccffb06b3b2f0627a1ed694145f89408c4f69c5dd1e0a68',
@@ -46,7 +55,8 @@ def collect():
     paths+=list((ROOT/'tests').rglob('*.java'))
     paths+=list((ROOT/'tests').glob('*.sh'))
     paths+=[ROOT/'.github/workflows/handheld-scanner-core-tests.yml']
-    paths+=[ROOT/'tools/diagnostics_report.py']
+    paths+=[ROOT/'tools/diagnostics_report.py',ROOT/'tools/check_camera_wiring.py',
+            ROOT/'tools/validate_scanner_release.sh']
     return sorted(paths)
 def main():
     ap=argparse.ArgumentParser()
@@ -65,7 +75,8 @@ def main():
         if not dest.exists():action='ADD'
         elif sha(dest)==sha(src):action='UNCHANGED'
         elif (PRIOR.get(str(rel),PRIOR.get(rel.name))==sha(dest)
-              or PRIOR_RECOVERY.get(str(rel))==sha(dest)):action='UPGRADE_WITH_BACKUP'
+              or PRIOR_RECOVERY.get(str(rel))==sha(dest)
+              or PRIOR_AUDIT.get(str(rel))==sha(dest)):action='UPGRADE_WITH_BACKUP'
         else:
             action='CONFLICT';conflicts.append(str(rel))
         changes.append((action,src,dest,rel))
@@ -75,7 +86,7 @@ def main():
     if args.dry_run:
         print('DRY RUN: no files changed. NativeScannerActivity still requires integration.')
         return
-    backup=repo/'tools/scanner_patch_backups/2026-11-12-scene-gate'
+    backup=repo/'tools/scanner_patch_backups/2026-11-13-camera-recovery'
     for action,src,dest,rel in changes:
         if action=='UNCHANGED':continue
         if action=='UPGRADE_WITH_BACKUP':

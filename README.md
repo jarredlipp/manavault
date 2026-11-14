@@ -1,3 +1,9 @@
+# Latest patch: November 13, 2026 — camera / foil / focus recovery
+
+See **CAMERA-RECOVERY-2026-11-13.md** for added Java camera helpers, actual production wiring requirements and test status. **This is not a deployed APK.** The original README continues below unchanged.
+
+---
+
 # November 12 verified singleton printing update
 
 See **ONE-PRINTING-FIX-2026-11-12.md** for new authoritative catalog uniqueness handling, diagnostics findings, production integration steps, and regression tests. The source patch is not the installed Android APK.
